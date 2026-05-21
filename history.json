@@ -1,0 +1,429 @@
+[
+  {
+    "id": "8be63207",
+    "timestamp": "2026-05-18T19:58:26",
+    "mode": "edit",
+    "prompt": "[文案修改] 去掉这4个字",
+    "input_image": "edit_input_7e7df668657a41409e05a16dbd262a3f.png",
+    "output_image": "edit_output_a3721d377f7b4f9589f8d7b9eeceaea7.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "2597135d",
+    "timestamp": "2026-05-14T19:50:14",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"秋天去迪士尼\"，副标题与主标题呼应同一主题，画面内容：秋天去迪士尼，主标题大字号突出，副标题次级排版，留白清晰",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_39e92a0009bb4995aff9fbb258c45524.png",
+      "variant_f87e565e39224d1aa4a114d2fa596b8e.png"
+    ],
+    "variants_count": 2
+  },
+  {
+    "id": "54bd17e7",
+    "timestamp": "2026-05-14T18:48:17",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"夏天好热\"，副标题与主标题呼应同一主题，炎热阳光，清凉解暑对比，西瓜冷饮泳镜，明亮蓝橙配色，青春活力氛围，夏日户外场景，画面内容：夏天好热，主标题大字号突出，副标题次级排版，留白清晰",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_e0e908309b8b4d198d401bda030b112e.png",
+      "variant_51070da89e784bb9b018dffc930cccbf.png",
+      "variant_dbd8c19efcdf4e138de1ac1dbd454070.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "873a3be8",
+    "timestamp": "2026-05-14T18:37:18",
+    "mode": "img2img",
+    "prompt": "海报设计，主标题：「夏天好热」，副标题：「夏天好热」，画面内容：夏天好热",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_dc40aa7a13934c17931ccff03d78a241.png",
+      "variant_36159bb406354ec2902735c5bd056476.png",
+      "variant_8f657ed26d454b318900389fbe5aabea.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "4d00c7a0",
+    "timestamp": "2026-05-14T15:45:34",
+    "mode": "img2img",
+    "prompt": "3D可爱风格,母亲节海报,标题文字\"母亲节\",副标题\"调遍人间暖色，不及妈妈本色\",温馨氛围,卡通IP妈妈角色+ip角色,柔和粉紫配色,手捧鲜花与爱心,背景点缀小雏菊和心形光斑,童趣柔和光影,圆润立体造型,干净留白排版",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_52167ab1442944459c3fca5663bbd1a4.png",
+      "variant_e84733354fd646529a650fccd338ea38.png",
+      "variant_7ca344f71e734e63a624f718affd38d8.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "b0449129",
+    "timestamp": "2026-05-14T15:41:52",
+    "mode": "img2img",
+    "prompt": "3D可爱风格,母亲节海报,标题文字\"母亲节\",副标题\"调遍人间暖色，不及妈妈本色\",温馨氛围,卡通IP妈妈角色,柔和粉紫配色,手捧鲜花与爱心,背景点缀小雏菊和心形光斑,童趣柔和光影,圆润立体造型,干净留白排版",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_fbcd69ad04924eba8219bffe70a3e153.png",
+      "variant_9865decee08a4bf28cd286bafbf6d782.png"
+    ],
+    "variants_count": 2
+  },
+  {
+    "id": "68d2c7cd",
+    "timestamp": "2026-05-11T23:12:48",
+    "mode": "img2img",
+    "prompt": "3D可爱风格,母亲节海报,标题文字\"母亲节\",副标题\"调遍人间暖色，不及妈妈本色\",粉色主色调,温馨童趣氛围,IP风格妈妈角色（圆润造型、温柔笑容、围裙元素）+ip角色,手捧康乃馨与爱心,背景融合柔光花瓣、小蝴蝶、云朵、彩虹色丝带,客厅，画面丰富饱满,柔和阴影,细腻材质表现",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_fc539677a0294f51874b3060f9bd0bd3.png",
+      "variant_cd2908ac99ba42debf8d24f511949956.png",
+      "variant_2d4e891d04e94b888be4cbe304e41a4a.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "a892df7e",
+    "timestamp": "2026-05-11T23:06:10",
+    "mode": "img2img",
+    "prompt": "3D可爱风格,母亲节海报,标题文字\"母亲节\",副标题\"调遍人间暖色，不及妈妈本色\",粉色主色调,温馨童趣氛围,IP风格妈妈角色（圆润造型、温柔笑容、围裙元素）+ip角色,手捧康乃馨与爱心,背景融合柔光花瓣、小蝴蝶、云朵、彩虹色丝带,客厅，画面丰富饱满,柔和阴影,细腻材质表现",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_b70b8b19ff5d4c8e9ad67d5d1767b3d6.png",
+      "variant_21c33d3e5cb84437a22980ca2a6e9218.png"
+    ],
+    "variants_count": 2
+  },
+  {
+    "id": "b2ce4c2b",
+    "timestamp": "2026-05-11T01:24:45",
+    "mode": "img2img",
+    "prompt": "3D立体风格,母亲节海报,标题文字\"母亲节\",副标题\"调遍人间暖色，不及妈妈本色\",粉色主色调,温馨可爱IP角色妈妈形象,手捧鲜花与爱心,柔光晕染,童趣场景,柔和阴影,细腻质感,节日温暖氛围",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_7ec336b30300455db763b5202594a78c.png",
+      "variant_47d78b79d9f645c39c246227228c1687.png",
+      "variant_c4116cf0de2c483f8c0514d5fe53dac6.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "cc42b2d2",
+    "timestamp": "2026-05-11T01:18:17",
+    "mode": "img2img",
+    "prompt": "3D立体风格,母亲节海报,标题文字\"母亲节\",副标题\"调遍人间暖色，不及妈妈本色\",温馨氛围,卡通IP角色+妈妈形象,柔和粉紫配色,手捧康乃馨与爱心,背景点缀小雏菊与光晕,童趣可爱细节,柔焦光影,温暖治愈感",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_1b3062f9a78044e98035045792b74fcb.png",
+      "variant_c65e2987fbd946e1a35bb73c35aa7efd.png",
+      "variant_35b481ef0a1b47b085907a451ff30333.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "9bf7fa88",
+    "timestamp": "2026-05-11T01:04:30",
+    "mode": "edit",
+    "prompt": "[文案修改] 修改标题为新年快乐",
+    "input_image": "edit_input_91c5980dbd874275acbf274b9097acc4.png",
+    "output_image": "edit_output_9097b0a641f04724a300ca081380085d.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "f830173e",
+    "timestamp": "2026-05-11T01:01:52",
+    "mode": "img2img",
+    "prompt": "3D立体风格,母亲节海报,粉色主色调,可爱卡通妈妈IP角色+ip角色,手捧鲜花与爱心,温馨童趣氛围,柔和光影,细腻质感,节日温暖感，主标题“母亲节”，副标题“调遍人间暖色，不及妈妈本色”",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_0a3373e83a80434481d8fbdd54ec00f0.png",
+      "variant_4399876a40584f76850c437788bfac9d.png",
+      "variant_6431ce9a672d4c45a9ab6abf5887ea31.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "51e8d5c5",
+    "timestamp": "2026-05-11T01:00:10",
+    "mode": "img2img",
+    "prompt": "3D立体风格,母亲节海报,粉色主色调,可爱卡通妈妈IP角色,手捧鲜花与爱心,温馨童趣氛围,柔和光影,细腻质感,节日温暖感，主标题“母亲节”，副标题“调遍人间暖色，不及妈妈本色”",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_eb884599068a4fd1a9e45673133b850a.png",
+      "variant_7daee6f8b5ff41c6a879597a85e1e61d.png",
+      "variant_a249701cf7d64074a7edb2f6b2905d1e.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "4ad21973",
+    "timestamp": "2026-05-11T00:36:34",
+    "mode": "edit",
+    "prompt": "[文案修改] 修改标题文案为新年快乐",
+    "input_image": "edit_input_8ea798568c4644f9958a1059e03838b8.png",
+    "output_image": "edit_output_d83d7e59b6304e5fb274745755332c1d.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "0105ac89",
+    "timestamp": "2026-05-11T00:31:16",
+    "mode": "img2img",
+    "prompt": "扁平插画风格，母亲节海报，暖色调配色（粉红、米白、浅金），温馨母子互动场景，手绘康乃馨与爱心元素，柔和光影，简洁留白排版，温暖感恩氛围",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_39c01077cfd64d3baf259b8c206dcce3.png",
+      "variant_b07fcdb6080b4694b4b7161a3186d4a7.png",
+      "variant_632985e288d14adb8164bab7fb1bd84e.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "c9c3d115",
+    "timestamp": "2026-05-10T22:48:04",
+    "mode": "img2img",
+    "prompt": "温情插画风格,主标题「母亲节」,温馨家庭场景,母亲与孩子依偎画面,柔和粉色与米白色配色,手绘质感线条,浅景深虚化背景,阳光透过窗户洒落,康乃馨元素点缀,简约留白排版,温暖感恩氛围",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_7d0e9e5bdb664a07a44eb8eef31c85b3.png",
+      "variant_733565a5bf3e4cec8cde2ce3f659a729.png"
+    ],
+    "variants_count": 2
+  },
+  {
+    "id": "fd390aa8",
+    "timestamp": "2026-05-10T22:40:55",
+    "mode": "text2img",
+    "prompt": "温情插画风格,主标题「母亲节」,温馨家庭场景,母亲与孩子依偎画面,柔和粉色与米白色配色,手绘质感线条,浅景深虚化背景,阳光透过窗户洒落,康乃馨元素点缀,简约留白排版,温暖感恩氛围",
+    "project": "",
+    "output_images": [
+      "variant_057e5c4c0fe3475780666830ab74fd85.png",
+      "variant_5019d25cb6c44c54a7ab11ffbd1ca2e5.png",
+      "variant_a993bbfdfd9d4799be9d132109eff133.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "eea0685f",
+    "timestamp": "2026-05-10T21:56:33",
+    "mode": "img2img",
+    "prompt": "温情插画风格,主标题「母亲节」,温馨家庭场景,母女牵手剪影,柔光晕染背景,粉色与米白色系配色,手绘质感,细腻柔和氛围,留白构图,适合印刷的高清海报",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_49a4bca9793740e8a39bd231df0a581f.png",
+      "variant_0e29e559526048c4940d3111944d8d84.png"
+    ],
+    "variants_count": 2
+  },
+  {
+    "id": "dfa6c285",
+    "timestamp": "2026-05-10T20:22:27",
+    "mode": "edit",
+    "prompt": "【文案修改】 副标题修改为调遍人间暖色，不及妈妈本色 注意：其余元素保持不变",
+    "input_image": "edit_input_144ed4ee3d2c4e0dbaef58512832e97c.png",
+    "output_images": [
+      "edit_output_df03c9ef06464ee3af030a4b816f9ecb.png"
+    ]
+  },
+  {
+    "id": "434bb887",
+    "timestamp": "2026-05-10T19:25:17",
+    "mode": "edit",
+    "prompt": "【其他】 副标题【母亲节快乐】修改为【调遍人间暖色，不及妈妈本色】 注意：其余全部内容保留",
+    "input_image": "edit_input_ee299a2ec21b4bc89ee741ac75adc9da.png",
+    "output_images": [
+      "edit_output_098f51692e8e4eb6828b930961feedc7.png"
+    ]
+  },
+  {
+    "id": "5370768d",
+    "timestamp": "2026-05-10T18:10:05",
+    "mode": "img2img",
+    "prompt": "3D立体风格,主标题「母亲节」,副标题「母亲节快乐」,温馨母亲节海报,粉色主色调,可爱卡通妈妈+IP角色,手捧缤纷鲜花与爱心,柔光渲染,童趣场景,柔和阴影,细腻质感,节日温暖氛围",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_f05f04c4067e4bc9a1cdf06b120683a3.png",
+      "variant_1238729d4c944ad6a414cf47769292cb.png",
+      "variant_fa3f22ad96634a899806e701436ddb05.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "7589c73f",
+    "timestamp": "2026-05-10T16:47:49",
+    "mode": "img2img",
+    "prompt": "扁平插画风格，母亲节海报，暖色调配色（粉红、浅黄、柔白），温馨母子互动场景（拥抱/牵手/送花），手绘质感爱心、康乃馨、丝带元素，居中大标题“母亲节”，简洁留白构图，柔和光影，温暖感恩氛围",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_fce37eb4ca524cff81a2b5fb2ebfed7a.png",
+      "variant_672941e99d8f4dd28257261be5674dc9.png",
+      "variant_6a3c902c454c468c9a7d5a4b1cf77222.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "dbee8a20",
+    "timestamp": "2026-05-10T16:45:56",
+    "mode": "img2img",
+    "prompt": "扁平插画风格，母亲节海报，暖色调配色（粉红、浅黄、柔白），温馨母子互动场景（拥抱/牵手/送花），手绘质感爱心、康乃馨、丝带元素，居中大标题“母亲节”，简洁留白构图，柔和光影，温暖感恩氛围",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_713377fa5d0a425bab3b04efb88f859e.png",
+      "variant_76a0c6c2f533492e8f50a47218722f52.png",
+      "variant_1b8f4b14bc864fb89d7f02724aa6b42a.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "535bf2b8",
+    "timestamp": "2026-05-10T15:16:35",
+    "mode": "img2img",
+    "prompt": "扁平插画风格，母亲节海报，暖色调配色（粉红、米白、浅金），温馨母子互动场景，手绘康乃馨与爱心元素，柔和光影，简洁留白排版，温暖感恩氛围",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_4350e1069d7d465f86c38da786f8b176.png",
+      "variant_dc7fe7f0a0fe437b98b3be11e3e4b09c.png",
+      "variant_6d790ab4e4a5424bb74fceca4212fa60.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "92017b64",
+    "timestamp": "2026-05-10T15:07:00",
+    "mode": "img2img",
+    "prompt": "扁平插画风格，母亲节海报，暖色调配色（粉红、米白、浅金），温馨母子互动场景，手绘康乃馨与爱心元素，柔和光影，简洁留白排版，温暖感恩氛围",
+    "project": "画啦啦",
+    "output_images": [
+      "variant_369bdfba0054465db8505fe746613f01.png",
+      "variant_cb75398b82e44374b5fb2622bdde5aa1.png",
+      "variant_1a74566c78c043d4a7e8af1a1b5f64f1.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "6944fba8",
+    "timestamp": "2026-05-10T14:53:53",
+    "mode": "text2img",
+    "prompt": "温馨手绘插画风格，母亲节主题海报，柔粉与米白主色调，慈祥母亲与孩子依偎剪影，康乃馨花束环绕，手写字体标题“母亲节”，柔和光晕背景，温暖感恩氛围",
+    "project": "",
+    "output_images": [
+      "variant_8fef364e184842b1afed45f76460f4ec.png",
+      "variant_11ac5e65865b44ac92a83b2b3c0bcb3e.png",
+      "variant_e0f99468607c407a990c117978f24a0e.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "31cd7ca2",
+    "timestamp": "2026-05-10T14:38:58",
+    "mode": "img2img",
+    "prompt": "3D立体风格,少儿插画海报,母亲节主题,粉色系渐变配色,温馨客厅场景,妈妈与可爱卡通IP角色互动,饱满构图,漂浮爱心元素,柔光质感,温暖治愈氛围，主标题“母亲节”，副标题“调遍人间暖色，不及妈妈本色”",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_f064a9cef499445b82d597b6283e85f4.png",
+      "variant_c4e43bd686714a1496e26a8538e52bd5.png",
+      "variant_ef914959e5d84d99b2c8fddf933705d8.png"
+    ],
+    "variants_count": 3
+  },
+  {
+    "id": "15e6d0b4",
+    "timestamp": "2026-05-09T01:02:11",
+    "mode": "img2img",
+    "prompt": "扁平插画风格,六一儿童节海报,主标题“六一儿童节”、副标题“一起绘童年”,游乐场场景,蓝天白云背景,缤纷色彩配色（明黄、天蓝、粉红、草绿）,飘浮气球与旋转彩带,卡通儿童欢笑奔跑,活泼童趣氛围,简洁居中排版",
+    "project": "画啦啦",
+    "output_image": "variant_438e5c69f24247ae8bacb5d1ac80e4ee.png",
+    "variants_count": 3
+  },
+  {
+    "id": "6c43764b",
+    "timestamp": "2026-05-09T00:28:24",
+    "mode": "text2img",
+    "prompt": "海报设计，主标题：「六一儿童节」，画面内容：游乐场，蓝天白云，缤纷，多彩，快乐气球",
+    "project": "",
+    "output_image": "variant_0a8663215bc6476287986d5cc67d7f2f.png",
+    "variants_count": 3
+  },
+  {
+    "id": "865e6d24",
+    "timestamp": "2026-05-02T17:54:29",
+    "mode": "text2img",
+    "prompt": "主题：Welcome to Enterprise account，面向待确认，风格：默认活泼风格，配色：高饱和度, 圆润线条, 明亮配色，文案：待确认",
+    "project": "",
+    "input_image": null,
+    "output_image": "variant_366f8e5a6d5f4525b498ff6f2ec7687f.png",
+    "variants_count": 2
+  },
+  {
+    "id": "9038de5d",
+    "timestamp": "2026-05-02T03:16:33",
+    "mode": "img2img",
+    "prompt": "主题：马年春节品牌海报，面向3-12岁，风格：活泼风格，配色：高饱和度, 圆润线条, 明亮配色，文案：天马行空，笔下生风",
+    "project": "画啦啦",
+    "input_image": "input_059ec216132649f4962f21c5d4786dc9.png",
+    "output_image": "variant_7829dffe6a9244cab899fa67abd125c8.png",
+    "variants_count": 3
+  },
+  {
+    "id": "c7da687d",
+    "timestamp": "2026-05-02T03:10:37",
+    "mode": "img2img",
+    "prompt": "主题：马年春节品牌海报，面向3-12岁，风格：活泼风格，配色：高饱和度, 圆润线条, 明亮配色，文案：天马行空，笔下生风",
+    "project": "画啦啦",
+    "input_image": "input_08196871a91d4e27ac4989d61542be23.png",
+    "output_image": "variant_86be429410354cddb8a28da54afe14d4.png",
+    "variants_count": 3
+  },
+  {
+    "id": "b3331479",
+    "timestamp": "2026-05-02T03:08:06",
+    "mode": "img2img",
+    "prompt": "主题：马年春节品牌海报，面向3-12岁，风格：活泼风格，配色：高饱和度, 圆润线条, 明亮配色，文案：天马行空，笔下生风",
+    "project": "画啦啦",
+    "input_image": "input_bd22ff35794647aebd82631ab642cc38.png",
+    "output_image": "variant_7e6e0a3f05184c6ab7faf2837bfdca44.png",
+    "variants_count": 3
+  },
+  {
+    "id": "86be8237",
+    "timestamp": "2026-05-02T02:04:09",
+    "mode": "text2img",
+    "prompt": "参考参考图，生成一张五一劳动节海报",
+    "project": "画啦啦",
+    "references": [
+      "iwEcAqNwbmcDAQTRAu4F0QU2BrAQQ67qr5W8MAnE3bLwg0IAB9IRIP1-CAAJomltCgAL0gASCOs.png",
+      "iwEcAqNwbmcDAQTRBDgF0QhwBrABM-GqcSE1cgnHmky0VgcAB9IGy4_GCAAJomltCgAL0gBEWzQ.png"
+    ],
+    "input_image": null,
+    "output_image": "output_f341ee43226a41deac9feffbd29f154c.png",
+    "region": null
+  },
+  {
+    "id": "71b65d13",
+    "timestamp": "2026-05-02T02:02:13",
+    "mode": "text2img",
+    "prompt": "参考参考图，生成一张五一劳动节海报",
+    "project": "画啦啦",
+    "references": [
+      "iwEcAqNwbmcDAQTRAu4F0QU2BrAQQ67qr5W8MAnE3bLwg0IAB9IRIP1-CAAJomltCgAL0gASCOs.png"
+    ],
+    "input_image": null,
+    "output_image": "output_584bcb0c138945ee84ea3dd4c8547fc2.png",
+    "region": null
+  },
+  {
+    "id": "5c9416e7",
+    "timestamp": "2026-04-29T23:44:36",
+    "mode": "img2img",
+    "prompt": "去掉衣袖的血迹",
+    "input_image": "input_9da2d88fad914c02b57f530ed8098eaf.png",
+    "output_image": "comp_a4c80ea0c73d4ea58bf0d1ce78f46a79.png",
+    "region": {
+      "x": 799,
+      "y": 885,
+      "w": 306,
+      "h": 575
+    }
+  }
+]
