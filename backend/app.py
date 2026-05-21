@@ -17,7 +17,13 @@ import errno
 import threading
 import concurrent.futures
 
-from lovart_client import LovartClient, LovartError
+from lovart_client import (
+    LovartClient,
+    LovartError,
+    is_lovart_limit_error,
+    load_lovart_credentials,
+    mask_access_key,
+)
 from comfyui_client import ComfyUIClient, ComfyUIClientError
 from sd_client import StableDiffusionClient, SDClientError
 
@@ -66,8 +72,9 @@ def _dreamina_command_path():
 _load_env_file()
 DREAMINA_BIN = _resolve_dreamina_bin()
 PORT = int(os.environ.get("PORT", "8000"))
-LOVART_ACCESS_KEY = os.environ.get("LOVART_ACCESS_KEY", "").strip()
-LOVART_SECRET_KEY = os.environ.get("LOVART_SECRET_KEY", "").strip()
+LOVART_CREDENTIALS = load_lovart_credentials()
+LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
+LOVART_SECRET_KEY = LOVART_CREDENTIALS[0][1] if LOVART_CREDENTIALS else ""
 LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai").strip()
 LOVART_POLL_TIMEOUT = int(os.environ.get("LOVART_POLL_TIMEOUT", "300"))
 LOVART_MAX_CONCURRENCY = max(1, int(os.environ.get("LOVART_MAX_CONCURRENCY", "1")))
@@ -556,7 +563,7 @@ def call_dreamina(mode, prompt, image_paths=None, model_version=None, resolution
 def _resolve_image_backend():
     backend = IMAGE_BACKEND
     if backend == "auto":
-        if LOVART_ACCESS_KEY and LOVART_SECRET_KEY:
+        if LOVART_CREDENTIALS:
             return "lovart"
         return "dreamina"
     return backend
@@ -601,42 +608,67 @@ def _normalize_lovart_error(message):
 
 
 def call_lovart(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
-    """调用 Lovart OpenAPI 生图"""
-    if not LOVART_ACCESS_KEY or not LOVART_SECRET_KEY:
+    """调用 Lovart OpenAPI 生图；多 Key 时在并发/额度受限时自动切换。"""
+    if not LOVART_CREDENTIALS:
         return None, "未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY"
 
     timeout = max(poll_timeout, LOVART_POLL_TIMEOUT)
-    client = LovartClient(
-        access_key=LOVART_ACCESS_KEY,
-        secret_key=LOVART_SECRET_KEY,
-        base_url=LOVART_BASE_URL,
-        timeout=timeout,
-    )
-
     last_error = None
-    for attempt in range(LOVART_TASK_RETRY):
-        with LOVART_GENERATION_LOCK:
-            try:
-                image_url, error = client.generate_image(
-                    prompt=prompt,
-                    image_paths=image_paths,
-                    ratio=ratio,
-                    timeout=timeout,
-                    mode=LOVART_MODE,
-                    quality_hint=LOVART_QUALITY_HINT,
+
+    for cred_index, (access_key, secret_key) in enumerate(LOVART_CREDENTIALS):
+        client = LovartClient(
+            access_key=access_key,
+            secret_key=secret_key,
+            base_url=LOVART_BASE_URL,
+            timeout=timeout,
+        )
+        switch_to_next_key = False
+
+        for attempt in range(LOVART_TASK_RETRY):
+            with LOVART_GENERATION_LOCK:
+                try:
+                    image_url, error = client.generate_image(
+                        prompt=prompt,
+                        image_paths=image_paths,
+                        ratio=ratio,
+                        timeout=timeout,
+                        mode=LOVART_MODE,
+                        quality_hint=LOVART_QUALITY_HINT,
+                    )
+                except LovartError as e:
+                    image_url, error = None, e.message
+
+            if image_url:
+                if cred_index > 0:
+                    print(f"[Lovart] 备用 Key {mask_access_key(access_key)} 生成成功")
+                return image_url, None
+
+            last_error = _normalize_lovart_error(error)
+            if not error:
+                break
+
+            has_backup_key = cred_index + 1 < len(LOVART_CREDENTIALS)
+            if is_lovart_limit_error(error) and has_backup_key:
+                print(
+                    f"[Lovart] Key {mask_access_key(access_key)} 并发或额度受限，"
+                    f"切换到备用 Key ({cred_index + 2}/{len(LOVART_CREDENTIALS)})"
                 )
-            except LovartError as e:
-                image_url, error = None, e.message
+                switch_to_next_key = True
+                break
 
-        if image_url:
-            return image_url, None
-
-        last_error = _normalize_lovart_error(error)
-        if not error or "Concurrent task limit" not in error or attempt >= LOVART_TASK_RETRY - 1:
+            if is_lovart_limit_error(error) and attempt < LOVART_TASK_RETRY - 1:
+                wait_seconds = LOVART_TASK_RETRY_WAIT * (attempt + 1)
+                print(
+                    f"[Lovart] Key {mask_access_key(access_key)} 并发任务已满，"
+                    f"{wait_seconds}s 后重试 ({attempt + 1}/{LOVART_TASK_RETRY})"
+                )
+                time.sleep(wait_seconds)
+                continue
             break
-        wait_seconds = LOVART_TASK_RETRY_WAIT * (attempt + 1)
-        print(f"[Lovart] 并发任务已满，{wait_seconds}s 后重试 ({attempt + 1}/{LOVART_TASK_RETRY})")
-        time.sleep(wait_seconds)
+
+        if switch_to_next_key:
+            continue
+        break
 
     return None, last_error or "Lovart 生成失败"
 
@@ -3548,7 +3580,8 @@ if __name__ == '__main__':
     print(f"   服务端默认生图后端: {image_backend}")
     print(f"   页面可切换生图模型: Lovart / ComfyUI / Stable Diffusion")
     if image_backend == "lovart":
-        print(f"   Lovart API: {LOVART_BASE_URL}")
+        key_count = len(LOVART_CREDENTIALS)
+        print(f"   Lovart API: {LOVART_BASE_URL}（已配置 {key_count} 组 Key，受限时自动切换）")
     elif image_backend == "dreamina":
         print(f"   即梦 CLI: {dreamina_cmd or DREAMINA_BIN}")
         if not dreamina_cmd:

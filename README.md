@@ -60,7 +60,7 @@ cd backend
 |------|------|
 | `PORT` | 服务端口，默认 `8000` |
 | `IMAGE_BACKEND` | `auto` / `lovart` / `dreamina` / `comfyui` / `stable_diffusion` |
-| `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 生图（推荐） |
+| `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 主 Key；可用 `LOVART_ACCESS_KEY_2` 等配置备用，并发/额度受限时自动切换 |
 | `DREAMINA_BIN` | 即梦 CLI 路径，留空则从 PATH 查找 `dreamina` |
 | `COMFYUI_API_URL` / `COMFYUI_CHECKPOINT` | 本地 ComfyUI |
 | `SD_API_URL` | 本地 SD WebUI |

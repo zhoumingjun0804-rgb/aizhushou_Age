@@ -1,5 +1,17 @@
 [
   {
+    "id": "900defac",
+    "timestamp": "2026-05-21T17:42:44",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"今天下雨\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_984fe742333b4689936f063c383e993f.png",
+      "variant_63ca954a036a454b8c890f77c18acd18.png"
+    ],
+    "variants_count": 2
+  },
+  {
     "id": "8be63207",
     "timestamp": "2026-05-18T19:58:26",
     "mode": "edit",

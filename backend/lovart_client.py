@@ -19,6 +19,65 @@ class LovartError(Exception):
         super().__init__(message)
 
 
+def load_lovart_credentials() -> list[tuple[str, str]]:
+    """从环境变量加载多组 Lovart AK/SK（主键 + LOVART_ACCESS_KEY_2 等）。"""
+    pairs: list[tuple[str, str]] = []
+
+    def _append(ak: str, sk: str) -> None:
+        ak, sk = ak.strip(), sk.strip()
+        if ak and sk:
+            pairs.append((ak, sk))
+
+    _append(os.environ.get("LOVART_ACCESS_KEY", ""), os.environ.get("LOVART_SECRET_KEY", ""))
+
+    for index in range(2, 11):
+        ak = os.environ.get(f"LOVART_ACCESS_KEY_{index}", "")
+        sk = os.environ.get(f"LOVART_SECRET_KEY_{index}", "")
+        if not ak and not sk:
+            continue
+        _append(ak, sk)
+
+    bulk_aks = os.environ.get("LOVART_ACCESS_KEYS", "").strip()
+    bulk_sks = os.environ.get("LOVART_SECRET_KEYS", "").strip()
+    if bulk_aks and bulk_sks:
+        aks = [part.strip() for part in bulk_aks.split(",") if part.strip()]
+        sks = [part.strip() for part in bulk_sks.split(",") if part.strip()]
+        for ak, sk in zip(aks, sks):
+            _append(ak, sk)
+
+    seen: set[tuple[str, str]] = set()
+    unique: list[tuple[str, str]] = []
+    for pair in pairs:
+        if pair not in seen:
+            seen.add(pair)
+            unique.append(pair)
+    return unique
+
+
+def is_lovart_limit_error(message: str) -> bool:
+    """并发已满、额度或频率受限时可切换下一组 Key。"""
+    if not message:
+        return False
+    markers = (
+        "concurrent task limit",
+        "rate limit",
+        "quota",
+        "too many requests",
+        "并发",
+        "上限",
+        "额度",
+        "频率",
+    )
+    lower = message.lower()
+    return any(marker in lower for marker in markers)
+
+
+def mask_access_key(access_key: str) -> str:
+    if len(access_key) <= 10:
+        return f"{access_key[:4]}…"
+    return f"{access_key[:6]}…{access_key[-4:]}"
+
+
 class LovartClient:
     def __init__(
         self,
