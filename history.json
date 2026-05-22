@@ -1,5 +1,25 @@
 [
   {
+    "id": "e3755227",
+    "timestamp": "2026-05-22T17:19:41",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"今天天气真好\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_702617817c0a46db8fa06bf9924cf20a.png"
+    ],
+    "variants_count": 1
+  },
+  {
+    "id": "4db7d3c8",
+    "timestamp": "2026-05-22T17:18:55",
+    "mode": "edit",
+    "prompt": "[文案修改] 把文字改成：冬天真热",
+    "input_image": "edit_input_4b5194ca70f745eaa2f24d39b813922b.png",
+    "output_image": "edit_output_07fdeb46cce04eb283a8cd8445a350fe.png",
+    "edit_type": "文案修改"
+  },
+  {
     "id": "d16511ac",
     "timestamp": "2026-05-22T11:29:08",
     "mode": "img2img",
