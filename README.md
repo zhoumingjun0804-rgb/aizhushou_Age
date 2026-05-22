@@ -10,7 +10,7 @@ AI 视觉设计助手：根据需求描述生成/变体图片，支持局部修�
 - **局部修图**：上传图片 + 选区，裁剪、缩放与合成（依赖 Pillow）
 - **项目组参考**：从 `projects/` 目录选择参考素材
 - **网页参考抓取**（可选）：需安装 Playwright Chromium
-- **多生图后端**：Lovart、即梦 CLI、ComfyUI、Stable Diffusion WebUI，由 `.env` 切换
+- **生图后端**：Lovart 龙虾（当前仅此）
 - **AI 关键词分析**：配置 DeepSeek / 通义 / Kimi / 豆包等任一 API Key 后启用
 
 ## 环境要求
@@ -34,7 +34,7 @@ python3 --version   # 需 >= 3.10
 
 # 3. 配置环境变量（首次）
 cp .env.example .env
-# 编辑 .env：至少按需填写生图后端 Key 或即梦路径、LLM Key
+# 编辑 .env：至少填写 Lovart Key；可选 LLM Key 用于 AI 关键词分析
 
 # 4. 启动（自动创建 venv、升级 pip、安装依赖）
 chmod +x start.sh
@@ -59,11 +59,7 @@ cd backend
 | 变量 | 说明 |
 |------|------|
 | `PORT` | 服务端口，默认 `8000` |
-| `IMAGE_BACKEND` | `auto` / `lovart` / `dreamina` / `comfyui` / `stable_diffusion` |
 | `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 主 Key；可用 `LOVART_ACCESS_KEY_2` 等配置备用，并发/额度受限时自动切换 |
-| `DREAMINA_BIN` | 即梦 CLI 路径，留空则从 PATH 查找 `dreamina` |
-| `COMFYUI_API_URL` / `COMFYUI_CHECKPOINT` | 本地 ComfyUI |
-| `SD_API_URL` | 本地 SD WebUI |
 | `DEEPSEEK_API_KEY` 等 | 至少配置一个，用于 AI 关键词分析 |
 
 完整项与注释见 [.env.example](./.env.example)。**请勿将 `.env` 提交到 Git。**
@@ -118,7 +114,7 @@ rm -rf backend/.venv
 ## 开发说明
 
 - 主逻辑：`backend/app.py`
-- 生图客户端：`backend/lovart_client.py`、`backend/comfyui_client.py`、`backend/sd_client.py`
+- 生图客户端：`backend/lovart_client.py`（`comfyui_client.py` / `sd_client.py` 保留未接入）
 - 切换 Python 大版本后务必删除 `backend/.venv` 再运行 `./start.sh`
 
 ## 相关文档

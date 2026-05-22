@@ -1,5 +1,17 @@
 [
   {
+    "id": "d16511ac",
+    "timestamp": "2026-05-22T11:29:08",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"空气清新\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_862803fd12d94379a981a80ca7c780bf.png",
+      "variant_f84c4f7d649a4961b7a588c0782f44ee.png"
+    ],
+    "variants_count": 2
+  },
+  {
     "id": "900defac",
     "timestamp": "2026-05-21T17:42:44",
     "mode": "img2img",

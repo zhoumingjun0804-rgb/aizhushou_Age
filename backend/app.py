@@ -15,7 +15,7 @@ import os
 import shutil
 import errno
 import threading
-import concurrent.futures
+from typing import Optional
 
 from lovart_client import (
     LovartClient,
@@ -24,9 +24,6 @@ from lovart_client import (
     load_lovart_credentials,
     mask_access_key,
 )
-from comfyui_client import ComfyUIClient, ComfyUIClientError
-from sd_client import StableDiffusionClient, SDClientError
-
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -49,28 +46,7 @@ def _load_env_file():
             os.environ[key] = value
 
 
-def _resolve_dreamina_bin():
-    env_bin = os.environ.get("DREAMINA_BIN", "").strip()
-    if env_bin:
-        return env_bin
-    detected = shutil.which("dreamina")
-    if detected:
-        return detected
-    return "dreamina"
-
-
-def _dreamina_command_path():
-    dreamina_path = pathlib.Path(DREAMINA_BIN)
-    if dreamina_path.is_file():
-        return str(dreamina_path)
-    detected = shutil.which(DREAMINA_BIN)
-    if detected:
-        return detected
-    return None
-
-
 _load_env_file()
-DREAMINA_BIN = _resolve_dreamina_bin()
 PORT = int(os.environ.get("PORT", "8000"))
 LOVART_CREDENTIALS = load_lovart_credentials()
 LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
@@ -86,11 +62,6 @@ LOVART_QUALITY_HINT = os.environ.get(
     "适合手机屏幕与网页展示，宽度约1200到1536像素，细节清晰但不必4K",
 ).strip()
 LOVART_GENERATION_LOCK = threading.Lock()
-COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
-COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
-SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
-LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
-IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "auto").strip().lower()
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -308,6 +279,7 @@ def list_projects():
                 "display_name": meta.get("display_name", p.name),
                 "style_tags": meta.get("style_tags", []),
                 "description": meta.get("description", ""),
+                "lovart_project_id": meta.get("lovart_project_id", ""),
                 "count": len(images)
             })
     return projects
@@ -341,36 +313,55 @@ def save_project_meta(project_name, **updates):
     )
 
 
+def _sync_lovart_project_title(client: LovartClient, project_id: str, title: str) -> None:
+    if not title:
+        return
+    try:
+        current = client.get_project_name(project_id)
+        if not current or current.lower() == "untitled":
+            client.rename_project(project_id, title)
+    except LovartError:
+        pass
+
+
 def ensure_lovart_project(local_project: str, client: LovartClient) -> str:
-    """本地项目组（如「画啦啦」）绑定并复用同一个 Lovart project_id。"""
+    """本地项目组绑定一个 Lovart project_id；已绑定则只校验复用，不再 project/save 建新项目。"""
     if not local_project:
-        return ""
+        return os.environ.get("LOVART_DEFAULT_PROJECT_ID", "").strip()
 
     proj_dir = PROJECTS_DIR / local_project
-    if not proj_dir.is_dir():
-        return ""
+    proj_dir.mkdir(parents=True, exist_ok=True)
 
     meta = get_project_meta(local_project) or {}
     title = (meta.get("display_name") or local_project).strip()
     existing = (meta.get("lovart_project_id") or "").strip()
 
-    if existing:
-        saved_id = client.save_project(project_id=existing, title=title)
-        if saved_id:
-            if saved_id != existing:
-                save_project_meta(local_project, lovart_project_id=saved_id)
-            return saved_id
-        print(f"[Lovart] 项目组 {local_project} 原绑定失效，将创建新项目")
+    if existing and client.validate_project(existing):
+        _sync_lovart_project_title(client, existing, title)
+        print(f"[Lovart] 复用项目组「{local_project}」→ {existing[:16]}…")
+        return existing
 
-    new_id = client.save_project(title=title)
+    if existing:
+        print(f"[Lovart] 项目组「{local_project}」原绑定 {existing[:12]}… 已失效，将新建")
+
+    new_id = client.create_project(title=title)
     if new_id:
         save_project_meta(
             local_project,
             lovart_project_id=new_id,
             display_name=title,
         )
-        print(f"[Lovart] 项目组「{title}」已绑定 Lovart 项目 {new_id[:12]}…")
+        print(f"[Lovart] 项目组「{local_project}」首次绑定 Lovart 项目 {new_id[:16]}…")
     return new_id or ""
+
+
+def lovart_project_required_error(project: str) -> Optional[str]:
+    if (project or "").strip() or os.environ.get("LOVART_DEFAULT_PROJECT_ID", "").strip():
+        return None
+    return (
+        "生图请先选择项目组；图片将归入该组绑定的 Lovart 项目。"
+        "若要用 Lovart 网页里已有文件夹，请在 projects/<组名>/project.json 填写 lovart_project_id。"
+    )
 
 def get_project_images(project_name):
     """获取项目的所有图片"""
@@ -555,94 +546,9 @@ def expand_prompt_from_summary(summary, project_meta=None):
     return "，".join(deduped)
 
 
-# ─── 即梦 CLI 调用 ──────────────────────────────────────────────
-def call_dreamina(mode, prompt, image_paths=None, model_version=None, resolution=None, ratio="1:1", poll_timeout=90):
-    """调用即梦 CLI"""
-    dreamina_cmd = _dreamina_command_path()
-    if not dreamina_cmd:
-        return None, f"未找到即梦 CLI: {DREAMINA_BIN}，请安装 dreamina 或设置 DREAMINA_BIN"
-
-    if mode == "text2img":
-        cmd = [dreamina_cmd, "text2image", "--prompt", prompt, "--ratio", ratio, "--poll", str(poll_timeout)]
-        if model_version:
-            cmd += ["--model_version", model_version]
-    else:
-        cmd = [dreamina_cmd, "image2image"]
-        if isinstance(image_paths, list):
-            cmd += ["--images", ",".join(str(p) for p in image_paths)]
-        else:
-            cmd += ["--images", str(image_paths)]
-        cmd += ["--prompt", prompt, "--ratio", ratio, "--poll", str(poll_timeout)]
-        if model_version:
-            cmd += ["--model_version", model_version]
-        if resolution:
-            cmd += ["--resolution_type", resolution]
-    
-    print(f"[CMD] {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    print(f"[STDOUT] {result.stdout[:500]}")
-    if result.stderr:
-        print(f"[STDERR] {result.stderr[:300]}")
-    
-    if result.returncode != 0:
-        return None, result.stderr or "即梦生成失败"
-    
-    try:
-        data = json.loads(result.stdout.strip())
-    except json.JSONDecodeError:
-        for line in result.stdout.strip().split('\n'):
-            if line.strip().startswith('{'):
-                try:
-                    data = json.loads(line.strip())
-                    break
-                except:
-                    continue
-        else:
-            return None, f"无法解析即梦输出: {result.stdout[:200]}"
-    
-    try:
-        images = data.get("result_json", {}).get("images", [])
-        if not images:
-            return None, "即梦未返回图片"
-        return images[0].get("image_url", ""), None
-    except Exception as e:
-        return None, f"解析失败: {e}"
-
-
-def _resolve_image_backend():
-    backend = IMAGE_BACKEND
-    if backend == "auto":
-        if LOVART_CREDENTIALS:
-            return "lovart"
-        return "dreamina"
-    return backend
-
-
 def normalize_image_backend(value=None):
-    backend = (value or "").strip().lower()
-    aliases = {
-        "sd": "stable_diffusion",
-        "stable-diffusion": "stable_diffusion",
-        "stable diffusion": "stable_diffusion",
-    }
-    backend = aliases.get(backend, backend)
-    if backend:
-        return backend
-    return _resolve_image_backend()
-
-
-def ratio_to_size(ratio: str):
-    mapping = {
-        "1:1": (1024, 1024),
-        "16:9": (1344, 768),
-        "9:16": (768, 1344),
-        "4:3": (1152, 864),
-        "3:4": (864, 1152),
-        "4:5": (896, 1120),
-        "2:3": (832, 1248),
-        "21:9": (1536, 640),
-    }
-    return mapping.get(ratio, (1024, 1024))
+    """当前仅支持 Lovart 生图。"""
+    return "lovart"
 
 
 def _normalize_lovart_error(message):
@@ -740,70 +646,23 @@ def call_lovart(
     return None, last_error or "Lovart 生成失败"
 
 
-def call_comfyui(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
-    if mode == "img2img" and image_paths:
-        return None, "ComfyUI 当前仅支持文生图，请先去掉参考图或改用 Lovart / Stable Diffusion"
-    if not COMFYUI_CHECKPOINT:
-        return None, "未配置 COMFYUI_CHECKPOINT（ComfyUI 模型文件名）"
-
-    width, height = ratio_to_size(ratio)
-    client = ComfyUIClient(
-        base_url=COMFYUI_API_URL,
-        timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
-    )
-    try:
-        return client.generate_image(prompt, width, height, image_paths=image_paths)
-    except ComfyUIClientError as e:
-        return None, e.message
-
-
-def call_stable_diffusion(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
-    width, height = ratio_to_size(ratio)
-    client = StableDiffusionClient(
-        base_url=SD_API_URL,
-        timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
-    )
-    try:
-        return client.generate_image(prompt, width, height, image_paths=image_paths if mode == "img2img" else None)
-    except SDClientError as e:
-        return None, e.message
-
-
 def call_image_generator(
     mode,
     prompt,
     image_paths=None,
-    model_version=None,
-    resolution=None,
     ratio="1:1",
     poll_timeout=90,
-    image_backend=None,
     local_project=None,
     lovart_project_id=None,
 ):
-    backend = normalize_image_backend(image_backend)
-    if backend == "lovart":
-        return call_lovart(
-            mode,
-            prompt,
-            image_paths=image_paths,
-            ratio=ratio,
-            poll_timeout=poll_timeout,
-            local_project=local_project,
-            lovart_project_id=lovart_project_id,
-        )
-    if backend == "comfyui":
-        return call_comfyui(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
-    if backend == "stable_diffusion":
-        return call_stable_diffusion(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
-    return call_dreamina(
+    return call_lovart(
         mode,
         prompt,
         image_paths=image_paths,
-        model_version=model_version,
-        resolution=resolution,
         ratio=ratio,
         poll_timeout=poll_timeout,
+        local_project=local_project,
+        lovart_project_id=lovart_project_id,
     )
 
 
@@ -813,15 +672,13 @@ def generate_variants(
     count=4,
     mode="text2img",
     ratio="1:1",
-    image_backend=None,
     local_project=None,
 ):
-    """生成多张变体"""
-    backend = normalize_image_backend(image_backend)
-    poll_timeout = LOVART_POLL_TIMEOUT if backend == "lovart" else LOCAL_GENERATION_TIMEOUT
+    """生成多张变体（Lovart，串行）"""
+    poll_timeout = LOVART_POLL_TIMEOUT
 
     lovart_project_id = None
-    if backend == "lovart" and local_project and LOVART_CREDENTIALS:
+    if local_project and LOVART_CREDENTIALS:
         ak, sk = LOVART_CREDENTIALS[0]
         client = LovartClient(
             access_key=ak,
@@ -836,26 +693,28 @@ def generate_variants(
             mode,
             prompt,
             image_paths,
-            model_version="4.6",
             ratio=ratio,
             poll_timeout=poll_timeout,
-            image_backend=backend,
             local_project=local_project,
             lovart_project_id=lovart_project_id,
         )
         return {"idx": idx, "url": image_url, "error": error}
 
-    if backend == "lovart":
-        return [generate_one(i) for i in range(count)]
+    return [generate_one(i) for i in range(count)]
 
-    results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(count, 4)) as executor:
-        futures = [executor.submit(generate_one, i) for i in range(count)]
-        for future in concurrent.futures.as_completed(futures):
-            results.append(future.result())
 
-    results.sort(key=lambda x: x["idx"])
-    return results
+def format_url_error(exc: Exception, context: str = "") -> str:
+    """将 urllib 底层错误转成可操作的提示。"""
+    msg = str(getattr(exc, "reason", None) or exc)
+    if "Connection refused" in msg or "Errno 61" in msg:
+        prefix = f"{context}：" if context else ""
+        return (
+            f"{prefix}连接被拒绝（目标地址无服务响应）。"
+            "请确认 ./start.sh 已启动、.env 中 LOVART_BASE_URL 正确，且网络可访问 Lovart。"
+        )
+    if context:
+        return f"{context}：{msg}"
+    return msg
 
 
 def download_image(url, save_path):
@@ -864,10 +723,13 @@ def download_image(url, save_path):
         print(f"[DL] Copied local file -> {save_path}")
         return
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, context=ssl_ctx, timeout=120) as resp:
-        data = resp.read()
-        with open(save_path, 'wb') as f:
-            f.write(data)
+    try:
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=120) as resp:
+            data = resp.read()
+            with open(save_path, 'wb') as f:
+                f.write(data)
+    except (urllib.error.URLError, ssl.SSLError, OSError) as e:
+        raise RuntimeError(format_url_error(e, f"下载图片失败 ({url[:80]})")) from e
     print(f"[DL] Downloaded {len(data)} bytes -> {save_path}")
 
 
@@ -1060,7 +922,6 @@ def composite_region_blend(base_path, overlay_path, output_path, x, y, w, h, fea
 def call_img2img_with_retry(
     input_path,
     prompt,
-    image_backend,
     ratio="1:1",
     max_retries=3,
     local_project=None,
@@ -1072,8 +933,6 @@ def call_img2img_with_retry(
                 mode="img2img",
                 prompt=prompt,
                 image_paths=[str(input_path)],
-                model_version="4.6",
-                image_backend=image_backend,
                 ratio=ratio,
                 local_project=local_project,
             )
@@ -1087,7 +946,7 @@ def call_img2img_with_retry(
     return None, last_error
 
 
-def edit_image_regions(base_path, regions, edit_type, keep_elements, image_backend, ratio, local_project=None):
+def edit_image_regions(base_path, regions, edit_type, keep_elements, ratio, local_project=None):
     """对多个选区依次裁剪、修图、仅将结果融合回选区，保持原图尺寸与选区外样式"""
     from PIL import Image
 
@@ -1115,7 +974,7 @@ def edit_image_regions(base_path, regions, edit_type, keep_elements, image_backe
         crop_ratio = bbox_to_ratio(cw, ch)
         region_prompt = build_edit_prompt(desc, edit_type, keep_elements, region_only=True)
         image_url, error = call_img2img_with_retry(
-            crop_path, region_prompt, image_backend, ratio=crop_ratio, local_project=local_project
+            crop_path, region_prompt, ratio=crop_ratio, local_project=local_project
         )
         if not image_url:
             return None, f"选区 {idx + 1} 修图失败: {error or '未知错误'}"
@@ -1272,6 +1131,8 @@ HTML_PAGE = r"""<!DOCTYPE html>
         .project-refs-hint { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 0 4px; }
         .project-bar select:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
         .project-bar select option { background: #1a1a3e; color: #eee; }
+        .backend-static { padding: 8px 12px; border-radius: 8px; font-size: 14px; color: rgba(255,255,255,0.85);
+                          background: rgba(139,92,246,0.12); border: 1px solid rgba(167,139,250,0.25); }
         .project-info { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 6px; padding-left: 82px; }
         
         .project-images-grid { display: none; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 12px; 
@@ -1338,9 +1199,10 @@ HTML_PAGE = r"""<!DOCTYPE html>
         /* 关键词展示区域 */
         .keyword-section { margin-top: 16px; padding: 16px; background: rgba(139,92,246,0.06); border-radius: 14px;
                            border: 1px solid rgba(139,92,246,0.25); }
-        .keyword-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .keyword-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
         .keyword-header span:first-child { font-size: 14px; font-weight: 600; color: #a78bfa; }
-        .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); }
+        .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); flex: 1; min-width: 120px; }
+        .reanalyze-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; flex-shrink: 0; }
         .keyword-textarea { width: 100%; min-height: 80px; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
                             font-size: 14px; line-height: 1.6; resize: vertical; background: rgba(255,255,255,0.04);
                             color: rgba(255,255,255,0.85);
@@ -1591,11 +1453,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
                 <div class="form-row">
                     <div class="form-item full-width">
                         <label>生图模型</label>
-                        <select id="imageBackendSelect">
-                            <option value="lovart">Lovart 龙虾</option>
-                            <option value="comfyui">ComfyUI</option>
-                            <option value="stable_diffusion">Stable Diffusion</option>
-                        </select>
+                        <div class="backend-static">Lovart 龙虾（当前仅支持）</div>
                     </div>
                 </div>
                 
@@ -1607,6 +1465,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
                     <div class="keyword-header">
                         <span>📝 AI 分析的关键词</span>
                         <span class="keyword-hint">可手动修改后生成</span>
+                        <button type="button" class="btn-outline reanalyze-btn" onclick="analyzeKeyword()">🔄 重新分析</button>
                     </div>
                     <textarea id="keywordInput" class="keyword-textarea" placeholder="点击上方按钮生成关键词..."></textarea>
                     <button class="generate-btn" onclick="generateWithKeyword()">✨ 生成魔法图</button>
@@ -1628,7 +1487,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
             <!-- 操作按钮 -->
             <div class="actions" id="actionsSection">
                 <button class="action-btn btn-primary" onclick="downloadSelected()">💾 下载选中</button>
-                <button class="action-btn btn-green" onclick="upscaleSelected('2k')">🔍 2K 放大</button>
+                <button class="action-btn btn-green" style="display:none" title="暂不支持" onclick="upscaleSelected('2k')">🔍 2K 放大</button>
                 <button class="action-btn btn-outline" onclick="resetAll()">🔄 重新开始</button>
             </div>
         </div>
@@ -1755,24 +1614,15 @@ function switchTab(tab) {
 // 初始化
 window.onload = function() {
     updateProjectRefsVisibility();
-    initImageBackendSelect();
     loadProjects();
     loadHistory();
 };
 
-function initImageBackendSelect() {
-    var sel = document.getElementById('imageBackendSelect');
-    if (!sel) return;
-    var saved = localStorage.getItem('imageBackendSelect');
-    if (saved) sel.value = saved;
-    sel.addEventListener('change', function() {
-        localStorage.setItem('imageBackendSelect', sel.value);
-    });
-}
-
-function getSelectedImageBackend() {
-    var sel = document.getElementById('imageBackendSelect');
-    return sel ? sel.value : 'lovart';
+function requireLovartProjectSelected() {
+    var project = document.getElementById('projectSelect').value;
+    if (project) return true;
+    alert('生图请先选择项目组。同组多次生成会进入 Lovart 中同一个项目。\\n\\n若要用 Lovart 网页里已有项目，在 projects/<组名>/project.json 填写 lovart_project_id。');
+    return false;
 }
 
 var DESIGN_TYPE_RATIO_DEFAULTS = {
@@ -1854,6 +1704,7 @@ async function loadProjects() {
             opt.textContent = p.display_name + ' (' + p.count + '张参考)';
             opt.dataset.tags = (p.style_tags || []).join(', ');
             opt.dataset.desc = p.description || '';
+            opt.dataset.lovartId = p.lovart_project_id || '';
             sel.appendChild(opt);
         });
     } catch(e) {
@@ -1878,7 +1729,11 @@ function selectProject() {
             tags: opt.dataset.tags,
             desc: opt.dataset.desc
         };
+        var lovartHint = opt.dataset.lovartId
+            ? '已绑定 Lovart 项目：' + opt.dataset.lovartId.slice(0, 16) + '…。'
+            : '首次 Lovart 生图将自动绑定到同名项目。';
         document.getElementById('projectInfo').textContent = 
+            lovartHint + ' ' +
             (currentProject.tags ? '风格标签：' + currentProject.tags + '。' : '') +
             (currentProject.desc || '');
         // 加载项目图片
@@ -2072,7 +1927,7 @@ async function analyzeKeyword() {
     
     document.getElementById('loadingCard').style.display = 'block';
     document.querySelector('.loading-text').textContent = 'AI 正在分析关键词...';
-    document.querySelector('.analyze-btn').disabled = true;
+    document.querySelectorAll('.analyze-btn, .reanalyze-btn').forEach(function(btn) { btn.disabled = true; });
     
     try {
         var formData = new FormData();
@@ -2087,19 +1942,16 @@ async function analyzeKeyword() {
             return;
         }
         
-        // 显示关键词区域，填充内容
         document.getElementById('keywordSection').style.display = 'block';
         document.getElementById('keywordInput').value = data.prompt || '';
-        
-        // 隐藏分析按钮，显示关键词区域
-        document.querySelector('.analyze-btn').style.display = 'none';
+        document.querySelector('.analyze-btn').textContent = '🔄 重新分析关键词';
         
     } catch(e) {
         alert('分析请求失败: ' + e.message);
     }
     
     document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.analyze-btn').disabled = false;
+    document.querySelectorAll('.analyze-btn, .reanalyze-btn').forEach(function(btn) { btn.disabled = false; });
 }
 
 // 使用关键词生成图片
@@ -2110,6 +1962,7 @@ async function generateWithKeyword() {
         alert('请先分析关键词或手动填写');
         return;
     }
+    if (!requireLovartProjectSelected()) return;
     
     // 处理尺寸
     var ratioSel = document.getElementById('ratioSelect');
@@ -2129,7 +1982,6 @@ async function generateWithKeyword() {
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
     formData.append('count', '3');
     formData.append('ratio', ratio);
-    formData.append('image_backend', getSelectedImageBackend());
     // 添加上传的参考图
     for (var i = 0; i < uploadedRefImages.length; i++) {
         formData.append('ref_image_' + i, uploadedRefImages[i]);
@@ -2168,6 +2020,7 @@ async function generateVariants() {
         alert('请填写主标题');
         return;
     }
+    if (!requireLovartProjectSelected()) return;
     
     var summary = {
         '设计类型': designType,
@@ -2196,7 +2049,6 @@ async function generateVariants() {
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
     formData.append('count', '3');
     formData.append('ratio', ratio);
-    formData.append('image_backend', getSelectedImageBackend());
     
     try {
         var res = await fetch('/generate-variants', { method: 'POST', body: formData });
@@ -2571,7 +2423,6 @@ async function startEditImage() {
             editType: editType,
             description: editDesc,
             keepElements: keepElements,
-            image_backend: localStorage.getItem('imageBackendSelect') || 'lovart',
             project: currentProject ? currentProject.name : ''
         };
         if (regions.length > 0) {
@@ -3204,10 +3055,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         project = fields.get('project', '')
         count = int(fields.get('count', '3'))
         ratio = fields.get('ratio', '1:1')
-        image_backend = fields.get('image_backend', '')
-
         if not prompt:
             self._send_json({"error": "请提供关键词"})
+            return
+
+        lovart_err = lovart_project_required_error(project)
+        if lovart_err:
+            self._send_json({"error": lovart_err})
             return
 
         # 添加项目参考图（只添加选中的图片）
@@ -3261,7 +3115,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 count,
                 mode,
                 ratio,
-                image_backend=image_backend,
                 local_project=project or None,
             )
 
@@ -3274,7 +3127,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         download_image(r["url"], output_path)
                         variants.append({"filename": output_filename, "error": None})
                     except Exception as e:
-                        variants.append({"filename": None, "error": str(e)})
+                        variants.append({"filename": None, "error": format_url_error(e)})
                 else:
                     variants.append({"filename": None, "error": r.get("error", "生成失败")})
 
@@ -3298,7 +3151,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self._send_json({"error": str(e)})
+            self._send_json({"error": format_url_error(e, "生成失败")})
 
     def _handle_generate_variants(self):
         """生成多张变体"""
@@ -3315,7 +3168,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         project = fields.get('project', '')
         count = int(fields.get('count', '3'))
         ratio = fields.get('ratio', '1:1')
-        image_backend = fields.get('image_backend', '')
         uploaded_file = fields.get('file')
 
         try:
@@ -3325,6 +3177,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         # 获取项目元数据
         project_meta = get_project_meta(project) if project else None
+
+        lovart_err = lovart_project_required_error(project)
+        if lovart_err:
+            self._send_json({"error": lovart_err})
+            return
 
         # 构建 prompt
         prompt = expand_prompt_from_summary(summary, project_meta)
@@ -3389,7 +3246,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 count,
                 mode,
                 ratio,
-                image_backend=image_backend,
                 local_project=project or None,
             )
 
@@ -3402,7 +3258,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         download_image(r["url"], output_path)
                         variants.append({"filename": output_filename, "error": None})
                     except Exception as e:
-                        variants.append({"filename": None, "error": str(e)})
+                        variants.append({"filename": None, "error": format_url_error(e)})
                 else:
                     variants.append({"filename": None, "error": r.get("error", "生成失败")})
 
@@ -3427,78 +3283,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self._send_json({"error": str(e)})
+            self._send_json({"error": format_url_error(e, "生成失败")})
 
     def _handle_upscale(self):
-        """图片放大"""
-        content_length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(content_length)
-        try:
-            data = json.loads(body.decode('utf-8'))
-        except:
-            self._send_json({"error": "无效请求"})
-            return
-
-        filename = data.get('filename', '')
-        resolution = data.get('resolution', '2k')
-
-        if not filename:
-            self._send_json({"error": "未指定图片"})
-            return
-
-        image_path = OUTPUT_DIR / filename
-        if not image_path.exists():
-            self._send_json({"error": "图片不存在"})
-            return
-
-        try:
-            dreamina_cmd = _dreamina_command_path()
-            if not dreamina_cmd:
-                self._send_json({"error": f"未找到即梦 CLI: {DREAMINA_BIN}，请安装 dreamina 或设置 DREAMINA_BIN"})
-                return
-
-            cmd = [dreamina_cmd, "image_upscale", "--image", str(image_path),
-                   "--resolution_type", resolution, "--poll", "90"]
-
-            print(f"[CMD] {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-            if result.returncode != 0:
-                self._send_json({"error": result.stderr or "放大失败"})
-                return
-
-            try:
-                resp = json.loads(result.stdout.strip())
-                images = resp.get("result_json", {}).get("images", [])
-                if not images:
-                    self._send_json({"error": "放大未返回图片"})
-                    return
-                image_url = images[0].get("image_url", "")
-            except:
-                self._send_json({"error": "解析放大结果失败"})
-                return
-
-            output_filename = f"upscale_{uuid.uuid4().hex}.png"
-            output_path = OUTPUT_DIR / output_filename
-            download_image(image_url, output_path)
-
-            entry = {
-                "id": uuid.uuid4().hex[:8],
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "mode": "upscale",
-                "prompt": f"放大到 {resolution}",
-                "input_image": filename,
-                "output_image": output_filename,
-                "upscale": resolution,
-            }
-            add_history(entry)
-
-            self._send_json({"output_image": output_filename})
-
-        except subprocess.TimeoutExpired:
-            self._send_json({"error": "放大超时"})
-        except Exception as e:
-            self._send_json({"error": str(e)})
+        """图片放大（暂仅 Lovart，2K 放大功能未开放）"""
+        self._send_json({"error": "2K 放大功能暂未开放（当前仅支持 Lovart 生图/修图）"})
 
     def _serve_file(self, directory, filename):
         filepath = directory / filename.split('?')[0]
@@ -3538,7 +3327,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         description = data.get('description', '')
         edit_type = data.get('editType', '文案修改')
         keep_elements = data.get('keepElements', '')
-        image_backend = data.get('image_backend', '')
         local_project = (data.get('project') or '').strip() or None
         regions = data.get('regions') or []
 
@@ -3590,7 +3378,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 regions,
                 edit_type,
                 keep_elements,
-                image_backend,
                 ratio,
                 local_project=local_project,
             )
@@ -3608,7 +3395,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             image_url, error = call_img2img_with_retry(
-                input_path, prompt, image_backend, ratio=ratio, local_project=local_project
+                input_path, prompt, ratio=ratio, local_project=local_project
             )
             if not image_url:
                 self._send_json({"error": error or "修图失败，请重试"})
@@ -3674,8 +3461,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    dreamina_cmd = _dreamina_command_path()
-    image_backend = _resolve_image_backend()
     socketserver.TCPServer.allow_reuse_address = True
 
     httpd = None
@@ -3702,20 +3487,11 @@ if __name__ == '__main__':
     print(f"   打开浏览器访问: http://localhost:{listen_port}")
     print(f"   项目目录: {BASE_DIR}")
     print(f"   项目组目录: {PROJECTS_DIR}")
-    print(f"   服务端默认生图后端: {image_backend}")
-    print(f"   页面可切换生图模型: Lovart / ComfyUI / Stable Diffusion")
-    if image_backend == "lovart":
-        key_count = len(LOVART_CREDENTIALS)
-        print(f"   Lovart API: {LOVART_BASE_URL}（已配置 {key_count} 组 Key，受限时自动切换）")
-    elif image_backend == "dreamina":
-        print(f"   即梦 CLI: {dreamina_cmd or DREAMINA_BIN}")
-        if not dreamina_cmd:
-            print("   提示: 未检测到 dreamina，生图/放大功能需要先安装并配置 DREAMINA_BIN")
-    if COMFYUI_CHECKPOINT:
-        print(f"   ComfyUI: {COMFYUI_API_URL} / {COMFYUI_CHECKPOINT}")
-    else:
-        print("   ComfyUI: 未配置 COMFYUI_CHECKPOINT")
-    print(f"   Stable Diffusion: {SD_API_URL}")
+    key_count = len(LOVART_CREDENTIALS)
+    print(f"   生图后端: Lovart（当前仅此）")
+    print(f"   Lovart API: {LOVART_BASE_URL}（已配置 {key_count} 组 Key，受限时自动切换）")
+    if not LOVART_CREDENTIALS:
+        print("   提示: 未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY，生图将不可用")
     if not any([DEEPSEEK_API_KEY, QIANWEN_API_KEY, KIMI_API_KEY, DOUBAO_API_KEY]):
         print("   提示: 未配置大模型 API Key，关键词分析将使用本地规则拼接")
     print(f"   功能: 需求解析 · 多图变体 · 项目组选择 · 风格参考\n")

@@ -151,9 +151,9 @@ class LovartClient:
         project_type: int = 3,
         title: str = "",
     ) -> str:
-        """创建或更新 Lovart 项目；传入已有 project_id 时复用同一项目。"""
+        """仅用于创建新项目（project_id 为空）。复用已有项目请用 validate + send，勿重复 save。"""
         body = {
-            "project_id": project_id or "",
+            "project_id": "",
             "canvas": "",
             "project_cover_list": [],
             "pic_count": 0,
@@ -162,10 +162,47 @@ class LovartClient:
         if title:
             body["project_name"] = title
         result = self._request("POST", f"{self.prefix}/project/save", body=body)
-        return result.get("project_id", "") or project_id
+        return result.get("project_id", "")
 
-    def create_project(self, project_type: int = 3) -> str:
-        return self.save_project(project_type=project_type)
+    def rename_project(self, project_id: str, name: str) -> dict:
+        return self._request(
+            "POST",
+            f"{self.prefix}/project/save",
+            body={"action": "rename", "project_id": project_id, "project_name": name},
+        )
+
+    def validate_project(self, project_id: str) -> bool:
+        try:
+            result = self._request(
+                "GET",
+                f"{self.prefix}/project/validate",
+                params={"project_id": project_id},
+            )
+            return bool(result.get("valid"))
+        except LovartError:
+            return False
+
+    def get_project_name(self, project_id: str) -> str:
+        try:
+            result = self._request(
+                "GET",
+                f"{self.prefix}/project/validate",
+                params={"project_id": project_id},
+            )
+            return (result.get("project_name") or "").strip()
+        except LovartError:
+            return ""
+
+    def create_project(self, project_type: int = 3, title: str = "") -> str:
+        project_id = self.save_project(project_type=project_type, title=title)
+        if project_id and title:
+            try:
+                current = self.get_project_name(project_id)
+                if not current or current.lower() == "untitled":
+                    self.rename_project(project_id, title)
+            except LovartError:
+                pass
+        return project_id
 
     def upload_file(self, local_path: str) -> str:
         with open(local_path, "rb") as f:
@@ -268,10 +305,12 @@ class LovartClient:
         project_id: Optional[str] = None,
         project_title: str = "",
     ) -> Tuple[Optional[str], Optional[str]]:
-        if not project_id:
-            project_id = self.save_project(title=project_title)
-        if not project_id:
+        resolved_id = (project_id or "").strip()
+        if not resolved_id:
+            resolved_id = self.create_project(title=project_title)
+        if not resolved_id:
             return None, "Lovart 创建项目失败"
+        project_id = resolved_id
 
         try:
             self.set_mode(unlimited=False)
