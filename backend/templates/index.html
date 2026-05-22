@@ -418,7 +418,7 @@
 <body>
     <div class="container">
         <div class="app-topbar">
-            <p class="credit">✦ AI 视觉设计助手 v4 ✦</p>
+            <p class="credit" id="appCredit">✦ AI 视觉设计助手 v4 ✦</p>
         </div>
         <nav class="nav-primary" aria-label="主要功能">
             <div class="nav-primary-tabs">
@@ -443,7 +443,7 @@
                 <div class="project-bar">
                     <div class="project-bar-field">
                         <label>📁 项目组</label>
-                        <select id="projectSelect" onchange="onProjectOrDesignTypeChange()">
+                        <select id="projectSelect" onchange="onProjectSelectChange()">
                             <option value="">请选择项目组</option>
                         </select>
                     </div>
@@ -451,13 +451,6 @@
                         <label>设计类型</label>
                         <select id="designType" onchange="onDesignTypeChange()">
                             <option value="">请选择设计类型</option>
-                            <option value="海报">海报</option>
-                            <option value="传单">传单</option>
-                            <option value="Banner">Banner</option>
-                            <option value="朋友圈图">朋友圈图</option>
-                            <option value="公众号封面">公众号封面</option>
-                            <option value="PPT封面">PPT封面</option>
-                            <option value="其他">其他</option>
                         </select>
                     </div>
                 </div>
@@ -697,7 +690,7 @@
         <div class="card tab-content" id="multiTab">
             <div class="multi-section">
                 <h3>📐 开屏导出</h3>
-                <p class="multi-hint">上传一张图片，按系统预设的 <strong>9 种开屏尺寸</strong> 等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。尺寸可在 <code>backend/output_sizes.json</code> 中修改。</p>
+                <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。</p>
                 <div class="multi-sizes-list" id="multiSizesList"></div>
                 <div class="multi-upload-zone" id="multiUploadZone" onclick="document.getElementById('multiImageInput').click()">
                     <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
@@ -855,6 +848,61 @@ var selectedVariant = null;
 var variants = [];
 var editImageData = null;
 
+var currentProjectCatalog = '';
+
+function getSelectedProjectName() {
+    var sel = document.getElementById('projectSelect');
+    return sel && sel.value ? sel.value : '';
+}
+
+function getSelectedProjectMeta() {
+    var sel = document.getElementById('projectSelect');
+    var opt = sel && sel.selectedOptions[0];
+    if (!opt || !opt.value) return null;
+    return {
+        name: opt.value,
+        displayName: opt.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim(),
+        catalog: opt.dataset.catalog || 'static_types',
+        productType: opt.dataset.productType || 'xdt',
+        tags: opt.dataset.tags || '',
+        desc: opt.dataset.desc || ''
+    };
+}
+
+function apiProjectQuery() {
+    var p = getSelectedProjectName();
+    return p ? 'project=' + encodeURIComponent(p) : '';
+}
+
+function applyProductBranding() {
+    var meta = getSelectedProjectMeta();
+    var label = meta ? meta.displayName : 'AI 视觉设计助手';
+    var credit = document.getElementById('appCredit');
+    if (credit) credit.textContent = '✦ AI 视觉设计助手 · ' + label + ' ✦';
+    document.title = 'AI 视觉设计助手 · ' + label;
+}
+
+function updateMultiHint(count) {
+    var hint = document.getElementById('multiHint');
+    if (!hint) return;
+    var n = count || 0;
+    var meta = getSelectedProjectMeta();
+    var name = meta ? meta.displayName : '当前项目组';
+    var cfg = meta && meta.productType === 'hll'
+        ? '<code>backend/output_sizes_hll.json</code>'
+        : '<code>backend/output_sizes.json</code>';
+    hint.innerHTML = '上传一张图片，按 <strong>' + name + '</strong> 预设的 <strong>' +
+        n + ' 种开屏尺寸</strong> 等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。尺寸配置见 ' + cfg + '。';
+}
+
+function defaultProjectFromUrl() {
+    var p = new URLSearchParams(window.location.search);
+    var t = (p.get('type') || '').trim().toLowerCase();
+    if (t === 'hll' || t === '画啦啦') return '画啦啦';
+    if (t === 'xdt' || t === '小灯塔') return '小灯塔';
+    return p.get('project') || '';
+}
+
 // Tab 切换
 function switchTab(tab, btnEl) {
     document.querySelectorAll('.tab-btn, .tab-btn-tool').forEach(function(btn) { btn.classList.remove('active'); });
@@ -867,9 +915,11 @@ function switchTab(tab, btnEl) {
 
 // 初始化
 window.onload = function() {
-    updateProjectRefsVisibility();
     initImageBackendSelect();
-    loadProjects();
+    loadProjects().then(function() {
+        applyProductBranding();
+        updateProjectRefsVisibility();
+    });
     loadHistory();
     initMultiUploadZone();
     loadMultiSizePresets();
@@ -887,6 +937,22 @@ function sanitizeDownloadNamePart(text) {
 function getRequirementName() {
     var el = document.getElementById('requirementName');
     return sanitizeDownloadNamePart(el && el.value);
+}
+
+function getDesignTypeLabel() {
+    var sel = document.getElementById('designType');
+    if (!sel || !sel.value) return '';
+    var opt = sel.selectedOptions[0];
+    if (opt) return opt.textContent.replace(/\s*\(\d+张参考\)\s*$/, '').trim();
+    return sel.value;
+}
+
+function appendProjectContext(formData) {
+    if (!formData || !formData.append) return;
+    var proj = getSelectedProjectName();
+    if (proj) formData.append('project', proj);
+    var meta = getSelectedProjectMeta();
+    if (meta && meta.productType) formData.append('type', meta.productType);
 }
 
 function buildVariantDownloadName(v) {
@@ -954,17 +1020,10 @@ function getSelectedImageBackend() {
     return sel ? sel.value : 'lovart';
 }
 
-var DESIGN_TYPE_RATIO_DEFAULTS = {
-    '海报': '9:16',
-    '传单': '9:16',
-    '朋友圈图': '1:1',
-    '公众号封面': '16:9',
-    'Banner': '16:9',
-    'PPT封面': '16:9'
-};
+var DESIGN_TYPE_RATIO_DEFAULTS = {};
 
 function shouldShowProjectRefs() {
-    var project = document.getElementById('projectSelect').value;
+    var project = getSelectedProjectName();
     var designType = document.getElementById('designType').value;
     return !!(project && designType);
 }
@@ -993,11 +1052,58 @@ function clearProjectRefs() {
 function onDesignTypeChange() {
     applyDefaultRatioForDesignType();
     var designType = document.getElementById('designType').value;
-    if (designType === '其他') {
+    var meta = getSelectedProjectMeta();
+    if (meta && meta.catalog === 'static_types' && designType === '其他') {
         document.getElementById('styleSelect').value = 'custom';
         toggleCustomStyle();
     }
     onProjectOrDesignTypeChange();
+}
+
+async function onProjectSelectChange() {
+    var project = getSelectedProjectName();
+    var designSel = document.getElementById('designType');
+    designSel.innerHTML = '<option value="">请选择设计类型</option>';
+    selectedProjectImages = [];
+    currentProject = null;
+    currentProjectCatalog = '';
+    clearProjectRefs();
+    applyProductBranding();
+    if (!project) {
+        updateProjectRefsVisibility();
+        return;
+    }
+    await loadDesignTypesForProject(project);
+    loadMultiSizePresets();
+    updateProjectRefsVisibility();
+}
+
+async function loadDesignTypesForProject(project) {
+    var sel = document.getElementById('designType');
+    if (!sel || !project) return;
+    sel.innerHTML = '<option value="">请选择设计类型</option>';
+    DESIGN_TYPE_RATIO_DEFAULTS = {};
+    try {
+        var res = await fetch('/api/design-types?project=' + encodeURIComponent(project));
+        var data = await res.json();
+        currentProjectCatalog = data.catalog || 'static_types';
+        (data.designTypes || []).forEach(function(item) {
+            var opt = document.createElement('option');
+            opt.value = item.value;
+            var suffix = '';
+            if (currentProjectCatalog === 'folder_types' && item.referenceCount != null) {
+                suffix = ' (' + item.referenceCount + '张参考)';
+            }
+            opt.textContent = (item.label || item.value) + suffix;
+            if (item.defaultRatio) {
+                DESIGN_TYPE_RATIO_DEFAULTS[item.value] = item.defaultRatio;
+                DESIGN_TYPE_RATIO_DEFAULTS[item.label || ''] = item.defaultRatio;
+            }
+            sel.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('加载设计类型失败', e);
+    }
 }
 
 function onProjectOrDesignTypeChange() {
@@ -1030,70 +1136,99 @@ async function loadProjects() {
         (data.projects || []).forEach(function(p) {
             var opt = document.createElement('option');
             opt.value = p.name;
-            opt.textContent = p.display_name + ' (' + p.count + '张参考)';
+            var suffix = p.catalog === 'folder_types'
+                ? ' (' + (p.typeCount || 0) + '类·' + p.count + '张参考)'
+                : ' (' + p.count + '张参考)';
+            opt.textContent = p.display_name + suffix;
             opt.dataset.tags = (p.style_tags || []).join(', ');
             opt.dataset.desc = p.description || '';
+            opt.dataset.catalog = p.catalog || 'static_types';
+            opt.dataset.productType = p.product_type || 'xdt';
             sel.appendChild(opt);
         });
+        var preset = defaultProjectFromUrl();
+        if (preset) {
+            sel.value = preset;
+            await onProjectSelectChange();
+        }
     } catch(e) {
         console.error('加载项目失败', e);
     }
 }
 
-// 选择项目
+// 选择项目 + 设计类型后加载参考图
 function selectProject() {
     if (!shouldShowProjectRefs()) {
         clearProjectRefs();
         return;
     }
-    var sel = document.getElementById('projectSelect');
-    var opt = sel.selectedOptions[0];
     var grid = document.getElementById('projectImagesGrid');
     selectedProjectImages = [];
-    
-    if (opt && opt.value) {
-        currentProject = {
-            name: opt.value,
-            tags: opt.dataset.tags,
-            desc: opt.dataset.desc
-        };
-        document.getElementById('projectInfo').textContent = 
-            (currentProject.tags ? '风格标签：' + currentProject.tags + '。' : '') +
-            (currentProject.desc || '');
-        // 加载项目图片
-        loadProjectImages(opt.value, grid);
-    } else {
+    var meta = getSelectedProjectMeta();
+    var designType = document.getElementById('designType').value;
+    if (!meta) {
         clearProjectRefs();
+        return;
     }
+    currentProject = {
+        name: meta.name,
+        tags: meta.tags,
+        desc: meta.desc,
+        catalog: meta.catalog,
+        productType: meta.productType
+    };
+    currentProjectCatalog = meta.catalog;
+    var typeLabel = getDesignTypeLabel();
+    var info = meta.displayName + ' · ' + typeLabel;
+    if (meta.tags) info += '。风格标签：' + meta.tags;
+    if (meta.desc) info += '。' + meta.desc;
+    document.getElementById('projectInfo').textContent = info;
+    loadProjectImages(meta.name, designType, grid);
 }
 
-// 加载项目图片
-async function loadProjectImages(projectName, grid) {
+// 加载项目参考图
+async function loadProjectImages(projectName, designType, grid) {
     try {
-        var res = await fetch('/projects/' + encodeURIComponent(projectName) + '/images');
+        var url = '/projects/' + encodeURIComponent(projectName) + '/images';
+        if (currentProjectCatalog === 'folder_types' && designType) {
+            url += '?design_type=' + encodeURIComponent(designType);
+        }
+        var res = await fetch(url);
         var data = await res.json();
         var images = data.images || [];
-        
+        if (data.catalog) currentProjectCatalog = data.catalog;
+
         if (images.length === 0) {
-            grid.innerHTML = '<span class="select-hint">该项目暂无参考图</span>';
+            grid.innerHTML = '<span class="select-hint">' +
+                (currentProjectCatalog === 'folder_types'
+                    ? '该设计类型下暂无参考图，请将素材放入 projects/' + projectName + '/types/对应文件夹'
+                    : '该项目暂无参考图，请将素材放入 projects/' + projectName + '/refs/') +
+                '</span>';
             grid.classList.add('active');
             return;
         }
-        
+
         grid.innerHTML = '<span class="select-hint">点击选择参考图（最多10张）：</span>';
         grid.classList.add('active');
-        
+
         images.forEach(function(imgName) {
             var wrap = document.createElement('div');
             wrap.className = 'img-thumb-wrap';
             wrap.dataset.name = imgName;
-            wrap.onclick = function() { toggleProjectImage(this, projectName, imgName); };
-            
+            wrap.onclick = function() {
+                toggleProjectImage(this, projectName, designType, imgName);
+            };
+
             var img = document.createElement('img');
             img.className = 'img-thumb';
-            img.src = '/projects/' + projectName + '/images/' + imgName;
+            if (currentProjectCatalog === 'folder_types') {
+                img.src = '/projects/' + encodeURIComponent(projectName) + '/types/' +
+                    encodeURIComponent(designType) + '/' + encodeURIComponent(imgName);
+            } else {
+                img.src = '/projects/' + encodeURIComponent(projectName) + '/images/' + encodeURIComponent(imgName);
+            }
             img.onerror = function() { this.style.display = 'none'; };
-            
+
             wrap.appendChild(img);
             grid.appendChild(wrap);
         });
@@ -1103,8 +1238,16 @@ async function loadProjectImages(projectName, grid) {
 }
 
 // 切换项目图片选择状态
-function toggleProjectImage(el, projectName, imgName) {
-    var idx = selectedProjectImages.indexOf(projectName + '/' + imgName);
+function referenceImageKey(projectName, designType, imgName) {
+    if (currentProjectCatalog === 'folder_types') {
+        return projectName + '/types/' + designType + '/' + imgName;
+    }
+    return projectName + '/' + imgName;
+}
+
+function toggleProjectImage(el, projectName, designType, imgName) {
+    var key = referenceImageKey(projectName, designType, imgName);
+    var idx = selectedProjectImages.indexOf(key);
     if (idx >= 0) {
         selectedProjectImages.splice(idx, 1);
         el.classList.remove('selected');
@@ -1113,7 +1256,7 @@ function toggleProjectImage(el, projectName, imgName) {
             alert('最多选择10张参考图');
             return;
         }
-        selectedProjectImages.push(projectName + '/' + imgName);
+        selectedProjectImages.push(key);
         el.classList.add('selected');
     }
 }
@@ -1231,7 +1374,7 @@ document.getElementById('customHeight').addEventListener('input', updateMatchedR
 
 // 分析关键词
 async function analyzeKeyword() {
-    var designType = document.getElementById('designType').value;
+    var designType = getDesignTypeLabel();
     var mainTitle = document.getElementById('mainTitle').value.trim();
     
     if (!mainTitle) {
@@ -1257,6 +1400,7 @@ async function analyzeKeyword() {
         var formData = new FormData();
         formData.append('summary', JSON.stringify(summary));
         formData.append('project', currentProject ? currentProject.name : '');
+        appendProjectContext(formData);
         
         var res = await fetch('/api/analyze', { method: 'POST', body: formData });
         var data = await res.json();
@@ -1309,6 +1453,7 @@ async function generateWithKeyword() {
     formData.append('count', '3');
     formData.append('ratio', ratio);
     formData.append('image_backend', getSelectedImageBackend());
+    appendProjectContext(formData);
     // 添加上传的参考图
     for (var i = 0; i < uploadedRefImages.length; i++) {
         formData.append('ref_image_' + i, uploadedRefImages[i]);
@@ -1340,7 +1485,7 @@ async function generateWithKeyword() {
 
 // 生成变体（保留旧函数兼容）
 async function generateVariants() {
-    var designType = document.getElementById('designType').value;
+    var designType = getDesignTypeLabel();
     var mainTitle = document.getElementById('mainTitle').value.trim();
     
     if (!mainTitle) {
@@ -1376,6 +1521,7 @@ async function generateVariants() {
     formData.append('count', '3');
     formData.append('ratio', ratio);
     formData.append('image_backend', getSelectedImageBackend());
+    appendProjectContext(formData);
     
     try {
         var res = await fetch('/generate-variants', { method: 'POST', body: formData });
@@ -1992,12 +2138,14 @@ var multiImageFile = null;
 var multiSourceBaseName = '开屏';
 
 function loadMultiSizePresets() {
-    fetch('/api/output-sizes').then(function(r) { return r.json(); }).then(function(data) {
+    var q = apiProjectQuery();
+    fetch('/api/output-sizes' + (q ? '?' + q : '')).then(function(r) { return r.json(); }).then(function(data) {
         var list = document.getElementById('multiSizesList');
         if (!list || !data.sizes) return;
         list.innerHTML = data.sizes.map(function(s) {
             return '<span class="multi-size-tag">' + s.width + 'x' + s.height + '</span>';
         }).join('');
+        updateMultiHint(data.sizes.length);
     }).catch(function() {});
 }
 
@@ -2056,8 +2204,10 @@ async function exportMultiSizes() {
     var form = new FormData();
     form.append('image', multiImageFile);
     form.append('source_name', multiImageFile.name || '开屏');
+    appendProjectContext(form);
     try {
-        var resp = await fetch('/api/multi-size-export', { method: 'POST', body: form });
+        var q = apiProjectQuery();
+        var resp = await fetch('/api/multi-size-export' + (q ? '?' + q : ''), { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {

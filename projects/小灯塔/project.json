@@ -1,7 +1,9 @@
 {
   "name": "小灯塔",
+  "display_name": "小灯塔",
+  "catalog": "static_types",
+  "product_type": "xdt",
   "style_tags": [],
   "description": "",
-  "lovart_project_id": "522f98ee43f14ea3833da6e7a57184fe",
-  "display_name": "小灯塔"
+  "lovart_project_id": "522f98ee43f14ea3833da6e7a57184fe"
 }

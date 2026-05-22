@@ -8,8 +8,30 @@ from pathlib import Path
 from PIL import Image
 
 BACKEND_DIR = Path(__file__).resolve().parent
-DEFAULT_SIZES_FILE = BACKEND_DIR / "output_sizes.json"
+DEFAULT_PRODUCT_TYPE = "xdt"
+PRODUCT_TYPES = frozenset({"xdt", "hll"})
+SIZES_FILES = {
+    "xdt": BACKEND_DIR / "output_sizes.json",
+    "hll": BACKEND_DIR / "output_sizes_hll.json",
+}
 JPEG_QUALITY = 85
+
+
+def normalize_product_type(value: str | None) -> str:
+    """URL/表单 type：xdt=小灯塔，hll=画啦啦；无效时默认小灯塔。"""
+    raw = (value or "").strip().lower()
+    aliases = {
+        "xiaodengta": "xdt",
+        "小灯塔": "xdt",
+        "hualala": "hll",
+        "画啦啦": "hll",
+    }
+    t = aliases.get(raw, raw)
+    return t if t in PRODUCT_TYPES else DEFAULT_PRODUCT_TYPE
+
+
+def sizes_config_path(product_type: str | None = None) -> Path:
+    return SIZES_FILES[normalize_product_type(product_type)]
 
 
 def safe_download_stem(name: str, default: str = "开屏") -> str:
@@ -20,8 +42,8 @@ def safe_download_stem(name: str, default: str = "开屏") -> str:
     return (stem[:80] if stem else default) or default
 
 
-def load_output_sizes(config_path: Path | None = None) -> list[dict]:
-    path = config_path or DEFAULT_SIZES_FILE
+def load_output_sizes(config_path: Path | None = None, *, product_type: str | None = None) -> list[dict]:
+    path = config_path or sizes_config_path(product_type)
     if not path.is_file():
         raise FileNotFoundError(f"缺少尺寸配置: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))

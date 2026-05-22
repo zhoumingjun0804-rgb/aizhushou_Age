@@ -28,7 +28,24 @@ from lovart_client import (
 from comfyui_client import ComfyUIClient, ComfyUIClientError
 from sd_client import StableDiffusionClient, SDClientError
 from gif_to_svga.converter import gif_to_svga as convert_gif_to_svga, VALID_FPS as SVGA_VALID_FPS
-from multi_size_export import export_multi_sizes, load_output_sizes
+from multi_size_export import (
+    export_multi_sizes,
+    load_output_sizes,
+    normalize_product_type,
+    sizes_config_path,
+)
+from product_design import (
+    collect_reference_image_paths,
+    count_project_assets,
+    detect_project_catalog,
+    list_design_types_for_project,
+    list_flat_reference_images,
+    list_typed_reference_images,
+    project_product_type,
+    project_refs_dir,
+    read_project_meta,
+    typed_reference_dir,
+)
 from image_crop import crop_image_to_size
 from gif_maker import make_breathing_gif
 
@@ -300,21 +317,18 @@ def list_projects():
     projects = []
     for p in sorted(PROJECTS_DIR.iterdir()):
         if p.is_dir() and not p.name.startswith('.'):
-            meta_file = p / "project.json"
-            meta = {}
-            if meta_file.exists():
-                try:
-                    meta = json.loads(meta_file.read_text('utf-8'))
-                except:
-                    pass
-            images = [f for f in p.iterdir() if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp', '.gif')]
+            meta = read_project_meta(p.name)
+            assets = count_project_assets(p.name)
             projects.append({
                 "name": p.name,
                 "display_name": meta.get("display_name", p.name),
                 "style_tags": meta.get("style_tags", []),
                 "description": meta.get("description", ""),
                 "lovart_project_id": meta.get("lovart_project_id", ""),
-                "count": len(images)
+                "catalog": assets["catalog"],
+                "product_type": project_product_type(p.name),
+                "count": assets["imageCount"],
+                "typeCount": assets["typeCount"],
             })
     return projects
 
@@ -389,7 +403,7 @@ def ensure_lovart_project(local_project: str, client: LovartClient) -> str:
     return new_id or ""
 
 
-def lovart_project_required_error(project: str) -> Optional[str]:
+def lovart_project_required_error(project: str, product_type: str | None = None) -> Optional[str]:
     if (project or "").strip() or os.environ.get("LOVART_DEFAULT_PROJECT_ID", "").strip():
         return None
     return (
@@ -397,16 +411,41 @@ def lovart_project_required_error(project: str) -> Optional[str]:
         "若要用 Lovart 网页里已有文件夹，请在 projects/<组名>/project.json 填写 lovart_project_id。"
     )
 
-def get_project_images(project_name):
-    """获取项目的所有图片"""
-    proj_dir = PROJECTS_DIR / project_name
-    if not proj_dir.exists():
+
+def _selected_images_from_fields(fields: dict, project: str) -> list:
+    selected_imgs = fields.get("selected_project_images")
+    if selected_imgs:
+        try:
+            return json.loads(selected_imgs) if isinstance(selected_imgs, str) else selected_imgs
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def _build_image_paths_from_selection(fields: dict, project: str) -> list:
+    selected_list = _selected_images_from_fields(fields, project)
+    image_paths = []
+    if not selected_list and project:
+        proj_dir = PROJECTS_DIR / project
+        if proj_dir.exists():
+            for img in sorted(proj_dir.iterdir()):
+                if img.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                    image_paths.append(img)
+                    if len(image_paths) >= 10:
+                        break
+    elif selected_list:
+        image_paths = collect_reference_image_paths(selected_list, project)
+    return image_paths
+
+def get_project_images(project_name, design_type: str = ""):
+    """获取项目参考图：folder_types 按设计类型子目录，static_types 为扁平 refs/。"""
+    if not project_name:
         return []
-    images = []
-    for f in sorted(proj_dir.iterdir()):
-        if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp', '.gif'):
-            images.append(f.name)
-    return images
+    if detect_project_catalog(project_name) == "folder_types":
+        if design_type:
+            return list_typed_reference_images(project_name, design_type)
+        return []
+    return list_flat_reference_images(project_name)
 
 
 # ─── 需求智能解析 ────────────────────────────────────────────────
@@ -1257,6 +1296,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             path = path.rstrip('/')
         return path
 
+    def _query_params(self):
+        parsed = urllib.parse.urlparse(self.path)
+        return urllib.parse.parse_qs(parsed.query)
+
+    def _product_type_from_query(self):
+        params = self._query_params()
+        raw = params.get("type", [""])[0]
+        return normalize_product_type(raw)
+
     def _send_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -1291,20 +1339,60 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if len(parts) >= 5:
                 project = urllib.parse.unquote(parts[2])
                 filename = urllib.parse.unquote(parts[4].split('?')[0])
-                proj_dir = PROJECTS_DIR / project
-                self._serve_file(proj_dir, filename)
+                self._serve_file(project_refs_dir(project), filename)
             else:
                 self.send_response(404)
                 self.end_headers()
         elif path == '/projects':
             self._send_json({"projects": list_projects()})
         elif path.startswith('/projects/') and path.endswith('/images'):
-            project = urllib.parse.unquote(path.split('/')[2])
-            self._send_json({"images": get_project_images(project)})
+            parts = path.split('/')
+            project = urllib.parse.unquote(parts[2])
+            params = self._query_params()
+            design_type = params.get("design_type", [""])[0]
+            self._send_json({
+                "images": get_project_images(project, design_type),
+                "catalog": detect_project_catalog(project),
+            })
+        elif path.startswith('/projects/') and '/types/' in path:
+            parts = path.split('/')
+            if len(parts) >= 6:
+                project = urllib.parse.unquote(parts[2])
+                folder = urllib.parse.unquote(parts[4])
+                filename = urllib.parse.unquote(parts[5].split('?')[0])
+                ref_dir = typed_reference_dir(project, folder)
+                if ref_dir:
+                    self._serve_file(ref_dir, filename)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            else:
+                self.send_response(404)
+                self.end_headers()
         elif path == '/history':
             self._send_json({"items": filter_history_items(load_history())})
         elif path == '/api/output-sizes':
-            self._send_json({"sizes": load_output_sizes()})
+            params = self._query_params()
+            project = params.get("project", [""])[0]
+            ptype = self._product_type_from_query()
+            if project:
+                ptype = project_product_type(project)
+            self._send_json({
+                "type": ptype,
+                "sizes": load_output_sizes(product_type=ptype),
+            })
+        elif path == '/api/design-types':
+            params = self._query_params()
+            project = urllib.parse.unquote(params.get("project", [""])[0])
+            if not project:
+                self._send_json({"error": "请指定 project 参数"})
+                return
+            self._send_json({
+                "project": project,
+                "catalog": detect_project_catalog(project),
+                "product_type": project_product_type(project),
+                "designTypes": list_design_types_for_project(project),
+            })
         else:
             self.send_response(404)
             self.end_headers()
@@ -1651,42 +1739,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "请提供关键词"})
             return
 
+        product_type = project_product_type(project) if project else normalize_product_type(str(fields.get("type", "")))
         lovart_err = lovart_project_required_error(project)
         if lovart_err:
             self._send_json({"error": lovart_err})
             return
 
-        # 添加项目参考图（只添加选中的图片）
-        image_paths = []
-        selected_imgs = fields.get('selected_project_images')
-        if selected_imgs:
-            try:
-                selected_list = json.loads(selected_imgs) if isinstance(selected_imgs, str) else selected_imgs
-            except:
-                selected_list = []
-        else:
-            selected_list = []
-        
-        # 如果没有选中的图片，则自动添加项目中的所有图片（兼容旧方式）
-        if not selected_list and project:
-            proj_dir = PROJECTS_DIR / project
-            if proj_dir.exists():
-                for img in sorted(proj_dir.iterdir()):
-                    if img.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp'):
-                        image_paths.append(img)
-                        if len(image_paths) >= 10:
-                            break
-        elif selected_list:
-            # 只添加选中的图片
-            for img_ref in selected_list[:10]:  # 最多10张
-                if '/' in img_ref:
-                    proj_name, img_name = img_ref.split('/', 1)
-                    img_path = PROJECTS_DIR / proj_name / img_name
-                else:
-                    img_path = PROJECTS_DIR / project / img_ref
-                if img_path.exists():
-                    image_paths.append(img_path)
-        
+        image_paths = _build_image_paths_from_selection(fields, project)
+
         # 处理用户上传的参考图（最多3张）
         for i in range(3):
             ref_key = f'ref_image_{i}'
@@ -1770,6 +1830,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # 获取项目元数据
         project_meta = get_project_meta(project) if project else None
 
+        product_type = project_product_type(project) if project else normalize_product_type(str(fields.get("type", "")))
         lovart_err = lovart_project_required_error(project)
         if lovart_err:
             self._send_json({"error": lovart_err})
@@ -1789,34 +1850,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             input_path.write_bytes(uploaded_file['data'])
             image_paths.append(input_path)
 
-        # 添加项目参考图（只添加选中的图片）
-        selected_imgs = fields.get('selected_project_images')
-        if selected_imgs:
-            try:
-                selected_list = json.loads(selected_imgs) if isinstance(selected_imgs, str) else selected_imgs
-            except:
-                selected_list = []
-        else:
-            selected_list = []
-        
-        if not selected_list and project:
-            proj_dir = PROJECTS_DIR / project
-            if proj_dir.exists():
-                for img in sorted(proj_dir.iterdir()):
-                    if img.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp'):
-                        image_paths.append(img)
-                        if len(image_paths) >= 10:
-                            break
-        elif selected_list:
-            for img_ref in selected_list[:10]:
-                if '/' in img_ref:
-                    proj_name, img_name = img_ref.split('/', 1)
-                    img_path = PROJECTS_DIR / proj_name / img_name
-                else:
-                    img_path = PROJECTS_DIR / project / img_ref
-                if img_path.exists():
-                    image_paths.append(img_path)
-        
+        image_paths.extend(_build_image_paths_from_selection(fields, project))
+
         # 处理用户上传的参考图（最多3张）
         for i in range(3):
             ref_key = f'ref_image_{i}'
@@ -2008,7 +2043,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": str(e)})
 
     def _handle_multi_size_export(self):
-        """单图按预设 9 尺寸导出"""
+        """单图按产品版本预设尺寸导出（type=xdt 小灯塔 / type=hll 画啦啦）"""
         try:
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
@@ -2017,6 +2052,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
+            project_name = str(fields.get("project", "")).strip()
+            ptype = (
+                project_product_type(project_name)
+                if project_name
+                else normalize_product_type(str(fields.get("type", "")))
+            )
             img_field = fields.get("image")
             if not img_field or not isinstance(img_field, dict):
                 self._send_json({"error": "请上传图片"})
@@ -2032,9 +2073,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             source_raw = fields.get("source_name", "") or img_field.get("filename", "")
             result = export_multi_sizes(
                 input_path, OUTPUT_DIR, job_id,
+                config_path=sizes_config_path(ptype),
                 source_basename=str(source_raw),
             )
-            self._send_json({"ok": True, **result})
+            self._send_json({"ok": True, "type": ptype, **result})
         except Exception as e:
             print(f"[MULTI-SIZE] 导出失败: {e}")
             import traceback
