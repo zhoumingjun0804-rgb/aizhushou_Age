@@ -146,15 +146,27 @@ class LovartClient:
 
         return result.get("data", result) if isinstance(result, dict) else result
 
-    def create_project(self, project_type: int = 3) -> str:
-        result = self._request("POST", f"{self.prefix}/project/save", body={
-            "project_id": "",
+    def save_project(
+        self,
+        project_id: str = "",
+        project_type: int = 3,
+        title: str = "",
+    ) -> str:
+        """创建或更新 Lovart 项目；传入已有 project_id 时复用同一项目。"""
+        body = {
+            "project_id": project_id or "",
             "canvas": "",
             "project_cover_list": [],
             "pic_count": 0,
             "project_type": project_type,
-        })
-        return result.get("project_id", "")
+        }
+        if title:
+            body["project_name"] = title
+        result = self._request("POST", f"{self.prefix}/project/save", body=body)
+        return result.get("project_id", "") or project_id
+
+    def create_project(self, project_type: int = 3) -> str:
+        return self.save_project(project_type=project_type)
 
     def upload_file(self, local_path: str) -> str:
         with open(local_path, "rb") as f:
@@ -254,8 +266,11 @@ class LovartClient:
         timeout: int = 120,
         mode: str = "fast",
         quality_hint: str = "",
+        project_id: Optional[str] = None,
+        project_title: str = "",
     ) -> Tuple[Optional[str], Optional[str]]:
-        project_id = self.create_project()
+        if not project_id:
+            project_id = self.save_project(title=project_title)
         if not project_id:
             return None, "Lovart 创建项目失败"
 

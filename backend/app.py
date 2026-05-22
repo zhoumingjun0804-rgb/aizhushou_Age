@@ -323,6 +323,53 @@ def get_project_meta(project_name):
             pass
     return {"name": project_name, "style_tags": [], "description": ""}
 
+
+def save_project_meta(project_name, **updates):
+    """写入项目组 project.json（如 lovart_project_id）。"""
+    proj_dir = PROJECTS_DIR / project_name
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    meta = get_project_meta(project_name) or {}
+    meta.setdefault("name", project_name)
+    for key, value in updates.items():
+        if value is not None:
+            meta[key] = value
+    (proj_dir / "project.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def ensure_lovart_project(local_project: str, client: LovartClient) -> str:
+    """本地项目组（如「画啦啦」）绑定并复用同一个 Lovart project_id。"""
+    if not local_project:
+        return ""
+
+    proj_dir = PROJECTS_DIR / local_project
+    if not proj_dir.is_dir():
+        return ""
+
+    meta = get_project_meta(local_project) or {}
+    title = (meta.get("display_name") or local_project).strip()
+    existing = (meta.get("lovart_project_id") or "").strip()
+
+    if existing:
+        saved_id = client.save_project(project_id=existing, title=title)
+        if saved_id:
+            if saved_id != existing:
+                save_project_meta(local_project, lovart_project_id=saved_id)
+            return saved_id
+        print(f"[Lovart] 项目组 {local_project} 原绑定失效，将创建新项目")
+
+    new_id = client.save_project(title=title)
+    if new_id:
+        save_project_meta(
+            local_project,
+            lovart_project_id=new_id,
+            display_name=title,
+        )
+        print(f"[Lovart] 项目组「{title}」已绑定 Lovart 项目 {new_id[:12]}…")
+    return new_id or ""
+
 def get_project_images(project_name):
     """获取项目的所有图片"""
     proj_dir = PROJECTS_DIR / project_name
@@ -607,13 +654,25 @@ def _normalize_lovart_error(message):
     return message
 
 
-def call_lovart(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
+def call_lovart(
+    mode,
+    prompt,
+    image_paths=None,
+    ratio="1:1",
+    poll_timeout=90,
+    local_project=None,
+    lovart_project_id=None,
+):
     """调用 Lovart OpenAPI 生图；多 Key 时在并发/额度受限时自动切换。"""
     if not LOVART_CREDENTIALS:
         return None, "未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY"
 
     timeout = max(poll_timeout, LOVART_POLL_TIMEOUT)
     last_error = None
+    project_title = ""
+    if local_project:
+        meta = get_project_meta(local_project) or {}
+        project_title = (meta.get("display_name") or local_project).strip()
 
     for cred_index, (access_key, secret_key) in enumerate(LOVART_CREDENTIALS):
         client = LovartClient(
@@ -622,6 +681,10 @@ def call_lovart(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
             base_url=LOVART_BASE_URL,
             timeout=timeout,
         )
+        resolved_project_id = lovart_project_id
+        if local_project and not resolved_project_id:
+            resolved_project_id = ensure_lovart_project(local_project, client) or None
+
         switch_to_next_key = False
 
         for attempt in range(LOVART_TASK_RETRY):
@@ -634,6 +697,8 @@ def call_lovart(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
                         timeout=timeout,
                         mode=LOVART_MODE,
                         quality_hint=LOVART_QUALITY_HINT,
+                        project_id=resolved_project_id,
+                        project_title=project_title,
                     )
                 except LovartError as e:
                     image_url, error = None, e.message
@@ -702,10 +767,29 @@ def call_stable_diffusion(mode, prompt, image_paths=None, ratio="1:1", poll_time
         return None, e.message
 
 
-def call_image_generator(mode, prompt, image_paths=None, model_version=None, resolution=None, ratio="1:1", poll_timeout=90, image_backend=None):
+def call_image_generator(
+    mode,
+    prompt,
+    image_paths=None,
+    model_version=None,
+    resolution=None,
+    ratio="1:1",
+    poll_timeout=90,
+    image_backend=None,
+    local_project=None,
+    lovart_project_id=None,
+):
     backend = normalize_image_backend(image_backend)
     if backend == "lovart":
-        return call_lovart(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
+        return call_lovart(
+            mode,
+            prompt,
+            image_paths=image_paths,
+            ratio=ratio,
+            poll_timeout=poll_timeout,
+            local_project=local_project,
+            lovart_project_id=lovart_project_id,
+        )
     if backend == "comfyui":
         return call_comfyui(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
     if backend == "stable_diffusion":
@@ -721,10 +805,29 @@ def call_image_generator(mode, prompt, image_paths=None, model_version=None, res
     )
 
 
-def generate_variants(prompt, image_paths=None, count=4, mode="text2img", ratio="1:1", image_backend=None):
+def generate_variants(
+    prompt,
+    image_paths=None,
+    count=4,
+    mode="text2img",
+    ratio="1:1",
+    image_backend=None,
+    local_project=None,
+):
     """生成多张变体"""
     backend = normalize_image_backend(image_backend)
     poll_timeout = LOVART_POLL_TIMEOUT if backend == "lovart" else LOCAL_GENERATION_TIMEOUT
+
+    lovart_project_id = None
+    if backend == "lovart" and local_project and LOVART_CREDENTIALS:
+        ak, sk = LOVART_CREDENTIALS[0]
+        client = LovartClient(
+            access_key=ak,
+            secret_key=sk,
+            base_url=LOVART_BASE_URL,
+            timeout=poll_timeout,
+        )
+        lovart_project_id = ensure_lovart_project(local_project, client) or None
 
     def generate_one(idx):
         image_url, error = call_image_generator(
@@ -735,6 +838,8 @@ def generate_variants(prompt, image_paths=None, count=4, mode="text2img", ratio=
             ratio=ratio,
             poll_timeout=poll_timeout,
             image_backend=backend,
+            local_project=local_project,
+            lovart_project_id=lovart_project_id,
         )
         return {"idx": idx, "url": image_url, "error": error}
 
@@ -950,7 +1055,14 @@ def composite_region_blend(base_path, overlay_path, output_path, x, y, w, h, fea
     print(f"[BLEND] region ({x1},{y1}) {actual_w}x{actual_h} -> {output_path}")
 
 
-def call_img2img_with_retry(input_path, prompt, image_backend, ratio="1:1", max_retries=3):
+def call_img2img_with_retry(
+    input_path,
+    prompt,
+    image_backend,
+    ratio="1:1",
+    max_retries=3,
+    local_project=None,
+):
     last_error = None
     for attempt in range(max_retries):
         try:
@@ -961,6 +1073,7 @@ def call_img2img_with_retry(input_path, prompt, image_backend, ratio="1:1", max_
                 model_version="4.6",
                 image_backend=image_backend,
                 ratio=ratio,
+                local_project=local_project,
             )
             if image_url:
                 return image_url, None
@@ -972,7 +1085,7 @@ def call_img2img_with_retry(input_path, prompt, image_backend, ratio="1:1", max_
     return None, last_error
 
 
-def edit_image_regions(base_path, regions, edit_type, keep_elements, image_backend, ratio):
+def edit_image_regions(base_path, regions, edit_type, keep_elements, image_backend, ratio, local_project=None):
     """对多个选区依次裁剪、修图、仅将结果融合回选区，保持原图尺寸与选区外样式"""
     from PIL import Image
 
@@ -1000,7 +1113,7 @@ def edit_image_regions(base_path, regions, edit_type, keep_elements, image_backe
         crop_ratio = bbox_to_ratio(cw, ch)
         region_prompt = build_edit_prompt(desc, edit_type, keep_elements, region_only=True)
         image_url, error = call_img2img_with_retry(
-            crop_path, region_prompt, image_backend, ratio=crop_ratio
+            crop_path, region_prompt, image_backend, ratio=crop_ratio, local_project=local_project
         )
         if not image_url:
             return None, f"选区 {idx + 1} 修图失败: {error or '未知错误'}"
@@ -2456,7 +2569,8 @@ async function startEditImage() {
             editType: editType,
             description: editDesc,
             keepElements: keepElements,
-            image_backend: localStorage.getItem('imageBackendSelect') || 'lovart'
+            image_backend: localStorage.getItem('imageBackendSelect') || 'lovart',
+            project: currentProject ? currentProject.name : ''
         };
         if (regions.length > 0) {
             payload.regions = regions;
@@ -3146,6 +3260,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 mode,
                 ratio,
                 image_backend=image_backend,
+                local_project=project or None,
             )
 
             variants = []
@@ -3273,6 +3388,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 mode,
                 ratio,
                 image_backend=image_backend,
+                local_project=project or None,
             )
 
             variants = []
@@ -3421,6 +3537,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         edit_type = data.get('editType', '文案修改')
         keep_elements = data.get('keepElements', '')
         image_backend = data.get('image_backend', '')
+        local_project = (data.get('project') or '').strip() or None
         regions = data.get('regions') or []
 
         if not image_data:
@@ -3467,7 +3584,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if regions:
             work_path, region_error = edit_image_regions(
-                input_path, regions, edit_type, keep_elements, image_backend, ratio
+                input_path,
+                regions,
+                edit_type,
+                keep_elements,
+                image_backend,
+                ratio,
+                local_project=local_project,
             )
             if region_error:
                 self._send_json({"error": region_error})
@@ -3483,7 +3606,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             image_url, error = call_img2img_with_retry(
-                input_path, prompt, image_backend, ratio=ratio
+                input_path, prompt, image_backend, ratio=ratio, local_project=local_project
             )
             if not image_url:
                 self._send_json({"error": error or "修图失败，请重试"})
