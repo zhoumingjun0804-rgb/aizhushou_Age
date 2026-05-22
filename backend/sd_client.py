@@ -3,12 +3,13 @@ import base64
 import json
 import os
 import pathlib
-import ssl
 import tempfile
 import urllib.error
 import urllib.request
 import uuid
 from typing import Optional, Tuple
+
+from ssl_utils import make_ssl_context
 
 
 class SDClientError(Exception):
@@ -21,7 +22,7 @@ class StableDiffusionClient:
     def __init__(self, base_url: Optional[str] = None, timeout: int = 300):
         self.base_url = (base_url or os.environ.get("SD_API_URL", "http://127.0.0.1:7860")).rstrip("/")
         self.timeout = timeout
-        self._ssl_ctx = ssl.create_default_context()
+        self._ssl_ctx = make_ssl_context()
 
     def _request(self, path: str, payload: dict) -> dict:
         data = json.dumps(payload).encode("utf-8")

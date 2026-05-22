@@ -11,6 +11,8 @@ import urllib.request
 import uuid
 from typing import Optional, Tuple
 
+from ssl_utils import make_ssl_context
+
 
 class LovartError(Exception):
     def __init__(self, message: str, code: int = 0):
@@ -93,10 +95,7 @@ class LovartClient:
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.prefix = "/v1/openapi"
-        self._ssl_ctx = ssl.create_default_context()
-        if os.environ.get("LOVART_INSECURE_SSL") == "1":
-            self._ssl_ctx.check_hostname = False
-            self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        self._ssl_ctx = make_ssl_context()
 
     def _sign(self, method: str, path: str) -> dict:
         ts = str(int(time.time()))

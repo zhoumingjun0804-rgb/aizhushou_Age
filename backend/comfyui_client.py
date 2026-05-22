@@ -2,7 +2,6 @@
 import json
 import os
 import pathlib
-import ssl
 import tempfile
 import time
 import urllib.error
@@ -10,6 +9,8 @@ import urllib.parse
 import urllib.request
 import uuid
 from typing import Optional, Tuple
+
+from ssl_utils import make_ssl_context
 
 
 class ComfyUIClientError(Exception):
@@ -23,7 +24,7 @@ class ComfyUIClient:
         self.base_url = (base_url or os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188")).rstrip("/")
         self.timeout = timeout
         self.poll_interval = poll_interval
-        self._ssl_ctx = ssl.create_default_context()
+        self._ssl_ctx = make_ssl_context()
 
     def _request(self, method: str, path: str, body=None, params=None) -> dict:
         url = f"{self.base_url}{path}"

@@ -96,7 +96,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
-ssl_ctx = ssl.create_default_context()
+from ssl_utils import make_ssl_context
+
+ssl_ctx = make_ssl_context()
 
 # ─── DeepSeek API 配置 ───────────────────────────────────────────
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
