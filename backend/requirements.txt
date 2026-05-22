@@ -3,3 +3,5 @@ certifi
 lxml
 playwright
 Pillow
+watchdog
+protobuf

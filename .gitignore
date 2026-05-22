@@ -4,3 +4,5 @@ uploads/
 outputs/
 __pycache__/
 *.pyc
+.dev-server.pid
+.dev-server.log

@@ -10,7 +10,8 @@ AI 视觉设计助手：根据需求描述生成/变体图片，支持局部修�
 - **局部修图**：上传图片 + 选区，裁剪、缩放与合成（依赖 Pillow）
 - **项目组参考**：从 `projects/` 目录选择参考素材
 - **网页参考抓取**（可选）：需安装 Playwright Chromium
-- **生图后端**：Lovart 龙虾（当前仅此）
+- **生图后端**：Lovart 龙虾（默认）；可选即梦 / ComfyUI / Stable Diffusion（`.env` 中 `IMAGE_BACKEND`）
+- **辅助工具**：多尺寸导出、框选裁切、呼吸 GIF、GIF 转 SVGA
 - **AI 关键词分析**：配置 DeepSeek / 通义 / Kimi / 豆包等任一 API Key 后启用
 
 ## 环境要求
@@ -37,8 +38,9 @@ cp .env.example .env
 # 编辑 .env：至少填写 Lovart Key；可选 LLM Key 用于 AI 关键词分析
 
 # 4. 启动（自动创建 venv、升级 pip、安装依赖）
-chmod +x start.sh
-./start.sh
+chmod +x start.sh dev.sh
+./start.sh          # 生产模式
+# ./dev.sh          # 开发模式：改 backend/*.py 自动重启，改 templates/index.html 刷新浏览器即可
 ```
 
 启动成功后，在浏览器打开终端打印的地址（默认 `http://localhost:8000`；端口被占用时会自动尝试 8001、8002…）。
@@ -70,8 +72,11 @@ cd backend
 ai-design-modifier-delivery/
 ├── start.sh              # 推荐启动入口
 ├── .env / .env.example   # 环境变量
+├── dev.sh                # 开发模式（热重载）
 ├── backend/
 │   ├── app.py            # 主服务（start.sh 启动此文件）
+│   ├── templates/index.html  # Web UI
+│   ├── gif_maker.py / image_crop.py / multi_size_export.py / gif_to_svga/
 │   ├── requirements.txt
 │   └── .venv/            # 本地虚拟环境（可删除重建）
 ├── uploads/              # 上传图片
@@ -113,7 +118,7 @@ rm -rf backend/.venv
 
 ## 开发说明
 
-- 主逻辑：`backend/app.py`
+- 主逻辑：`backend/app.py`；UI：`backend/templates/index.html`
 - 生图客户端：`backend/lovart_client.py`（`comfyui_client.py` / `sd_client.py` 保留未接入）
 - 切换 Python 大版本后务必删除 `backend/.venv` 再运行 `./start.sh`
 

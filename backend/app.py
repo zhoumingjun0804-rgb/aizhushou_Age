@@ -15,6 +15,7 @@ import os
 import shutil
 import errno
 import threading
+import concurrent.futures
 from typing import Optional
 
 from lovart_client import (
@@ -24,6 +25,33 @@ from lovart_client import (
     load_lovart_credentials,
     mask_access_key,
 )
+from comfyui_client import ComfyUIClient, ComfyUIClientError
+from sd_client import StableDiffusionClient, SDClientError
+from gif_to_svga.converter import gif_to_svga as convert_gif_to_svga, VALID_FPS as SVGA_VALID_FPS
+from multi_size_export import export_multi_sizes, load_output_sizes
+from image_crop import crop_image_to_size
+from gif_maker import make_breathing_gif
+
+
+def _resolve_dreamina_bin():
+    env_bin = os.environ.get("DREAMINA_BIN", "").strip()
+    if env_bin:
+        return env_bin
+    detected = shutil.which("dreamina")
+    if detected:
+        return detected
+    return "dreamina"
+
+
+def _dreamina_command_path():
+    dreamina_path = pathlib.Path(DREAMINA_BIN)
+    if dreamina_path.is_file():
+        return str(dreamina_path)
+    detected = shutil.which(DREAMINA_BIN)
+    if detected:
+        return detected
+    return None
+
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -47,6 +75,7 @@ def _load_env_file():
 
 
 _load_env_file()
+DREAMINA_BIN = _resolve_dreamina_bin()
 PORT = int(os.environ.get("PORT", "8000"))
 LOVART_CREDENTIALS = load_lovart_credentials()
 LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
@@ -62,6 +91,11 @@ LOVART_QUALITY_HINT = os.environ.get(
     "适合手机屏幕与网页展示，宽度约1200到1536像素，细节清晰但不必4K",
 ).strip()
 LOVART_GENERATION_LOCK = threading.Lock()
+COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
+COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
+SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
+LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
+IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "auto").strip().lower()
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -546,9 +580,6 @@ def expand_prompt_from_summary(summary, project_meta=None):
     return "，".join(deduped)
 
 
-def normalize_image_backend(value=None):
-    """当前仅支持 Lovart 生图。"""
-    return "lovart"
 
 
 def _normalize_lovart_error(message):
@@ -646,23 +677,169 @@ def call_lovart(
     return None, last_error or "Lovart 生成失败"
 
 
+# ─── 即梦 CLI 调用 ──────────────────────────────────────────────
+def call_dreamina(mode, prompt, image_paths=None, model_version=None, resolution=None, ratio="1:1", poll_timeout=90):
+    """调用即梦 CLI"""
+    dreamina_cmd = _dreamina_command_path()
+    if not dreamina_cmd:
+        return None, f"未找到即梦 CLI: {DREAMINA_BIN}，请安装 dreamina 或设置 DREAMINA_BIN"
+
+    if mode == "text2img":
+        cmd = [dreamina_cmd, "text2image", "--prompt", prompt, "--ratio", ratio, "--poll", str(poll_timeout)]
+        if model_version:
+            cmd += ["--model_version", model_version]
+    else:
+        cmd = [dreamina_cmd, "image2image"]
+        if isinstance(image_paths, list):
+            cmd += ["--images", ",".join(str(p) for p in image_paths)]
+        else:
+            cmd += ["--images", str(image_paths)]
+        cmd += ["--prompt", prompt, "--ratio", ratio, "--poll", str(poll_timeout)]
+        if model_version:
+            cmd += ["--model_version", model_version]
+        if resolution:
+            cmd += ["--resolution_type", resolution]
+    
+    print(f"[CMD] {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    print(f"[STDOUT] {result.stdout[:500]}")
+    if result.stderr:
+        print(f"[STDERR] {result.stderr[:300]}")
+    
+    if result.returncode != 0:
+        return None, result.stderr or "即梦生成失败"
+    
+    try:
+        data = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        for line in result.stdout.strip().split('\n'):
+            if line.strip().startswith('{'):
+                try:
+                    data = json.loads(line.strip())
+                    break
+                except:
+                    continue
+        else:
+            return None, f"无法解析即梦输出: {result.stdout[:200]}"
+    
+    try:
+        images = data.get("result_json", {}).get("images", [])
+        if not images:
+            return None, "即梦未返回图片"
+        return images[0].get("image_url", ""), None
+    except Exception as e:
+        return None, f"解析失败: {e}"
+
+
+def _resolve_image_backend():
+    backend = IMAGE_BACKEND
+    if backend == "auto":
+        if LOVART_CREDENTIALS:
+            return "lovart"
+        return "dreamina"
+    return backend
+
+
+def normalize_image_backend(value=None):
+    backend = (value or "").strip().lower()
+    aliases = {
+        "sd": "stable_diffusion",
+        "stable-diffusion": "stable_diffusion",
+        "stable diffusion": "stable_diffusion",
+    }
+    backend = aliases.get(backend, backend)
+    if backend:
+        return backend
+    return _resolve_image_backend()
+
+
+def ratio_to_size(ratio: str):
+    mapping = {
+        "1:1": (1024, 1024),
+        "16:9": (1344, 768),
+        "9:16": (768, 1344),
+        "4:3": (1152, 864),
+        "3:4": (864, 1152),
+        "4:5": (896, 1120),
+        "2:3": (832, 1248),
+        "21:9": (1536, 640),
+    }
+    return mapping.get(ratio, (1024, 1024))
+
+
+def variant_entry_from_path(output_filename: str, output_path: pathlib.Path) -> dict:
+    """生图变体元数据（含实际像素尺寸，供下载命名）。"""
+    from PIL import Image
+
+    with Image.open(output_path) as im:
+        w, h = im.size
+    return {"filename": output_filename, "width": w, "height": h, "error": None}
+
+
+def call_comfyui(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
+    if mode == "img2img" and image_paths:
+        return None, "ComfyUI 当前仅支持文生图，请先去掉参考图或改用 Lovart / Stable Diffusion"
+    if not COMFYUI_CHECKPOINT:
+        return None, "未配置 COMFYUI_CHECKPOINT（ComfyUI 模型文件名）"
+
+    width, height = ratio_to_size(ratio)
+    client = ComfyUIClient(
+        base_url=COMFYUI_API_URL,
+        timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
+    )
+    try:
+        return client.generate_image(prompt, width, height, image_paths=image_paths)
+    except ComfyUIClientError as e:
+        return None, e.message
+
+
+def call_stable_diffusion(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
+    width, height = ratio_to_size(ratio)
+    client = StableDiffusionClient(
+        base_url=SD_API_URL,
+        timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
+    )
+    try:
+        return client.generate_image(prompt, width, height, image_paths=image_paths if mode == "img2img" else None)
+    except SDClientError as e:
+        return None, e.message
+
+
 def call_image_generator(
     mode,
     prompt,
     image_paths=None,
+    model_version=None,
+    resolution=None,
     ratio="1:1",
     poll_timeout=90,
     local_project=None,
     lovart_project_id=None,
+    image_backend=None,
 ):
-    return call_lovart(
+    backend = normalize_image_backend(image_backend)
+    if backend == "lovart":
+        return call_lovart(
+            mode,
+            prompt,
+            image_paths=image_paths,
+            ratio=ratio,
+            poll_timeout=poll_timeout,
+            local_project=local_project,
+            lovart_project_id=lovart_project_id,
+        )
+    if backend == "comfyui":
+        return call_comfyui(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
+    if backend == "stable_diffusion":
+        return call_stable_diffusion(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
+    return call_dreamina(
         mode,
         prompt,
         image_paths=image_paths,
+        model_version=model_version,
+        resolution=resolution,
         ratio=ratio,
         poll_timeout=poll_timeout,
-        local_project=local_project,
-        lovart_project_id=lovart_project_id,
     )
 
 
@@ -673,12 +850,14 @@ def generate_variants(
     mode="text2img",
     ratio="1:1",
     local_project=None,
+    image_backend=None,
 ):
-    """生成多张变体（Lovart，串行）"""
-    poll_timeout = LOVART_POLL_TIMEOUT
+    """生成多张变体"""
+    backend = normalize_image_backend(image_backend)
+    poll_timeout = LOVART_POLL_TIMEOUT if backend == "lovart" else LOCAL_GENERATION_TIMEOUT
 
     lovart_project_id = None
-    if local_project and LOVART_CREDENTIALS:
+    if backend == "lovart" and local_project and LOVART_CREDENTIALS:
         ak, sk = LOVART_CREDENTIALS[0]
         client = LovartClient(
             access_key=ak,
@@ -693,14 +872,28 @@ def generate_variants(
             mode,
             prompt,
             image_paths,
+            model_version="4.6",
             ratio=ratio,
             poll_timeout=poll_timeout,
             local_project=local_project,
             lovart_project_id=lovart_project_id,
+            image_backend=backend,
         )
         return {"idx": idx, "url": image_url, "error": error}
 
-    return [generate_one(i) for i in range(count)]
+    if backend == "lovart":
+        return [generate_one(i) for i in range(count)]
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(count, 4)) as executor:
+        futures = [executor.submit(generate_one, i) for i in range(count)]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    results.sort(key=lambda x: x["idx"])
+    return results
+
+
+
 
 
 def format_url_error(exc: Exception, context: str = "") -> str:
@@ -1028,1635 +1221,27 @@ def parse_multipart(body, boundary):
 
 
 # ─── HTML 页面 ────────────────────────────────────────────────────
-HTML_PAGE = r"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 视觉设计助手 v4</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-               background: #0f0c29; min-height: 100vh; padding: 20px; overflow-x: hidden; }
-        body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
-               background: linear-gradient(45deg, #0f0c29, #302b63, #24243e, #0f0c29, #1a1a3e, #302b63);
-               z-index: -1; }
-        .container { max-width: 1000px; margin: 0 auto; position: relative; }
-        .card { background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-                border-radius: 20px; padding: 28px; border: 1px solid rgba(255,255,255,0.08);
-                box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06); margin-bottom: 20px; }
-        h1 { text-align: center; margin-bottom: 6px; font-size: 24px; font-weight: 700;
-             background: linear-gradient(135deg, #a78bfa, #818cf8, #6ee7b7);
-             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .subtitle { text-align: center; color: rgba(255,255,255,0.45); font-size: 13px; margin-bottom: 16px; }
-        
-        /* 历史记录按钮（与 Tab 同一行） */
-        .history-btn { flex-shrink: 0; margin-left: auto;
-                       background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
-                       padding: 10px 16px; cursor: pointer; font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.7);
-                       transition: all 0.25s; backdrop-filter: blur(10px); white-space: nowrap; }
-        .history-btn:hover { border-color: rgba(167,139,250,0.5); color: #a78bfa; background: rgba(167,139,250,0.1); }
-        
-        /* 历史记录侧边抽屉 */
-        .history-drawer { position: fixed; top: 0; right: -400px; width: 380px; height: 100vh;
-                          background: rgba(20,18,50,0.95); backdrop-filter: blur(24px);
-                          border-left: 1px solid rgba(255,255,255,0.08);
-                          box-shadow: -4px 0 32px rgba(0,0,0,0.4);
-                          transition: right 0.35s cubic-bezier(0.4,0,0.2,1); z-index: 1000; overflow: hidden; }
-        .history-drawer.open { right: 0; }
-        .drawer-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); 
-                         display: flex; justify-content: space-between; align-items: center; }
-        .drawer-title { font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.9); }
-        .drawer-close { background: none; border: none; font-size: 24px; cursor: pointer; color: rgba(255,255,255,0.4); }
-        .drawer-close:hover { color: rgba(255,255,255,0.9); }
-        .drawer-content { padding: 12px; overflow-y: auto; height: calc(100vh - 60px); }
-        .drawer-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                          background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 999; display: none; }
-        .drawer-overlay.open { display: block; }
-        
-        .history-item { display: flex; gap: 12px; padding: 12px; border-radius: 12px;
-                        margin-bottom: 8px; cursor: pointer; transition: all 0.2s;
-                        border: 1px solid rgba(255,255,255,0.04); }
-        .history-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(167,139,250,0.3); }
-        .history-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
-        .history-img-wrap { position: relative; flex-shrink: 0; }
-        .history-download { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.6); color: white; 
-                           width: 22px; height: 22px; border-radius: 50%; text-align: center; 
-                           line-height: 22px; font-size: 12px; text-decoration: none; }
-        .history-download:hover { background: rgba(167,139,250,0.8); }
-        .history-info { flex: 1; min-width: 0; }
-        .history-time { font-size: 11px; color: rgba(255,255,255,0.35); margin-bottom: 4px; }
-        .history-prompt { font-size: 13px; color: rgba(255,255,255,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .history-meta { font-size: 11px; color: #a78bfa; margin-top: 4px; }
-        
-        /* 全屏图片查看 */
-        .fullscreen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                               background: rgba(0,0,0,0.92); backdrop-filter: blur(8px); z-index: 2000; display: none;
-                               justify-content: center; align-items: center; cursor: zoom-out; }
-        .fullscreen-overlay.open { display: flex; }
-        .fullscreen-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 12px;
-                          box-shadow: 0 0 60px rgba(167,139,250,0.15); }
-        .fullscreen-close { position: absolute; top: 20px; right: 20px; color: rgba(255,255,255,0.7); 
-                             font-size: 32px; cursor: pointer; background: none; border: none; }
-        .fullscreen-close:hover { color: white; }
-        .fullscreen-download { position: absolute; top: 20px; right: 70px; color: white; 
-                               font-size: 14px; cursor: pointer; background: rgba(167,139,250,0.4); 
-                               padding: 8px 16px; border-radius: 20px; text-decoration: none;
-                               border: 1px solid rgba(167,139,250,0.5); }
-        .fullscreen-download:hover { background: rgba(167,139,250,0.6); }
-        .fullscreen-nav { position: absolute; top: 50%; transform: translateY(-50%);
-                          color: white; font-size: 40px; cursor: pointer; background: rgba(0,0,0,0.3);
-                          border: none; border-radius: 50%; width: 50px; height: 50px;
-                          display: flex; align-items: center; justify-content: center;
-                          z-index: 2002; pointer-events: auto; }
-        .fullscreen-nav:hover { background: rgba(167,139,250,0.5); }
-        .fullscreen-nav.hidden { display: none !important; }
-        .edit-side img { cursor: pointer; }
-        .fullscreen-prev { left: 20px; }
-        .fullscreen-next { right: 20px; }
-        .fullscreen-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-                              color: white; font-size: 14px; background: rgba(0,0,0,0.5);
-                              padding: 6px 16px; border-radius: 20px; }
-        
-        /* 项目选择 */
-        .project-section { margin-bottom: 16px; }
-        .project-bar { display: flex; align-items: center; gap: 16px; padding: 12px; flex-wrap: wrap;
-                       background: rgba(255,255,255,0.04); border-radius: 12px;
-                       border: 1px solid rgba(255,255,255,0.06); }
-        .project-bar-field { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 10px; }
-        .project-bar label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); min-width: 72px; flex-shrink: 0; }
-        .project-bar select { flex: 1; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
-                               font-size: 13px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); cursor: pointer; }
-        .project-refs-wrap { margin-top: 10px; }
-        .project-refs-hint { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 0 4px; }
-        .project-bar select:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
-        .project-bar select option { background: #1a1a3e; color: #eee; }
-        .backend-static { padding: 8px 12px; border-radius: 8px; font-size: 14px; color: rgba(255,255,255,0.85);
-                          background: rgba(139,92,246,0.12); border: 1px solid rgba(167,139,250,0.25); }
-        .project-info { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 6px; padding-left: 82px; }
-        
-        .project-images-grid { display: none; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 12px; 
-            background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(167,139,250,0.2); }
-        .project-images-grid.active { display: flex; }
-        .project-images-grid .img-thumb-wrap { position: relative; cursor: pointer; }
-        .project-images-grid .img-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
-            border: 2px solid transparent; transition: all 0.2s; }
-        .project-images-grid .img-thumb-wrap:hover .img-thumb { border-color: rgba(167,139,250,0.5); transform: scale(1.05); }
-        .project-images-grid .img-thumb-wrap.selected .img-thumb { border-color: #a78bfa; box-shadow: 0 0 10px rgba(167,139,250,0.6); }
-        .project-images-grid .img-thumb-wrap.selected::after { content: '✓'; position: absolute; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%); background: #a78bfa; color: #1a1a3e; border-radius: 50%;
-            width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
-        .project-images-grid .select-hint { font-size: 11px; color: rgba(255,255,255,0.4); width: 100%; text-align: center; }
-        
-        /* 上传参考图 */
-        .upload-ref-section { margin-top: 12px; padding: 14px;
-            background: rgba(255,255,255,0.05); border-radius: 12px;
-            border: 1px solid rgba(168,85,247,0.3); }
-        .upload-ref-label { display: flex; align-items: center; gap: 6px;
-            font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 10px; }
-        .upload-ref-input { width: 100%; padding: 10px;
-            background: rgba(255,255,255,0.08);
-            border: 1px dashed rgba(168,85,247,0.5);
-            border-radius: 8px; color: rgba(255,255,255,0.8);
-            font-size: 13px; }
-        .uploaded-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .uploaded-thumb-wrap { position: relative; }
-        .uploaded-thumb { width: 60px; height: 60px; border-radius: 8px;
-            object-fit: cover; border: 2px solid rgba(168,85,247,0.5); }
-        
-        /* 需求表单 */
-        .requirement-form { margin-bottom: 16px; padding: 16px; background: rgba(255,255,255,0.03); border-radius: 14px;
-                            border: 1px solid rgba(255,255,255,0.05); }
-        .requirement-form h3 { font-size: 14px; color: rgba(255,255,255,0.75); margin-bottom: 12px; }
-        .form-row { display: flex; gap: 12px; margin-bottom: 10px; }
-        .form-item { flex: 1; }
-        .form-item.full-width { flex: 2; }
-        .form-item label { font-size: 12px; color: rgba(255,255,255,0.5); display: block; margin-bottom: 3px; font-weight: 500; }
-        .form-item label .required { color: #f87171; }
-        .form-item select, .form-item input[type="text"] { width: 100%; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
-                               padding: 8px 10px; font-size: 13px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
-        .form-item select:focus, .form-item input[type="text"]:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
-        .form-item select option { background: #1a1a3e; color: #eee; }
-        .form-item input::placeholder { color: rgba(255,255,255,0.25); }
-        .size-inputs { display: flex; align-items: center; gap: 6px; }
-        .size-inputs input[type="number"] { width: 70px; padding: 6px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-size: 13px;
-                                            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
-        .size-inputs input[type="number"]:focus { outline: none; border-color: rgba(167,139,250,0.5); }
-        .size-inputs span { color: rgba(255,255,255,0.3); }
-        .ratio-hint { font-size: 11px; color: #a78bfa; font-weight: 500; }
-        
-        /* 分析按钮 */
-        .analyze-btn { width: 100%; padding: 14px; font-size: 15px;
-                       border: none; border-radius: 12px; cursor: pointer;
-                       background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-                       color: white; font-weight: 600; margin-top: 16px;
-                       box-shadow: 0 4px 16px rgba(139,92,246,0.3);
-                       transition: transform 0.2s, box-shadow 0.2s; }
-        .analyze-btn:hover { box-shadow: 0 6px 24px rgba(139,92,246,0.5); transform: translateY(-2px); }
-        .analyze-btn:active { transform: translateY(0); }
-        .analyze-btn:disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; transform: none; box-shadow: none; }
-        
-        /* 关键词展示区域 */
-        .keyword-section { margin-top: 16px; padding: 16px; background: rgba(139,92,246,0.06); border-radius: 14px;
-                           border: 1px solid rgba(139,92,246,0.25); }
-        .keyword-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-        .keyword-header span:first-child { font-size: 14px; font-weight: 600; color: #a78bfa; }
-        .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); flex: 1; min-width: 120px; }
-        .reanalyze-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; flex-shrink: 0; }
-        .keyword-textarea { width: 100%; min-height: 80px; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
-                            font-size: 14px; line-height: 1.6; resize: vertical; background: rgba(255,255,255,0.04);
-                            color: rgba(255,255,255,0.85);
-                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-        .keyword-textarea:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
-        
-        /* 生成按钮 */
-        .generate-btn { width: 100%; padding: 14px; font-size: 15px;
-                        border: none; border-radius: 12px; cursor: pointer;
-                        background: linear-gradient(135deg, #34d399 0%, #6ee7b7 50%, #a78bfa 100%);
-                        color: #0f0c29; font-weight: 700; margin-top: 12px;
-                        box-shadow: 0 4px 16px rgba(52,211,153,0.3);
-                        transition: transform 0.2s, box-shadow 0.2s; }
-        .generate-btn:hover { box-shadow: 0 6px 24px rgba(52,211,153,0.5); transform: translateY(-2px); }
-        .generate-btn:active { transform: translateY(0); }
-        .generate-btn:disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; transform: none; box-shadow: none; }
-        
-        /* 加载状态 */
-        .loading-card { display: none; text-align: center; padding: 24px; }
-        .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.1);
-                   border-top-color: #a78bfa; border-radius: 50%; animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { margin-top: 10px; color: rgba(255,255,255,0.5); font-size: 14px; }
-        
-        /* 变体展示 */
-        .variants-section { display: none; margin-top: 16px; }
-        .variants-title { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.75); margin-bottom: 10px; }
-        .variants-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
-        .variant-card { background: rgba(255,255,255,0.04); border-radius: 12px; overflow: hidden;
-                        cursor: pointer; border: 2px solid rgba(255,255,255,0.06);
-                        transition: all 0.25s; }
-        .variant-card:hover { transform: translateY(-3px); border-color: rgba(167,139,250,0.3); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
-        .variant-card.selected { border-color: rgba(167,139,250,0.7); box-shadow: 0 0 20px rgba(167,139,250,0.2); }
-        .variant-card img { width: 100%; height: 180px; object-fit: cover; display: block; cursor: zoom-in; }
-        .variant-card .label { padding: 8px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.5); }
-        .variant-card.selected .label { color: #a78bfa; font-weight: 600; }
-        
-        /* 操作按钮 */
-        .actions { display: none; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-        .action-btn { padding: 10px 20px; border: none; border-radius: 10px;
-                      font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.25s; }
-        .btn-primary { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; box-shadow: 0 2px 10px rgba(139,92,246,0.3); }
-        .btn-primary:hover { box-shadow: 0 4px 16px rgba(139,92,246,0.5); transform: translateY(-1px); }
-        .btn-green { background: linear-gradient(135deg, #34d399, #6ee7b7); color: #0f0c29; font-weight: 700; box-shadow: 0 2px 10px rgba(52,211,153,0.3); }
-        .btn-green:hover { box-shadow: 0 4px 16px rgba(52,211,153,0.5); transform: translateY(-1px); }
-        .btn-outline { background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.15); }
-        .btn-outline:hover { border-color: rgba(167,139,250,0.4); color: #a78bfa; background: rgba(167,139,250,0.08); }
-        
-        .credit { text-align: center; color: rgba(255,255,255,0.3); margin-bottom: 10px; font-size: 13px;
-                  font-weight: 500; letter-spacing: 1px; }
-        
-        /* Tab 导航 */
-        .tab-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .tab-btn { flex: 1; padding: 12px 20px; border: none; border-radius: 10px; cursor: pointer;
-                   font-size: 15px; font-weight: 600; transition: all 0.2s; background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.5); }
-        .tab-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
-        .tab-btn.active { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; box-shadow: 0 4px 16px rgba(139,92,246,0.4); }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        
-        /* 修图区域 */
-        .edit-section { margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
-        .edit-section h3 { color: white; font-size: 16px; margin-bottom: 16px; }
-        .edit-type-select { width: 100%; padding: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
-                        border-radius: 8px; color: white; font-size: 14px; margin-bottom: 16px; }
-        .edit-type-select option { background: #1a1a3e; color: #eee; }
-        .edit-upload-zone { border: 2px dashed rgba(167,139,250,0.4); border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: 0.2s; }
-        .edit-upload-zone:hover { border-color: rgba(167,139,250,0.7); background: rgba(167,139,250,0.05); }
-        .edit-upload-zone.dragover { border-color: #a78bfa; background: rgba(167,139,250,0.1); }
-        .edit-preview-wrap { margin-top: 16px; text-align: center; position: relative; display: inline-block; }
-        .edit-preview-wrap img { max-width: 100%; max-height: 300px; border-radius: 8px; border: 2px solid rgba(167,139,250,0.3); }
-        .edit-preview-wrap .edit-remove { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%;
-                            background: rgba(239,68,68,0.9); color: white; border: none; cursor: pointer; font-size: 18px; line-height: 1; }
-        .edit-desc textarea { width: 100%; min-height: 100px; padding: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-                         border-radius: 8px; color: white; font-size: 14px; resize: vertical; font-family: inherit; margin-bottom: 12px; }
-        .edit-desc textarea:focus { outline: none; border-color: #667eea; }
-        .edit-results { margin-top: 24px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
-        .edit-results-title { font-size: 18px; font-weight: 600; color: white; margin-bottom: 16px; text-align: center; }
-        .edit-comparison { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
-        .edit-side { flex: 1; min-width: 200px; max-width: 350px; text-align: center; }
-        .edit-side img { width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-        .edit-side-label { font-size: 14px; color: rgba(255,255,255,0.6); margin: 10px 0; }
-        .edit-arrow { font-size: 32px; color: #667eea; font-weight: bold; }
-        .edit-result-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
-        
-        /* 选区工具 */
-        .edit-canvas-wrap { position: relative; display: inline-block; margin-top: 16px; }
-        .edit-canvas-wrap img { display: block; max-width: 100%; max-height: 350px; border-radius: 8px; }
-        .edit-canvas-wrap .canvas-overlay { position: absolute; top: 0; left: 0; cursor: crosshair; }
-        .edit-canvas-wrap .selection-rect {
-            position: absolute; top: 0; left: 0; border: 2px dashed #a78bfa; background: rgba(167,139,250,0.15);
-            pointer-events: none; display: none; box-sizing: border-box;
-        }
-        .edit-canvas-wrap .selection-rect.active { display: block; }
-        .edit-toolbar { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
-        .edit-toolbar button { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;
-            font-size: 13px; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); transition: 0.2s; }
-        .edit-toolbar button:hover { background: rgba(167,139,250,0.3); }
-        .edit-toolbar button.active { background: #a78bfa; color: white; }
-        .selection-info { text-align: center; font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 8px; }
-        .edit-regions-list { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
-        .edit-region-item { padding: 12px; background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.25); border-radius: 8px; }
-        .edit-region-item .region-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .edit-region-item .region-label { font-size: 13px; color: #a78bfa; font-weight: 500; }
-        .edit-region-item .region-remove { background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 16px; padding: 0 4px; }
-        .edit-region-item .region-remove:hover { color: #ef4444; }
-        .edit-region-item textarea { width: 100%; min-height: 60px; padding: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 6px; color: white; font-size: 13px; resize: vertical; font-family: inherit; }
-        .edit-region-item textarea:focus { outline: none; border-color: #667eea; }
-        .edit-canvas-wrap .edit-remove { position: absolute; top: 8px; right: 8px; z-index: 10; }
-    </style>
-</head>
-<body>
-    <p class="credit">✦ AI 视觉设计助手 v4 ✦</p>
-    <div class="container">
-        <!-- Tab 导航 -->
-        <div class="tab-nav">
-            <button class="tab-btn active" onclick="switchTab('generate')">🖼️ 生图</button>
-            <button class="tab-btn" onclick="switchTab('edit')">✏️ 修图</button>
-            <button type="button" class="history-btn" onclick="toggleHistory()">📋 历史记录</button>
-        </div>
-        
-        <div class="card tab-content active" id="generateTab">
-            <h1>🎨 AI 视觉设计助手</h1>
-            <p class="subtitle">填写需求，一键生成多张变体</p>
-            
-            <!-- 项目组 + 设计类型 -->
-            <div class="project-section">
-                <div class="project-bar">
-                    <div class="project-bar-field">
-                        <label>📁 项目组</label>
-                        <select id="projectSelect" onchange="onProjectOrDesignTypeChange()">
-                            <option value="">请选择项目组</option>
-                        </select>
-                    </div>
-                    <div class="project-bar-field">
-                        <label>设计类型</label>
-                        <select id="designType" onchange="onDesignTypeChange()">
-                            <option value="">请选择设计类型</option>
-                            <option value="海报">海报</option>
-                            <option value="传单">传单</option>
-                            <option value="Banner">Banner</option>
-                            <option value="朋友圈图">朋友圈图</option>
-                            <option value="公众号封面">公众号封面</option>
-                            <option value="PPT封面">PPT封面</option>
-                            <option value="其他">其他</option>
-                        </select>
-                    </div>
-                </div>
-                <p class="project-refs-hint" id="projectRefsHint">请先选择项目组和设计类型，再挑选参考图</p>
-                <div class="project-refs-wrap" id="projectRefsWrap" style="display: none;">
-                    <div class="project-info" id="projectInfo"></div>
-                    <div class="project-images-grid" id="projectImagesGrid"></div>
-                </div>
-            </div>
-            
-            <!-- 上传参考图 -->
-            <div class="upload-ref-section">
-                <div class="upload-ref-label">
-                    <span>🖼️ 上传参考图（可选）</span>
-                    <span style="opacity:0.6;font-size:12px;">最多3张，不影响生成</span>
-                </div>
-                <input type="file" id="refImagesInput" class="upload-ref-input" accept="image/*" multiple>
-                <div class="uploaded-previews" id="uploadedPreviews"></div>
-            </div>
-            
-            <!-- 需求表单 -->
-            <div class="requirement-form">
-                <h3>📝 填写设计需求</h3>
-                
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>主标题 <span class="required">*</span></label>
-                        <input type="text" id="mainTitle" placeholder="如：暑期班火热招生中">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item">
-                        <label>副标题</label>
-                        <input type="text" id="subTitle" placeholder="如：限时优惠 前50名8折">
-                    </div>
-                    <div class="form-item">
-                        <label>画面描述</label>
-                        <input type="text" id="visualDesc" placeholder="如：蓝天白云，卡通儿童奔跑">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item">
-                        <label>风格</label>
-                        <select id="styleSelect" onchange="toggleCustomStyle()">
-                            <option value="">默认</option>
-                            <option value="简约">简约</option>
-                            <option value="卡通">卡通</option>
-                            <option value="中国风">中国风</option>
-                            <option value="科技感">科技感</option>
-                            <option value="可爱">可爱</option>
-                            <option value="商务">商务</option>
-                            <option value="复古">复古</option>
-                            <option value="潮流">潮流</option>
-                            <option value="custom">自定义</option>
-                        </select>
-                    </div>
-                    <div class="form-item" id="customStyleInput" style="display:none;">
-                        <label>自定义风格</label>
-                        <input type="text" id="customStyle" placeholder="如：赛博朋克、国潮">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>排版参考</label>
-                        <input type="text" id="layoutRef" placeholder="如：标题居中顶部，正文底部左对齐">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item">
-                        <label>输出尺寸</label>
-                        <select id="ratioSelect" onchange="toggleCustomSize()">
-                            <option value="1:1">1:1 (方形)</option>
-                            <option value="16:9">16:9 (宽屏)</option>
-                            <option value="9:16">9:16 (竖版)</option>
-                            <option value="4:3">4:3 (横版)</option>
-                            <option value="3:4">3:4 (竖版)</option>
-                            <option value="custom">自定义</option>
-                        </select>
-                    </div>
-                    <div class="form-item" id="customSizeInputs" style="display:none;">
-                        <label>宽 × 高 (px)</label>
-                        <div class="size-inputs">
-                            <input type="number" id="customWidth" placeholder="宽" min="100" max="4096">
-                            <span>×</span>
-                            <input type="number" id="customHeight" placeholder="高" min="100" max="4096">
-                            <span id="matchedRatio" class="ratio-hint"></span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>补充备注</label>
-                        <input type="text" id="extraNotes" placeholder="如：品牌色 #FF6B6B，LOGO 左上角">
-                    </div>
-                </div>
+TEMPLATE_DIR = pathlib.Path(__file__).resolve().parent / "templates"
+HTML_TEMPLATE = TEMPLATE_DIR / "index.html"
+_html_cache = {"mtime": 0.0, "content": ""}
+
+
+def get_html_page():
+    """生产环境缓存模板；DEV_RELOAD=1 时每次请求重新读取（改 UI 无需重启）。"""
+    if not HTML_TEMPLATE.exists():
+        return "<html><body><h1>缺少 templates/index.html</h1></body></html>"
+    dev = os.environ.get("DEV_RELOAD", "").strip().lower() in ("1", "true", "yes")
+    if dev:
+        return HTML_TEMPLATE.read_text(encoding="utf-8")
+    mtime = HTML_TEMPLATE.stat().st_mtime
+    if _html_cache["content"] and _html_cache["mtime"] == mtime:
+        return _html_cache["content"]
+    content = HTML_TEMPLATE.read_text(encoding="utf-8")
+    _html_cache["mtime"] = mtime
+    _html_cache["content"] = content
+    return content
 
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>生图模型</label>
-                        <div class="backend-static">Lovart 龙虾（当前仅支持）</div>
-                    </div>
-                </div>
-                
-                <!-- 分析需求按钮 -->
-                <button class="analyze-btn" onclick="analyzeKeyword()">🔍 AI 分析关键词</button>
-                
-                <!-- 关键词展示区域（默认隐藏） -->
-                <div class="keyword-section" id="keywordSection" style="display:none">
-                    <div class="keyword-header">
-                        <span>📝 AI 分析的关键词</span>
-                        <span class="keyword-hint">可手动修改后生成</span>
-                        <button type="button" class="btn-outline reanalyze-btn" onclick="analyzeKeyword()">🔄 重新分析</button>
-                    </div>
-                    <textarea id="keywordInput" class="keyword-textarea" placeholder="点击上方按钮生成关键词..."></textarea>
-                    <button class="generate-btn" onclick="generateWithKeyword()">✨ 生成魔法图</button>
-                </div>
-            </div>
-            
-            <!-- 加载中 -->
-            <div class="loading-card" id="loadingCard">
-                <div class="spinner"></div>
-                <p class="loading-text">AI 正在创作变体中...约需 1-2 分钟</p>
-            </div>
-            
-            <!-- 变体展示 -->
-            <div class="variants-section" id="variantsSection">
-                <div class="variants-title">🎨 选择满意的一张</div>
-                <div class="variants-grid" id="variantsGrid"></div>
-            </div>
-            
-            <!-- 操作按钮 -->
-            <div class="actions" id="actionsSection">
-                <button class="action-btn btn-primary" onclick="downloadSelected()">💾 下载选中</button>
-                <button class="action-btn btn-green" style="display:none" title="暂不支持" onclick="upscaleSelected('2k')">🔍 2K 放大</button>
-                <button class="action-btn btn-outline" onclick="resetAll()">🔄 重新开始</button>
-            </div>
-        </div>
-        
-        <!-- 修图标签页内容 -->
-        <div class="tab-content" id="editTab">
-            <div class="edit-section">
-                <h3>✏️ 图片局部修改</h3>
-                
-                <!-- 修图类型 -->
-                <select class="edit-type-select" id="editType">
-                    <option value="文案修改">📝 文案修改</option>
-                    <option value="颜色调整">🎨 颜色调整</option>
-                    <option value="元素替换">🔄 元素替换</option>
-                    <option value="布局调整">📐 布局调整</option>
-                    <option value="风格转换">✨ 风格转换</option>
-                    <option value="背景替换">🏞️ 背景替换</option>
-                </select>
-                
-                <!-- 上传图片 -->
-                <div class="edit-upload-zone" id="editUploadZone" onclick="document.getElementById('editImageInput').click()">
-                    <p style="color: rgba(255,255,255,0.6);">🖼️ 点击上传要修改的图片</p>
-                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
-                </div>
-                <input type="file" id="editImageInput" accept="image/*" style="display: none;" onchange="previewEditImage(event)">
-                
-                <!-- 图片预览与选区绘制 -->
-                <div class="edit-canvas-wrap" id="editCanvasWrap" style="display: none;">
-                    <img id="editPreviewImg" alt="待修图预览">
-                    <canvas class="canvas-overlay" id="editSelectionCanvas"></canvas>
-                    <div class="selection-rect" id="editSelectionRect"></div>
-                    <button class="edit-remove" type="button" onclick="removeEditImage()" title="移除图片">×</button>
-                </div>
-                <div class="edit-toolbar" id="editToolbar" style="display: none;">
-                    <button type="button" onclick="setDrawMode('rect')" id="btnRect" class="active">▢ 框选区域</button>
-                    <button type="button" onclick="confirmCurrentSelection()" id="btnConfirmRegion">✓ 确认选区</button>
-                    <button type="button" onclick="clearCurrentSelection()">✕ 清除当前</button>
-                </div>
-                <div class="selection-info" id="selectionInfo" style="display: none;">框选要修改的区域并确认；仅修改选区内内容，原图尺寸与选区外样式保持不变</div>
-                <div class="edit-regions-list" id="editRegionsList"></div>
-                
-                <!-- 修改描述 -->
-                <div class="edit-desc" style="margin-top: 16px;">
-                    <label style="font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 8px; display: block;">📝 修改要求</label>
-                    <textarea id="editDescription" placeholder="例如：把文字改成'欢庆六一'，保持其他部分不变（框选区域后也可在各选区中单独填写）"></textarea>
-                </div>
-                
-                <!-- 保留元素 -->
-                <div class="edit-desc" style="margin-top: 12px;">
-                    <label style="font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 8px; display: block;">🎯 需要保留的元素（可选）</label>
-                    <input type="text" id="keepElements" placeholder="例如：背景颜色、人物姿态" 
-                           style="width: 100%; padding: 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
-                           border-radius: 8px; color: white; font-size: 14px;">
-                </div>
-                
-                <!-- 开始修图按钮 -->
-                <button class="generate-btn" onclick="startEditImage()" style="margin-top: 20px;">✨ AI 智能修图</button>
-                
-                <!-- 加载状态 -->
-                <div class="loading-card" id="editLoadingCard" style="display: none;">
-                    <div class="spinner"></div>
-                    <p class="loading-text">AI 正在修图，预计需要 1-2 分钟...</p>
-                </div>
-                
-                <!-- 结果展示 -->
-                <div class="edit-results" id="editResultsSection" style="display: none;">
-                    <div class="edit-results-title">🎉 修图完成！</div>
-                    <div class="edit-comparison">
-                        <div class="edit-side">
-                            <div class="edit-side-label">原图</div>
-                            <img id="editOriginalImg" onclick="openEditComparisonFullscreen(0)" title="点击查看大图">
-                        </div>
-                        <div class="edit-arrow">→</div>
-                        <div class="edit-side">
-                            <div class="edit-side-label">修改后</div>
-                            <img id="editResultImg" onclick="openEditComparisonFullscreen(1)" title="点击查看大图">
-                        </div>
-                    </div>
-                    <div class="edit-result-actions">
-                        <button class="action-btn btn-primary" onclick="downloadEditResult()">💾 下载结果</button>
-                        <button class="action-btn btn-outline" onclick="resetEdit()">🔄 重新修图</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    </div>
-    
-    <!-- 历史记录侧边抽屉 -->
-    <div class="drawer-overlay" id="drawerOverlay" onclick="toggleHistory()"></div>
-    <div class="history-drawer" id="historyDrawer">
-        <div class="drawer-header">
-            <span class="drawer-title">📋 历史记录</span>
-            <button class="drawer-close" onclick="toggleHistory()">×</button>
-        </div>
-        <div class="drawer-content" id="historyList"></div>
-    </div>
-    
-    <!-- 全屏图片查看 -->
-    <div class="fullscreen-overlay" id="fullscreenOverlay" onclick="closeFullscreen()">
-        <button class="fullscreen-close" onclick="event.stopPropagation(); closeFullscreen()">×</button>
-        <a class="fullscreen-download" id="fullscreenDownload" download href="#" onclick="event.stopPropagation()">⬇ 下载图片</a>
-        <img class="fullscreen-img" id="fullscreenImg">
-        <button class="fullscreen-nav fullscreen-prev" onclick="event.stopPropagation(); prevImage()">‹</button>
-        <button class="fullscreen-nav fullscreen-next" onclick="event.stopPropagation(); nextImage()">›</button>
-        <div class="fullscreen-counter" id="fullscreenCounter"></div>
-    </div>
-    
-<script>
-var currentProject = null;
-var selectedProjectImages = [];
-var selectedVariant = null;
-var variants = [];
-var editImageData = null;
 
-// Tab 切换
-function switchTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    event.target.classList.add('active');
-    document.getElementById(tab + 'Tab').classList.add('active');
-}
-
-// 初始化
-window.onload = function() {
-    updateProjectRefsVisibility();
-    loadProjects();
-    loadHistory();
-};
-
-function requireLovartProjectSelected() {
-    var project = document.getElementById('projectSelect').value;
-    if (project) return true;
-    alert('生图请先选择项目组。同组多次生成会进入 Lovart 中同一个项目。\\n\\n若要用 Lovart 网页里已有项目，在 projects/<组名>/project.json 填写 lovart_project_id。');
-    return false;
-}
-
-var DESIGN_TYPE_RATIO_DEFAULTS = {
-    '海报': '9:16',
-    '传单': '9:16',
-    '朋友圈图': '1:1',
-    '公众号封面': '16:9',
-    'Banner': '16:9',
-    'PPT封面': '16:9'
-};
-
-function shouldShowProjectRefs() {
-    var project = document.getElementById('projectSelect').value;
-    var designType = document.getElementById('designType').value;
-    return !!(project && designType);
-}
-
-function updateProjectRefsVisibility() {
-    var show = shouldShowProjectRefs();
-    var wrap = document.getElementById('projectRefsWrap');
-    var hint = document.getElementById('projectRefsHint');
-    if (wrap) wrap.style.display = show ? 'block' : 'none';
-    if (hint) hint.style.display = show ? 'none' : 'block';
-    if (!show) clearProjectRefs();
-}
-
-function clearProjectRefs() {
-    currentProject = null;
-    selectedProjectImages = [];
-    var info = document.getElementById('projectInfo');
-    var grid = document.getElementById('projectImagesGrid');
-    if (info) info.textContent = '';
-    if (grid) {
-        grid.innerHTML = '';
-        grid.classList.remove('active');
-    }
-}
-
-function onDesignTypeChange() {
-    applyDefaultRatioForDesignType();
-    var designType = document.getElementById('designType').value;
-    if (designType === '其他') {
-        document.getElementById('styleSelect').value = 'custom';
-        toggleCustomStyle();
-    }
-    onProjectOrDesignTypeChange();
-}
-
-function onProjectOrDesignTypeChange() {
-    updateProjectRefsVisibility();
-    if (!shouldShowProjectRefs()) return;
-    selectProject();
-}
-
-function applyDefaultRatioForDesignType() {
-    var designType = document.getElementById('designType').value;
-    if (!designType) return;
-    var ratio = DESIGN_TYPE_RATIO_DEFAULTS[designType];
-    if (!ratio) return;
-    var ratioSel = document.getElementById('ratioSelect');
-    var hasOption = Array.prototype.some.call(ratioSel.options, function(opt) {
-        return opt.value === ratio;
-    });
-    if (!hasOption) return;
-    ratioSel.value = ratio;
-    toggleCustomSize();
-}
-
-// 加载项目列表
-async function loadProjects() {
-    try {
-        var res = await fetch('/projects');
-        var data = await res.json();
-        var sel = document.getElementById('projectSelect');
-        sel.innerHTML = '<option value="">请选择项目组</option>';
-        (data.projects || []).forEach(function(p) {
-            var opt = document.createElement('option');
-            opt.value = p.name;
-            opt.textContent = p.display_name + ' (' + p.count + '张参考)';
-            opt.dataset.tags = (p.style_tags || []).join(', ');
-            opt.dataset.desc = p.description || '';
-            opt.dataset.lovartId = p.lovart_project_id || '';
-            sel.appendChild(opt);
-        });
-    } catch(e) {
-        console.error('加载项目失败', e);
-    }
-}
-
-// 选择项目
-function selectProject() {
-    if (!shouldShowProjectRefs()) {
-        clearProjectRefs();
-        return;
-    }
-    var sel = document.getElementById('projectSelect');
-    var opt = sel.selectedOptions[0];
-    var grid = document.getElementById('projectImagesGrid');
-    selectedProjectImages = [];
-    
-    if (opt && opt.value) {
-        currentProject = {
-            name: opt.value,
-            tags: opt.dataset.tags,
-            desc: opt.dataset.desc
-        };
-        var lovartHint = opt.dataset.lovartId
-            ? '已绑定 Lovart 项目：' + opt.dataset.lovartId.slice(0, 16) + '…。'
-            : '首次 Lovart 生图将自动绑定到同名项目。';
-        document.getElementById('projectInfo').textContent = 
-            lovartHint + ' ' +
-            (currentProject.tags ? '风格标签：' + currentProject.tags + '。' : '') +
-            (currentProject.desc || '');
-        // 加载项目图片
-        loadProjectImages(opt.value, grid);
-    } else {
-        clearProjectRefs();
-    }
-}
-
-// 加载项目图片
-async function loadProjectImages(projectName, grid) {
-    try {
-        var res = await fetch('/projects/' + encodeURIComponent(projectName) + '/images');
-        var data = await res.json();
-        var images = data.images || [];
-        
-        if (images.length === 0) {
-            grid.innerHTML = '<span class="select-hint">该项目暂无参考图</span>';
-            grid.classList.add('active');
-            return;
-        }
-        
-        grid.innerHTML = '<span class="select-hint">点击选择参考图（最多10张）：</span>';
-        grid.classList.add('active');
-        
-        images.forEach(function(imgName) {
-            var wrap = document.createElement('div');
-            wrap.className = 'img-thumb-wrap';
-            wrap.dataset.name = imgName;
-            wrap.onclick = function() { toggleProjectImage(this, projectName, imgName); };
-            
-            var img = document.createElement('img');
-            img.className = 'img-thumb';
-            img.src = '/projects/' + projectName + '/images/' + imgName;
-            img.onerror = function() { this.style.display = 'none'; };
-            
-            wrap.appendChild(img);
-            grid.appendChild(wrap);
-        });
-    } catch(e) {
-        console.error('加载项目图片失败', e);
-    }
-}
-
-// 切换项目图片选择状态
-function toggleProjectImage(el, projectName, imgName) {
-    var idx = selectedProjectImages.indexOf(projectName + '/' + imgName);
-    if (idx >= 0) {
-        selectedProjectImages.splice(idx, 1);
-        el.classList.remove('selected');
-    } else {
-        if (selectedProjectImages.length >= 10) {
-            alert('最多选择10张参考图');
-            return;
-        }
-        selectedProjectImages.push(projectName + '/' + imgName);
-        el.classList.add('selected');
-    }
-}
-
-// 上传参考图处理
-var uploadedRefImages = [];
-document.getElementById('refImagesInput').addEventListener('change', function(e) {
-    var files = e.target.files;
-    var maxFiles = 3;
-    var remaining = maxFiles - uploadedRefImages.length;
-    if (files.length > remaining) {
-        alert('最多上传' + maxFiles + '张参考图，已选择' + files.length + '张，剩余' + remaining + '张名额');
-    }
-    for (var i = 0; i < Math.min(files.length, remaining); i++) {
-        (function(file) {
-            var reader = new FileReader();
-            reader.onload = function(evt) {
-                uploadedRefImages.push(evt.target.result);
-                renderUploadedPreviews();
-            };
-            reader.readAsDataURL(file);
-        })(files[i]);
-    }
-    e.target.value = '';
-});
-
-function renderUploadedPreviews() {
-    var container = document.getElementById('uploadedPreviews');
-    container.innerHTML = '';
-    for (var i = 0; i < uploadedRefImages.length; i++) {
-        (function(idx, dataUrl) {
-            var wrap = document.createElement('div');
-            wrap.className = 'uploaded-thumb-wrap';
-            var img = document.createElement('img');
-            img.className = 'uploaded-thumb';
-            img.src = dataUrl;
-            var btn = document.createElement('div');
-            btn.className = 'uploaded-thumb-remove';
-            btn.textContent = '×';
-            btn.onclick = function() {
-                uploadedRefImages.splice(idx, 1);
-                renderUploadedPreviews();
-            };
-            wrap.appendChild(img);
-            wrap.appendChild(btn);
-            container.appendChild(wrap);
-        })(i, uploadedRefImages[i]);
-    }
-}
-
-// 自定义尺寸切换
-function toggleCustomSize() {
-    var sel = document.getElementById('ratioSelect');
-    var customInputs = document.getElementById('customSizeInputs');
-    if (sel.value === 'custom') {
-        customInputs.style.display = 'block';
-    } else {
-        customInputs.style.display = 'none';
-    }
-}
-
-// 自定义风格切换
-function toggleCustomStyle() {
-    var sel = document.getElementById('styleSelect');
-    var customInput = document.getElementById('customStyleInput');
-    if (sel.value === 'custom') {
-        customInput.style.display = 'block';
-    } else {
-        customInput.style.display = 'none';
-    }
-}
-
-// 获取风格值
-function getStyleValue() {
-    var sel = document.getElementById('styleSelect');
-    if (sel.value === 'custom') {
-        return document.getElementById('customStyle').value.trim();
-    }
-    return sel.value;
-}
-
-// 匹配最接近的预设比例
-var RATIO_MAP = [
-    {ratio: '21:9', value: 21/9},
-    {ratio: '16:9', value: 16/9},
-    {ratio: '4:3', value: 4/3},
-    {ratio: '3:2', value: 3/2},
-    {ratio: '1:1', value: 1},
-    {ratio: '4:5', value: 4/5},
-    {ratio: '3:4', value: 3/4},
-    {ratio: '2:3', value: 2/3},
-    {ratio: '9:16', value: 9/16}
-];
-
-function updateMatchedRatio() {
-    var w = parseInt(document.getElementById('customWidth').value) || 0;
-    var h = parseInt(document.getElementById('customHeight').value) || 0;
-    var hint = document.getElementById('matchedRatio');
-    
-    if (w > 0 && h > 0) {
-        var inputRatio = w / h;
-        var closest = RATIO_MAP.reduce(function(prev, curr) {
-            return Math.abs(curr.value - inputRatio) < Math.abs(prev.value - inputRatio) ? curr : prev;
-        });
-        hint.textContent = '→ 匹配 ' + closest.ratio;
-        hint.dataset.ratio = closest.ratio;
-    } else {
-        hint.textContent = '';
-        hint.dataset.ratio = '';
-    }
-}
-
-document.getElementById('customWidth').addEventListener('input', updateMatchedRatio);
-document.getElementById('customHeight').addEventListener('input', updateMatchedRatio);
-
-// 分析关键词
-async function analyzeKeyword() {
-    var designType = document.getElementById('designType').value;
-    var mainTitle = document.getElementById('mainTitle').value.trim();
-    
-    if (!mainTitle) {
-        alert('请填写主标题');
-        return;
-    }
-    
-    var summary = {
-        '设计类型': designType,
-        '主标题': mainTitle,
-        '副标题': document.getElementById('subTitle').value.trim(),
-        '画面描述': document.getElementById('visualDesc').value.trim(),
-        '排版参考': document.getElementById('layoutRef').value.trim(),
-        '风格': getStyleValue(),
-        '补充备注': document.getElementById('extraNotes').value.trim()
-    };
-    
-    document.getElementById('loadingCard').style.display = 'block';
-    document.querySelector('.loading-text').textContent = 'AI 正在分析关键词...';
-    document.querySelectorAll('.analyze-btn, .reanalyze-btn').forEach(function(btn) { btn.disabled = true; });
-    
-    try {
-        var formData = new FormData();
-        formData.append('summary', JSON.stringify(summary));
-        formData.append('project', currentProject ? currentProject.name : '');
-        
-        var res = await fetch('/api/analyze', { method: 'POST', body: formData });
-        var data = await res.json();
-        
-        if (data.error) {
-            alert('分析失败: ' + data.error);
-            return;
-        }
-        
-        document.getElementById('keywordSection').style.display = 'block';
-        document.getElementById('keywordInput').value = data.prompt || '';
-        document.querySelector('.analyze-btn').textContent = '🔄 重新分析关键词';
-        
-    } catch(e) {
-        alert('分析请求失败: ' + e.message);
-    }
-    
-    document.getElementById('loadingCard').style.display = 'none';
-    document.querySelectorAll('.analyze-btn, .reanalyze-btn').forEach(function(btn) { btn.disabled = false; });
-}
-
-// 使用关键词生成图片
-async function generateWithKeyword() {
-    var prompt = document.getElementById('keywordInput').value.trim();
-    
-    if (!prompt) {
-        alert('请先分析关键词或手动填写');
-        return;
-    }
-    if (!requireLovartProjectSelected()) return;
-    
-    // 处理尺寸
-    var ratioSel = document.getElementById('ratioSelect');
-    var ratio = ratioSel.value;
-    if (ratio === 'custom') {
-        var hint = document.getElementById('matchedRatio');
-        ratio = hint.dataset.ratio || '1:1';
-    }
-    
-    document.getElementById('loadingCard').style.display = 'block';
-    document.querySelector('.loading-text').textContent = 'AI 正在创作变体中...约需 1-2 分钟';
-    document.querySelector('.generate-btn').disabled = true;
-    
-    var formData = new FormData();
-    formData.append('prompt', prompt);
-    formData.append('project', currentProject ? currentProject.name : '');
-    formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
-    formData.append('count', '3');
-    formData.append('ratio', ratio);
-    // 添加上传的参考图
-    for (var i = 0; i < uploadedRefImages.length; i++) {
-        formData.append('ref_image_' + i, uploadedRefImages[i]);
-    }
-    
-    try {
-        var res = await fetch('/generate-with-prompt', { method: 'POST', body: formData });
-        var data = await res.json();
-        
-        if (data.error) {
-            alert('生成失败: ' + data.error);
-            return;
-        }
-        
-        variants = data.variants || [];
-        renderVariants(variants);
-        
-        document.getElementById('variantsSection').style.display = 'block';
-        document.getElementById('actionsSection').style.display = 'flex';
-        loadHistory();
-        
-    } catch(e) {
-        alert('生成请求失败: ' + e.message);
-    }
-    
-    document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.generate-btn').disabled = false;
-}
-
-// 生成变体（保留旧函数兼容）
-async function generateVariants() {
-    var designType = document.getElementById('designType').value;
-    var mainTitle = document.getElementById('mainTitle').value.trim();
-    
-    if (!mainTitle) {
-        alert('请填写主标题');
-        return;
-    }
-    if (!requireLovartProjectSelected()) return;
-    
-    var summary = {
-        '设计类型': designType,
-        '主标题': mainTitle,
-        '副标题': document.getElementById('subTitle').value.trim(),
-        '画面描述': document.getElementById('visualDesc').value.trim(),
-        '排版参考': document.getElementById('layoutRef').value.trim(),
-        '风格': getStyleValue(),
-        '补充备注': document.getElementById('extraNotes').value.trim()
-    };
-    
-    // 处理尺寸
-    var ratioSel = document.getElementById('ratioSelect');
-    var ratio = ratioSel.value;
-    if (ratio === 'custom') {
-        var hint = document.getElementById('matchedRatio');
-        ratio = hint.dataset.ratio || '1:1';
-    }
-    
-    document.getElementById('loadingCard').style.display = 'block';
-    document.querySelector('.generate-btn').disabled = true;
-    
-    var formData = new FormData();
-    formData.append('summary', JSON.stringify(summary));
-    formData.append('project', currentProject ? currentProject.name : '');
-    formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
-    formData.append('count', '3');
-    formData.append('ratio', ratio);
-    
-    try {
-        var res = await fetch('/generate-variants', { method: 'POST', body: formData });
-        var data = await res.json();
-        
-        if (data.error) {
-            alert('生成失败: ' + data.error);
-            return;
-        }
-        
-        variants = data.variants || [];
-        renderVariants(variants);
-        
-        document.getElementById('variantsSection').style.display = 'block';
-        document.getElementById('actionsSection').style.display = 'flex';
-        loadHistory();
-        
-    } catch(e) {
-        alert('生成请求失败: ' + e.message);
-    }
-    
-    document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.generate-btn').disabled = false;
-}
-
-// 渲染变体
-function renderVariants(vars) {
-    var grid = document.getElementById('variantsGrid');
-    var valid = (vars || []).filter(function(v) { return v && v.filename; });
-
-    if (!valid.length) {
-        var errorMsg = (vars || []).map(function(v) { return v && v.error; }).filter(Boolean)[0] || '没有成功生成任何图片';
-        grid.innerHTML = '<div class="variant-error" style="grid-column:1/-1;padding:16px;border-radius:12px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fecaca;line-height:1.6;">' +
-            '生成失败：' + errorMsg +
-            '</div>';
-        return;
-    }
-
-    var allFilenames = valid.map(function(v) { return '/outputs/' + v.filename; });
-    var allUrlsEnc = encodeURIComponent(JSON.stringify(allFilenames));
-    grid.innerHTML = valid.map(function(v, i) {
-        return '<div class="variant-card" onclick="selectVariant(' + i + ')" id="variant-' + i + '">' +
-            '<img src="/outputs/' + v.filename + '" loading="lazy" data-images="' + allUrlsEnc + '" data-index="' + i + '" onclick="event.stopPropagation(); openHistoryThumb(this)">' +
-            '<div class="label">魔法图 ' + (i + 1) + '</div>' +
-            '</div>';
-    }).join('');
-    variants = valid;
-}
-
-// 选择变体
-function selectVariant(idx) {
-    selectedVariant = idx;
-    document.querySelectorAll('.variant-card').forEach(function(el, i) {
-        el.classList.toggle('selected', i === idx);
-    });
-}
-
-// 下载选中
-function downloadSelected() {
-    if (selectedVariant === null) {
-        alert('请先选择一张图片');
-        return;
-    }
-    var v = variants[selectedVariant];
-    window.open('/outputs/' + v.filename, '_blank');
-}
-
-// 放大选中
-async function upscaleSelected(resolution) {
-    if (selectedVariant === null) {
-        alert('请先选择一张图片');
-        return;
-    }
-    var v = variants[selectedVariant];
-    
-    document.getElementById('loadingCard').style.display = 'block';
-    document.querySelector('.loading-text').textContent = '放大中 ' + resolution + '...';
-    
-    try {
-        var res = await fetch('/upscale', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({filename: v.filename, resolution: resolution})
-        });
-        var data = await res.json();
-        
-        if (data.error) {
-            alert('放大失败: ' + data.error);
-        } else {
-            variants[selectedVariant].filename = data.output_image;
-            renderVariants(variants);
-            selectVariant(selectedVariant);
-            alert(resolution + ' 放大完成！');
-            loadHistory();
-        }
-    } catch(e) {
-        alert('放大请求失败: ' + e.message);
-    }
-    
-    document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.loading-text').textContent = 'AI 正在创作变体中...约需 1-2 分钟';
-}
-
-// 修图选区
-var editRegions = [];
-var editRegionIdCounter = 0;
-var isDrawing = false;
-var startX, startY, selectionRect = null;
-
-function previewEditImage(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        editImageData = e.target.result;
-        const img = document.getElementById('editPreviewImg');
-        img.onload = function() { initEditCanvas(); };
-        img.src = e.target.result;
-        document.getElementById('editCanvasWrap').style.display = 'inline-block';
-        document.getElementById('editUploadZone').style.display = 'none';
-        document.getElementById('editToolbar').style.display = 'flex';
-        document.getElementById('selectionInfo').style.display = 'block';
-        editRegions = [];
-        editRegionIdCounter = 0;
-        document.getElementById('editRegionsList').innerHTML = '';
-        clearCurrentSelection();
-    };
-    reader.readAsDataURL(file);
-}
-
-function initEditCanvas() {
-    const img = document.getElementById('editPreviewImg');
-    const canvas = document.getElementById('editSelectionCanvas');
-    if (!img || !canvas) return;
-    const w = img.clientWidth;
-    const h = img.clientHeight;
-    canvas.width = w;
-    canvas.height = h;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    canvas.onmousedown = startSelection;
-    canvas.onmousemove = drawSelection;
-    canvas.onmouseup = endSelection;
-    canvas.onmouseleave = endSelection;
-    renderConfirmedRegions();
-}
-
-function getEventPos(e) {
-    const canvas = document.getElementById('editSelectionCanvas');
-    const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-}
-
-function startSelection(e) {
-    e.preventDefault();
-    const pos = getEventPos(e);
-    startX = pos.x;
-    startY = pos.y;
-    isDrawing = true;
-    selectionRect = { x: startX, y: startY, w: 0, h: 0 };
-}
-
-function drawSelection(e) {
-    if (!isDrawing) return;
-    const pos = getEventPos(e);
-    const x = Math.min(startX, pos.x);
-    const y = Math.min(startY, pos.y);
-    const w = Math.abs(pos.x - startX);
-    const h = Math.abs(pos.y - startY);
-    const rectEl = document.getElementById('editSelectionRect');
-    rectEl.style.left = x + 'px';
-    rectEl.style.top = y + 'px';
-    rectEl.style.width = w + 'px';
-    rectEl.style.height = h + 'px';
-    if (w > 5 && h > 5) {
-        rectEl.classList.add('active');
-        selectionRect = { x, y, w, h };
-        updateSelectionInfo(x, y, w, h);
-    }
-}
-
-function endSelection(e) {
-    isDrawing = false;
-}
-
-function clearCurrentSelection() {
-    const rectEl = document.getElementById('editSelectionRect');
-    if (rectEl) {
-        rectEl.classList.remove('active');
-        rectEl.style.width = '0';
-        rectEl.style.height = '0';
-    }
-    selectionRect = null;
-    updateSelectionInfo(0, 0, 0, 0);
-}
-
-function updateSelectionInfo(x, y, w, h) {
-    const info = document.getElementById('selectionInfo');
-    if (!info) return;
-    if (w > 0 && h > 0) {
-        info.textContent = '当前选区: ' + Math.round(x) + ',' + Math.round(y) + ' ' + Math.round(w) + 'x' + Math.round(h) + ' — 点击「确认选区」添加';
-    } else {
-        info.textContent = '框选要修改的区域并确认；仅修改选区内内容，原图尺寸与选区外样式保持不变';
-    }
-}
-
-function displayToNaturalCoords(rect) {
-    const img = document.getElementById('editPreviewImg');
-    const scaleX = img.naturalWidth / img.clientWidth;
-    const scaleY = img.naturalHeight / img.clientHeight;
-    return {
-        x: Math.round(rect.x * scaleX),
-        y: Math.round(rect.y * scaleY),
-        w: Math.round(rect.w * scaleX),
-        h: Math.round(rect.h * scaleY)
-    };
-}
-
-function naturalToDisplayCoords(coords) {
-    const img = document.getElementById('editPreviewImg');
-    const scaleX = img.clientWidth / img.naturalWidth;
-    const scaleY = img.clientHeight / img.naturalHeight;
-    return {
-        x: coords.x * scaleX,
-        y: coords.y * scaleY,
-        w: coords.w * scaleX,
-        h: coords.h * scaleY
-    };
-}
-
-function confirmCurrentSelection() {
-    if (!selectionRect || selectionRect.w < 10 || selectionRect.h < 10) {
-        alert('请先在图片上框选足够大的区域');
-        return;
-    }
-    const natural = displayToNaturalCoords(selectionRect);
-    const id = 'region_' + (++editRegionIdCounter);
-    editRegions.push({
-        id: id,
-        x: natural.x,
-        y: natural.y,
-        w: natural.w,
-        h: natural.h,
-        description: ''
-    });
-    renderConfirmedRegions();
-    clearCurrentSelection();
-}
-
-function renderConfirmedRegions() {
-    const wrap = document.getElementById('editCanvasWrap');
-    if (!wrap) return;
-    wrap.querySelectorAll('.region-marker').forEach(function(el) { el.remove(); });
-    editRegions.forEach(function(region, idx) {
-        const disp = naturalToDisplayCoords(region);
-        const marker = document.createElement('div');
-        marker.className = 'selection-rect region-marker active';
-        marker.style.left = disp.x + 'px';
-        marker.style.top = disp.y + 'px';
-        marker.style.width = disp.w + 'px';
-        marker.style.height = disp.h + 'px';
-        marker.style.borderColor = '#34d399';
-        marker.style.background = 'rgba(52,211,153,0.12)';
-        marker.title = '选区 ' + (idx + 1);
-        wrap.appendChild(marker);
-    });
-    const list = document.getElementById('editRegionsList');
-    list.innerHTML = '';
-    editRegions.forEach(function(region, idx) {
-        const item = document.createElement('div');
-        item.className = 'edit-region-item';
-        item.innerHTML = '<div class="region-header"><span class="region-label">选区 ' + (idx + 1) + ' (' + region.w + '×' + region.h + ')</span>' +
-            '<button type="button" class="region-remove" onclick="removeEditRegion(\'' + region.id + '\')" title="删除选区">×</button></div>' +
-            '<textarea id="desc_' + region.id + '" placeholder="描述此区域的修改要求，例如：把文字改成「欢庆六一」"></textarea>';
-        list.appendChild(item);
-        const ta = item.querySelector('textarea');
-        ta.value = region.description || '';
-        ta.oninput = function() { region.description = ta.value; };
-    });
-}
-
-function removeEditRegion(id) {
-    editRegions = editRegions.filter(function(r) { return r.id !== id; });
-    renderConfirmedRegions();
-}
-
-function setDrawMode(mode) {
-    document.getElementById('btnRect').classList.add('active');
-}
-
-function getEditPayloadRegions() {
-    const globalDesc = document.getElementById('editDescription').value.trim();
-    if (editRegions.length > 0) {
-        return editRegions.map(function(r) {
-            var descEl = document.getElementById('desc_' + r.id);
-            var desc = (descEl ? descEl.value : r.description || '').trim() || globalDesc;
-            return { x: r.x, y: r.y, w: r.w, h: r.h, description: desc };
-        }).filter(function(r) { return r.description; });
-    }
-    if (selectionRect && selectionRect.w >= 10 && selectionRect.h >= 10) {
-        const natural = displayToNaturalCoords(selectionRect);
-        if (globalDesc) {
-            return [{ x: natural.x, y: natural.y, w: natural.w, h: natural.h, description: globalDesc }];
-        }
-    }
-    return [];
-}
-
-function removeEditImage() {
-    editImageData = null;
-    editRegions = [];
-    document.getElementById('editCanvasWrap').style.display = 'none';
-    document.getElementById('editToolbar').style.display = 'none';
-    document.getElementById('selectionInfo').style.display = 'none';
-    document.getElementById('editRegionsList').innerHTML = '';
-    document.getElementById('editUploadZone').style.display = 'block';
-    document.getElementById('editImageInput').value = '';
-    document.getElementById('editResultsSection').style.display = 'none';
-    clearCurrentSelection();
-}
-
-function compressImageDataUrl(dataUrl, maxDim, quality) {
-    return new Promise(function(resolve, reject) {
-        var img = new Image();
-        img.onload = function() {
-            var w = img.naturalWidth || img.width;
-            var h = img.naturalHeight || img.height;
-            var scale = Math.min(1, maxDim / Math.max(w, h, 1));
-            var cw = Math.max(1, Math.round(w * scale));
-            var ch = Math.max(1, Math.round(h * scale));
-            var canvas = document.createElement('canvas');
-            canvas.width = cw;
-            canvas.height = ch;
-            canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-        };
-        img.onerror = function() { reject(new Error('图片加载失败')); };
-        img.src = dataUrl;
-    });
-}
-
-// 开始修图
-async function startEditImage() {
-    if (!editImageData) {
-        alert('请先上传要修改的图片');
-        return;
-    }
-    
-    const editType = document.getElementById('editType').value;
-    const editDesc = document.getElementById('editDescription').value.trim();
-    const keepElements = document.getElementById('keepElements').value.trim();
-    const regions = getEditPayloadRegions();
-    
-    if (regions.length === 0 && !editDesc) {
-        alert('请框选要修改的区域并填写修改要求，或在下方填写全局修改描述');
-        return;
-    }
-    
-    document.getElementById('editLoadingCard').style.display = 'block';
-    document.getElementById('editResultsSection').style.display = 'none';
-    document.getElementById('editOriginalImg').src = editImageData;
-    
-    try {
-        var imageToSend = editImageData;
-        try {
-            imageToSend = await compressImageDataUrl(editImageData, 2048, 0.88);
-        } catch (e) {
-            console.warn('图片压缩跳过', e);
-        }
-        const payload = {
-            image: imageToSend,
-            editType: editType,
-            description: editDesc,
-            keepElements: keepElements,
-            project: currentProject ? currentProject.name : ''
-        };
-        if (regions.length > 0) {
-            payload.regions = regions;
-        }
-        const response = await fetch('/api/edit-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        
-        if (response.status === 404) {
-            alert('修图接口未找到(404)，请确认已用 ./start.sh 重启服务，并访问终端里显示的端口');
-            return;
-        }
-        const data = await response.json();
-        
-        if (data.success) {
-            document.getElementById('editResultImg').src = '/outputs/' + data.output_image + '?t=' + Date.now();
-            document.getElementById('editResultsSection').style.display = 'block';
-            currentEditResult = data.output_image;
-            editImageData = document.getElementById('editResultImg').src;
-            loadHistory();
-        } else {
-            alert('修图失败: ' + (data.error || '未知错误'));
-        }
-    } catch (e) {
-        alert('请求失败: ' + e.message);
-    } finally {
-        document.getElementById('editLoadingCard').style.display = 'none';
-    }
-}
-
-var currentEditResult = null;
-
-// 下载修图结果
-function downloadEditResult() {
-    if (!currentEditResult) return;
-    const link = document.createElement('a');
-    link.href = '/outputs/' + currentEditResult;
-    link.download = 'edit_result_' + Date.now() + '.png';
-    link.click();
-}
-
-// 重置修图
-function resetEdit() {
-    removeEditImage();
-    document.getElementById('editDescription').value = '';
-    document.getElementById('keepElements').value = '';
-    currentEditResult = null;
-}
-
-// 重置
-function resetAll() {
-    document.getElementById('variantsSection').style.display = 'none';
-    document.getElementById('actionsSection').style.display = 'none';
-    document.getElementById('mainTitle').value = '';
-    document.getElementById('subTitle').value = '';
-    document.getElementById('visualDesc').value = '';
-    document.getElementById('layoutRef').value = '';
-    document.getElementById('extraNotes').value = '';
-    selectedVariant = null;
-    variants = [];
-}
-
-// 历史记录侧边栏开关
-function toggleHistory() {
-    document.getElementById('historyDrawer').classList.toggle('open');
-    document.getElementById('drawerOverlay').classList.toggle('open');
-}
-
-// 全屏查看图片
-// 全屏查看 - 支持键盘左右键切换
-var fullscreenImages = [];
-var fullscreenLabels = [];
-var fullscreenIndex = 0;
-
-function normalizeImageUrls(images) {
-    if (!images) return [];
-    var list = Array.isArray(images) ? images : [images];
-    return list.map(function(img) {
-        if (!img) return '';
-        if (img.indexOf('http') === 0 || img.indexOf('/') === 0 || img.indexOf('data:') === 0) return img;
-        return '/outputs/' + img;
-    }).filter(Boolean);
-}
-
-function openHistoryThumb(el) {
-    if (!el || !el.getAttribute('data-images')) return;
-    try {
-        var images = JSON.parse(decodeURIComponent(el.getAttribute('data-images')));
-        var index = parseInt(el.getAttribute('data-index'), 10) || 0;
-        openFullscreen(images, index);
-    } catch (e) {
-        console.error('历史图片打开失败', e);
-    }
-}
-
-function openEditComparisonFullscreen(startIndex) {
-    var orig = document.getElementById('editOriginalImg');
-    var result = document.getElementById('editResultImg');
-    var images = [];
-    var labels = [];
-    if (orig && orig.src) {
-        images.push(orig.src);
-        labels.push('原图');
-    }
-    if (result && result.src) {
-        images.push(result.src);
-        labels.push('修改后');
-    }
-    if (!images.length) return;
-    openFullscreen(images, startIndex || 0, labels);
-}
-
-function openFullscreen(images, startIndex, labels) {
-    if (typeof images === 'string') {
-        try {
-            var parsed = JSON.parse(images);
-            images = Array.isArray(parsed) ? parsed : [images];
-        } catch (e) {
-            images = [images];
-        }
-    }
-    fullscreenImages = normalizeImageUrls(images);
-    fullscreenLabels = labels || [];
-    fullscreenIndex = startIndex || 0;
-    if (!fullscreenImages.length) return;
-    updateFullscreenImage();
-    document.getElementById('fullscreenOverlay').classList.add('open');
-    document.addEventListener('keydown', handleFullscreenKey);
-}
-
-function updateFullscreenNav() {
-    var multi = fullscreenImages.length > 1;
-    var prevBtn = document.querySelector('.fullscreen-prev');
-    var nextBtn = document.querySelector('.fullscreen-next');
-    if (prevBtn) prevBtn.classList.toggle('hidden', !multi);
-    if (nextBtn) nextBtn.classList.toggle('hidden', !multi);
-}
-
-function updateFullscreenImage() {
-    var currentImg = fullscreenImages[fullscreenIndex];
-    document.getElementById('fullscreenImg').src = currentImg;
-    var downloadBtn = document.getElementById('fullscreenDownload');
-    downloadBtn.href = currentImg;
-    var name = currentImg.split('/').pop().split('?')[0];
-    downloadBtn.download = name || 'image.png';
-    var counter = document.getElementById('fullscreenCounter');
-    if (counter) {
-        var label = fullscreenLabels[fullscreenIndex] || '';
-        counter.textContent = (fullscreenIndex + 1) + ' / ' + fullscreenImages.length +
-            (label ? ' · ' + label : '');
-    }
-    updateFullscreenNav();
-}
-
-function handleFullscreenKey(e) {
-    if (e.key === 'ArrowLeft') {
-        fullscreenIndex = (fullscreenIndex - 1 + fullscreenImages.length) % fullscreenImages.length;
-        updateFullscreenImage();
-    } else if (e.key === 'ArrowRight') {
-        fullscreenIndex = (fullscreenIndex + 1) % fullscreenImages.length;
-        updateFullscreenImage();
-    } else if (e.key === 'Escape') {
-        closeFullscreen();
-    }
-}
-
-function closeFullscreen() {
-    document.getElementById('fullscreenOverlay').classList.remove('open');
-    document.removeEventListener('keydown', handleFullscreenKey);
-}
-
-function prevImage() {
-    fullscreenIndex = (fullscreenIndex - 1 + fullscreenImages.length) % fullscreenImages.length;
-    updateFullscreenImage();
-}
-
-function nextImage() {
-    fullscreenIndex = (fullscreenIndex + 1) % fullscreenImages.length;
-    updateFullscreenImage();
-}
-
-// 加载历史
-async function loadHistory() {
-    try {
-        var res = await fetch('/history');
-        var data = await res.json();
-        renderHistory(data.items || []);
-    } catch(e) {}
-}
-
-function renderHistory(items) {
-    var el = document.getElementById('historyList');
-    if (!items.length) {
-        el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">暂无记录</div>';
-        return;
-    }
-    var visible = items.filter(function(item) {
-        var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
-        return imgs.length > 0;
-    });
-    el.innerHTML = visible.slice(0, 30).map(function(item) {
-        var time = new Date(item.timestamp).toLocaleString('zh-CN', {hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
-        var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
-        var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
-        var images = item.output_images || (item.output_image ? [item.output_image] : []);
-        var imageUrls = images.map(function(img) { return '/outputs/' + String(img).split('?')[0]; });
-        var thumbsHtml = imageUrls.length ? imageUrls.map(function(imgSrc, i) {
-            return '<img class="history-thumb" src="' + imgSrc + '" loading="lazy" ' +
-                'data-images="' + encodeURIComponent(JSON.stringify(imageUrls)) + '" data-index="' + i + '" ' +
-                'onclick="event.stopPropagation(); openHistoryThumb(this)" style="cursor:pointer;">';
-        }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,0.35);">无图</div>';
-        var downloadsHtml = imageUrls.map(function(imgSrc, i) {
-            var name = images[i] || ('image_' + i + '.png');
-            return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
-        }).join('');
-        var clickAttr = imageUrls.length ? ' onclick="openHistoryThumb(this.querySelector(\'.history-thumb\'))"' : '';
-        return '<div class="history-item"' + clickAttr + '>' +
-            '<div class="history-img-wrap" style="display:flex;gap:4px;flex-wrap:wrap;position:relative;">' +
-            thumbsHtml +
-            downloadsHtml +
-            '</div>' +
-            '<div class="history-info">' +
-            '<div class="history-time">' + time + '</div>' +
-            '<div class="history-prompt">' + (item.prompt || '').substring(0, 40) + (item.prompt && item.prompt.length > 40 ? '...' : '') + '</div>' +
-            '<div class="history-meta">' + mode + variants + '</div>' +
-            '</div></div>';
-    }).join('');
-}
-</script>
-</body>
-</html>"""
 
 
 # ─── HTTP Handler ────────────────────────────────────────────────
@@ -2680,7 +1265,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         path = self._normalized_path()
         if path in ('/api/edit-image', '/edit-image', '/parse', '/api/analyze',
-                    '/generate-variants', '/generate-with-prompt', '/upscale'):
+                    '/generate-variants', '/generate-with-prompt', '/upscale', '/api/gif-to-svga',
+                    '/api/multi-size-export', '/api/crop-image', '/api/make-breathing-gif'):
             self.send_response(204)
             self._send_cors_headers()
             self.end_headers()
@@ -2691,7 +1277,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = self._normalized_path()
         if path == '/' or path == '/index.html':
-            self._send_html(HTML_PAGE)
+            self._send_html(get_html_page())
         elif path.startswith('/fetch-url'):
             # 抓取网页内容
             parsed_url = urllib.parse.urlparse(self.path)
@@ -2717,6 +1303,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"images": get_project_images(project)})
         elif path == '/history':
             self._send_json({"items": filter_history_items(load_history())})
+        elif path == '/api/output-sizes':
+            self._send_json({"sizes": load_output_sizes()})
         else:
             self.send_response(404)
             self.end_headers()
@@ -2731,6 +1319,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/upscale': self._handle_upscale,
             '/api/edit-image': self._handle_edit_image,
             '/edit-image': self._handle_edit_image,
+            '/api/gif-to-svga': self._handle_gif_to_svga,
+            '/api/multi-size-export': self._handle_multi_size_export,
+            '/api/crop-image': self._handle_crop_image,
+            '/api/make-breathing-gif': self._handle_make_breathing_gif,
         }
         handler = post_routes.get(path)
         if handler:
@@ -3295,7 +1887,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             ext = filepath.suffix.lower()
             mime = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                    'gif': 'image/gif', 'webp': 'image/webp'}.get(ext, 'application/octet-stream')
+                    'gif': 'image/gif', 'webp': 'image/webp', 'svga': 'application/octet-stream'}.get(
+                ext.lstrip('.'), 'application/octet-stream')
             self.send_header('Content-type', mime)
             self.send_header('Content-Length', str(filepath.stat().st_size))
             self.end_headers()
@@ -3303,6 +1896,241 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _handle_make_breathing_gif(self):
+        """静态底图 + 按钮图层 → 呼吸动效 GIF"""
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传图片"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            bg_field = fields.get("background")
+            btn_field = fields.get("button")
+            if not bg_field or not isinstance(bg_field, dict):
+                self._send_json({"error": "请上传底图（不动）"})
+                return
+            if not btn_field or not isinstance(btn_field, dict):
+                self._send_json({"error": "请上传按钮图（要动的图层）"})
+                return
+            intensity = str(fields.get("intensity", "medium")).strip() or "medium"
+            if intensity not in ("weak", "medium", "strong"):
+                intensity = "medium"
+            try:
+                duration_sec = float(str(fields.get("duration_sec", "1.6")).strip())
+                offset_x = int(str(fields.get("offset_x", "0")).strip())
+                offset_y = int(str(fields.get("offset_y", "0")).strip())
+            except ValueError:
+                self._send_json({"error": "参数格式无效"})
+                return
+            job_id = uuid.uuid4().hex[:12]
+            bg_path = UPLOAD_DIR / f"gif_bg_{job_id}.png"
+            btn_path = UPLOAD_DIR / f"gif_btn_{job_id}.png"
+            output_filename = f"breathing_{job_id}.gif"
+            output_path = OUTPUT_DIR / output_filename
+            bg_path.write_bytes(bg_field["data"])
+            btn_path.write_bytes(btn_field["data"])
+            meta = make_breathing_gif(
+                bg_path, btn_path, output_path,
+                intensity=intensity,
+                duration_sec=duration_sec,
+                offset_x=offset_x,
+                offset_y=offset_y,
+            )
+            self._send_json({
+                "ok": True,
+                "output_file": output_filename,
+                "download_url": f"/outputs/{output_filename}",
+                **meta,
+            })
+        except Exception as e:
+            print(f"[GIF-MAKER] 生成失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
+    def _handle_crop_image(self):
+        """按用户框选区域裁切为指定宽高"""
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传图片"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            img_field = fields.get("image")
+            if not img_field or not isinstance(img_field, dict):
+                self._send_json({"error": "请上传图片"})
+                return
+            try:
+                output_w = int(str(fields.get("output_width", "0")).strip())
+                output_h = int(str(fields.get("output_height", "0")).strip())
+                crop_x = int(str(fields.get("crop_x", "0")).strip())
+                crop_y = int(str(fields.get("crop_y", "0")).strip())
+                crop_w = int(str(fields.get("crop_w", "0")).strip())
+                crop_h = int(str(fields.get("crop_h", "0")).strip())
+            except ValueError:
+                self._send_json({"error": "尺寸或裁切参数格式无效"})
+                return
+            if output_w < 1 or output_h < 1:
+                self._send_json({"error": "请填写有效的输出宽度和高度"})
+                return
+            if crop_w < 1 or crop_h < 1:
+                self._send_json({"error": "请先框选裁切区域"})
+                return
+            job_id = uuid.uuid4().hex[:12]
+            ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                ext = ".png"
+            input_path = UPLOAD_DIR / f"crop_src_{job_id}{ext}"
+            output_filename = f"crop_{job_id}{ext if ext != '.webp' else '.png'}"
+            output_path = OUTPUT_DIR / output_filename
+            input_path.write_bytes(img_field["data"])
+            meta = crop_image_to_size(
+                input_path, output_path,
+                crop_x, crop_y, crop_w, crop_h,
+                output_w, output_h,
+            )
+            self._send_json({
+                "ok": True,
+                "output_file": output_filename,
+                "download_url": f"/outputs/{output_filename}",
+                "fileSize": output_path.stat().st_size,
+                **meta,
+            })
+        except Exception as e:
+            print(f"[CROP] 裁切失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
+    def _handle_multi_size_export(self):
+        """单图按预设 9 尺寸导出"""
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传图片"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            img_field = fields.get("image")
+            if not img_field or not isinstance(img_field, dict):
+                self._send_json({"error": "请上传图片"})
+                return
+            filename = (img_field.get("filename") or "input.png").lower()
+            if not any(filename.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp")):
+                self._send_json({"error": "仅支持 PNG、JPG、WebP"})
+                return
+            job_id = uuid.uuid4().hex[:12]
+            ext = pathlib.Path(filename).suffix or ".png"
+            input_path = UPLOAD_DIR / f"multi_src_{job_id}{ext}"
+            input_path.write_bytes(img_field["data"])
+            source_raw = fields.get("source_name", "") or img_field.get("filename", "")
+            result = export_multi_sizes(
+                input_path, OUTPUT_DIR, job_id,
+                source_basename=str(source_raw),
+            )
+            self._send_json({"ok": True, **result})
+        except Exception as e:
+            print(f"[MULTI-SIZE] 导出失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
+    def _resolve_gif_to_svga_input(self, fields: dict) -> tuple[pathlib.Path | None, str | None]:
+        """上传 GIF 或引用 outputs 下已生成的 GIF（呼吸动图一键转 SVGA）。"""
+        source_raw = fields.get("source_output", "")
+        if source_raw:
+            safe = pathlib.Path(str(source_raw).strip()).name
+            if not safe or safe != str(source_raw).strip() or ".." in safe:
+                return None, "无效的文件名"
+            if not safe.lower().endswith(".gif"):
+                return None, "仅支持 .gif 格式"
+            input_path = OUTPUT_DIR / safe
+            if not input_path.is_file():
+                return None, "找不到已生成的 GIF，请重新生成后再试"
+            return input_path, None
+
+        gif_field = fields.get("gif")
+        if not gif_field or not isinstance(gif_field, dict):
+            return None, "请上传 GIF 文件，或先生成呼吸 GIF"
+        filename = (gif_field.get("filename") or "input.gif").lower()
+        if not filename.endswith(".gif"):
+            return None, "仅支持 .gif 格式"
+        job_id = uuid.uuid4().hex[:12]
+        input_path = UPLOAD_DIR / f"gif_{job_id}.gif"
+        input_path.write_bytes(gif_field["data"])
+        return input_path, None
+
+    def _handle_gif_to_svga(self):
+        """GIF 转 SVGA"""
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传 GIF 文件"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            input_path, input_err = self._resolve_gif_to_svga_input(fields)
+            if input_err:
+                self._send_json({"error": input_err})
+                return
+            fps_raw = fields.get("fps", "")
+            fps = None
+            if fps_raw:
+                try:
+                    fps = int(str(fps_raw).strip())
+                except ValueError:
+                    self._send_json({"error": "帧率格式无效"})
+                    return
+                if fps not in SVGA_VALID_FPS:
+                    self._send_json({
+                        "error": f"帧率须为以下之一: {', '.join(map(str, SVGA_VALID_FPS))}",
+                    })
+                    return
+            job_id = uuid.uuid4().hex[:12]
+            output_filename = f"svga_{job_id}.svga"
+            output_path = OUTPUT_DIR / output_filename
+            max_bytes = None
+            max_raw = fields.get("max_bytes", "")
+            if max_raw:
+                try:
+                    max_bytes = int(str(max_raw).strip())
+                except ValueError:
+                    self._send_json({"error": "max_bytes 格式无效"})
+                    return
+            result = convert_gif_to_svga(input_path, output_path, fps=fps, max_bytes=max_bytes)
+            if not result.get("underLimit", True):
+                self._send_json({
+                    "error": f"无法在 1MB 限制内完成压缩（当前 {result['fileSize']} 字节），请缩短 GIF 或降低分辨率后重试",
+                })
+                return
+            self._send_json({
+                "ok": True,
+                "output_file": result["output_filename"],
+                "download_url": f"/outputs/{result['output_filename']}",
+                "width": result["width"],
+                "height": result["height"],
+                "originalWidth": result.get("originalWidth"),
+                "originalHeight": result.get("originalHeight"),
+                "totalFrames": result["totalFrames"],
+                "fps": result["fps"],
+                "version": result.get("version", "2.0.0"),
+                "fileSize": result.get("fileSize"),
+                "inputFileSize": result.get("inputFileSize"),
+                "underLimit": result.get("underLimit", True),
+            })
+        except Exception as e:
+            print(f"[GIF2SVGA] 转换失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
 
     def _handle_edit_image(self):
         """图片编辑 (image2image)"""

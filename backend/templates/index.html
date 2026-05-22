@@ -1,0 +1,2663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 视觉设计助手 v4</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+               background: #0f0c29; min-height: 100vh; padding: 20px; overflow-x: hidden; }
+        body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+               background: linear-gradient(45deg, #0f0c29, #302b63, #24243e, #0f0c29, #1a1a3e, #302b63);
+               z-index: -1; }
+        .container { max-width: 1000px; margin: 0 auto; position: relative; }
+        .card { background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+                border-radius: 20px; padding: 28px; border: 1px solid rgba(255,255,255,0.08);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06); margin-bottom: 20px; }
+        h1 { text-align: center; margin-bottom: 6px; font-size: 24px; font-weight: 700;
+             background: linear-gradient(135deg, #a78bfa, #818cf8, #6ee7b7);
+             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .subtitle { text-align: center; color: rgba(255,255,255,0.45); font-size: 13px; margin-bottom: 16px; }
+        
+        .app-topbar { margin-bottom: 14px; }
+        .app-topbar .credit { margin-bottom: 0; }
+        .history-entry { flex-shrink: 0; align-self: center; background: transparent; border: none; border-radius: 10px;
+            padding: 10px 4px 10px 12px; cursor: pointer; font-size: 13px; font-weight: 500;
+            color: rgba(255,255,255,0.42); transition: color 0.2s, background 0.2s; white-space: nowrap; }
+        .history-entry:hover { color: rgba(167,139,250,0.95); background: rgba(167,139,250,0.08); }
+        
+        /* 历史记录侧边抽屉 */
+        .history-drawer { position: fixed; top: 0; right: -400px; width: 380px; height: 100vh;
+                          background: rgba(20,18,50,0.95); backdrop-filter: blur(24px);
+                          border-left: 1px solid rgba(255,255,255,0.08);
+                          box-shadow: -4px 0 32px rgba(0,0,0,0.4);
+                          transition: right 0.35s cubic-bezier(0.4,0,0.2,1); z-index: 1000; overflow: hidden; }
+        .history-drawer.open { right: 0; }
+        .drawer-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); 
+                         display: flex; justify-content: space-between; align-items: center; }
+        .drawer-title { font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.9); }
+        .drawer-close { background: none; border: none; font-size: 24px; cursor: pointer; color: rgba(255,255,255,0.4); }
+        .drawer-close:hover { color: rgba(255,255,255,0.9); }
+        .drawer-content { padding: 12px; overflow-y: auto; height: calc(100vh - 60px); }
+        .drawer-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                          background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 999; display: none; }
+        .drawer-overlay.open { display: block; }
+        
+        .history-item { display: flex; gap: 12px; padding: 12px; border-radius: 12px;
+                        margin-bottom: 8px; cursor: pointer; transition: all 0.2s;
+                        border: 1px solid rgba(255,255,255,0.04); }
+        .history-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(167,139,250,0.3); }
+        .history-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+        .history-img-wrap { position: relative; flex-shrink: 0; }
+        .history-download { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.6); color: white; 
+                           width: 22px; height: 22px; border-radius: 50%; text-align: center; 
+                           line-height: 22px; font-size: 12px; text-decoration: none; }
+        .history-download:hover { background: rgba(167,139,250,0.8); }
+        .history-info { flex: 1; min-width: 0; }
+        .history-time { font-size: 11px; color: rgba(255,255,255,0.35); margin-bottom: 4px; }
+        .history-prompt { font-size: 13px; color: rgba(255,255,255,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-meta { font-size: 11px; color: #a78bfa; margin-top: 4px; }
+        
+        /* 全屏图片查看 */
+        .fullscreen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                               background: rgba(0,0,0,0.92); backdrop-filter: blur(8px); z-index: 2000; display: none;
+                               justify-content: center; align-items: center; cursor: zoom-out; }
+        .fullscreen-overlay.open { display: flex; }
+        .fullscreen-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 12px;
+                          box-shadow: 0 0 60px rgba(167,139,250,0.15); }
+        .fullscreen-close { position: absolute; top: 20px; right: 20px; color: rgba(255,255,255,0.7); 
+                             font-size: 32px; cursor: pointer; background: none; border: none; }
+        .fullscreen-close:hover { color: white; }
+        .fullscreen-download { position: absolute; top: 20px; right: 70px; color: white; 
+                               font-size: 14px; cursor: pointer; background: rgba(167,139,250,0.4); 
+                               padding: 8px 16px; border-radius: 20px; text-decoration: none;
+                               border: 1px solid rgba(167,139,250,0.5); }
+        .fullscreen-download:hover { background: rgba(167,139,250,0.6); }
+        .fullscreen-nav { position: absolute; top: 50%; transform: translateY(-50%);
+                          color: white; font-size: 40px; cursor: pointer; background: rgba(0,0,0,0.3);
+                          border: none; border-radius: 50%; width: 50px; height: 50px;
+                          display: flex; align-items: center; justify-content: center;
+                          z-index: 2002; pointer-events: auto; }
+        .fullscreen-nav:hover { background: rgba(167,139,250,0.5); }
+        .fullscreen-nav.hidden { display: none !important; }
+        .edit-side img { cursor: pointer; }
+        .fullscreen-prev { left: 20px; }
+        .fullscreen-next { right: 20px; }
+        .fullscreen-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+                              color: white; font-size: 14px; background: rgba(0,0,0,0.5);
+                              padding: 6px 16px; border-radius: 20px; }
+        
+        /* 项目选择 */
+        .project-section { margin-bottom: 16px; }
+        .project-bar { display: flex; align-items: center; gap: 16px; padding: 12px; flex-wrap: wrap;
+                       background: rgba(255,255,255,0.04); border-radius: 12px;
+                       border: 1px solid rgba(255,255,255,0.06); }
+        .project-bar-field { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 10px; }
+        .project-bar label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); min-width: 72px; flex-shrink: 0; }
+        .project-bar select { flex: 1; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+                               font-size: 13px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); cursor: pointer; }
+        .project-refs-wrap { margin-top: 10px; }
+        .project-refs-hint { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 0 4px; }
+        .project-bar select:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
+        .project-bar select option { background: #1a1a3e; color: #eee; }
+        .project-info { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 6px; padding-left: 82px; }
+        
+        .project-images-grid { display: none; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 12px; 
+            background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(167,139,250,0.2); }
+        .project-images-grid.active { display: flex; }
+        .project-images-grid .img-thumb-wrap { position: relative; cursor: pointer; }
+        .project-images-grid .img-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+            border: 2px solid transparent; transition: all 0.2s; }
+        .project-images-grid .img-thumb-wrap:hover .img-thumb { border-color: rgba(167,139,250,0.5); transform: scale(1.05); }
+        .project-images-grid .img-thumb-wrap.selected .img-thumb { border-color: #a78bfa; box-shadow: 0 0 10px rgba(167,139,250,0.6); }
+        .project-images-grid .img-thumb-wrap.selected::after { content: '✓'; position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); background: #a78bfa; color: #1a1a3e; border-radius: 50%;
+            width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+        .project-images-grid .select-hint { font-size: 11px; color: rgba(255,255,255,0.4); width: 100%; text-align: center; }
+        
+        /* 上传参考图 */
+        .upload-ref-section { margin-top: 12px; padding: 14px;
+            background: rgba(255,255,255,0.05); border-radius: 12px;
+            border: 1px solid rgba(168,85,247,0.3); }
+        .upload-ref-label { display: flex; align-items: center; gap: 6px;
+            font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 10px; }
+        .upload-ref-input { width: 100%; padding: 10px;
+            background: rgba(255,255,255,0.08);
+            border: 1px dashed rgba(168,85,247,0.5);
+            border-radius: 8px; color: rgba(255,255,255,0.8);
+            font-size: 13px; }
+        .uploaded-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .uploaded-thumb-wrap { position: relative; }
+        .uploaded-thumb { width: 60px; height: 60px; border-radius: 8px;
+            object-fit: cover; border: 2px solid rgba(168,85,247,0.5); }
+        
+        /* 需求表单 */
+        .requirement-form { margin-bottom: 16px; padding: 16px; background: rgba(255,255,255,0.03); border-radius: 14px;
+                            border: 1px solid rgba(255,255,255,0.05); }
+        .requirement-form h3 { font-size: 14px; color: rgba(255,255,255,0.75); margin-bottom: 12px; }
+        .form-row { display: flex; gap: 12px; margin-bottom: 10px; }
+        .form-item { flex: 1; }
+        .form-item.full-width { flex: 2; }
+        .form-item label { font-size: 12px; color: rgba(255,255,255,0.5); display: block; margin-bottom: 3px; font-weight: 500; }
+        .form-item label .required { color: #f87171; }
+        .form-item select, .form-item input[type="text"] { width: 100%; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+                               padding: 8px 10px; font-size: 13px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
+        .form-item select:focus, .form-item input[type="text"]:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
+        .form-item select option { background: #1a1a3e; color: #eee; }
+        .form-item input::placeholder { color: rgba(255,255,255,0.25); }
+        .size-inputs { display: flex; align-items: center; gap: 6px; }
+        .size-inputs input[type="number"] { width: 70px; padding: 6px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-size: 13px;
+                                            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
+        .size-inputs input[type="number"]:focus { outline: none; border-color: rgba(167,139,250,0.5); }
+        .size-inputs span { color: rgba(255,255,255,0.3); }
+        .ratio-hint { font-size: 11px; color: #a78bfa; font-weight: 500; }
+        
+        /* 分析按钮 */
+        .analyze-btn { width: 100%; padding: 14px; font-size: 15px;
+                       border: none; border-radius: 12px; cursor: pointer;
+                       background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+                       color: white; font-weight: 600; margin-top: 16px;
+                       box-shadow: 0 4px 16px rgba(139,92,246,0.3);
+                       transition: transform 0.2s, box-shadow 0.2s; }
+        .analyze-btn:hover { box-shadow: 0 6px 24px rgba(139,92,246,0.5); transform: translateY(-2px); }
+        .analyze-btn:active { transform: translateY(0); }
+        .analyze-btn:disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        /* 关键词展示区域 */
+        .keyword-section { margin-top: 16px; padding: 16px; background: rgba(139,92,246,0.06); border-radius: 14px;
+                           border: 1px solid rgba(139,92,246,0.25); }
+        .keyword-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .keyword-header span:first-child { font-size: 14px; font-weight: 600; color: #a78bfa; }
+        .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); }
+        .keyword-textarea { width: 100%; min-height: 80px; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+                            font-size: 14px; line-height: 1.6; resize: vertical; background: rgba(255,255,255,0.04);
+                            color: rgba(255,255,255,0.85);
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .keyword-textarea:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
+        
+        /* 生成按钮 */
+        .generate-btn { width: 100%; padding: 14px; font-size: 15px;
+                        border: none; border-radius: 12px; cursor: pointer;
+                        background: linear-gradient(135deg, #34d399 0%, #6ee7b7 50%, #a78bfa 100%);
+                        color: #0f0c29; font-weight: 700; margin-top: 12px;
+                        box-shadow: 0 4px 16px rgba(52,211,153,0.3);
+                        transition: transform 0.2s, box-shadow 0.2s; }
+        .generate-btn:hover { box-shadow: 0 6px 24px rgba(52,211,153,0.5); transform: translateY(-2px); }
+        .generate-btn:active { transform: translateY(0); }
+        .generate-btn:disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        /* 加载状态 */
+        .loading-card { display: none; text-align: center; padding: 24px; }
+        .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.1);
+                   border-top-color: #a78bfa; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 10px; color: rgba(255,255,255,0.5); font-size: 14px; }
+        
+        /* 变体展示 */
+        .variants-section { display: none; margin-top: 16px; }
+        .variants-title { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.75); margin-bottom: 10px; }
+        .variants-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+        .variant-card { background: rgba(255,255,255,0.04); border-radius: 12px; overflow: hidden;
+                        cursor: pointer; border: 2px solid rgba(255,255,255,0.06);
+                        transition: all 0.25s; }
+        .variant-card:hover { transform: translateY(-3px); border-color: rgba(167,139,250,0.3); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        .variant-card.selected { border-color: rgba(167,139,250,0.7); box-shadow: 0 0 20px rgba(167,139,250,0.2); }
+        .variant-card img { width: 100%; height: 180px; object-fit: cover; display: block; cursor: zoom-in; }
+        .variant-card .label { padding: 8px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.5); }
+        .variant-card.selected .label { color: #a78bfa; font-weight: 600; }
+        
+        /* 操作按钮 */
+        .actions { display: none; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+        .action-btn { padding: 10px 20px; border: none; border-radius: 10px;
+                      font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.25s; }
+        .btn-primary { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; box-shadow: 0 2px 10px rgba(139,92,246,0.3); }
+        .btn-primary:hover { box-shadow: 0 4px 16px rgba(139,92,246,0.5); transform: translateY(-1px); }
+        .btn-green { background: linear-gradient(135deg, #34d399, #6ee7b7); color: #0f0c29; font-weight: 700; box-shadow: 0 2px 10px rgba(52,211,153,0.3); }
+        .btn-green:hover { box-shadow: 0 4px 16px rgba(52,211,153,0.5); transform: translateY(-1px); }
+        .btn-outline { background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.15); }
+        .btn-outline:hover { border-color: rgba(167,139,250,0.4); color: #a78bfa; background: rgba(167,139,250,0.08); }
+        
+        .credit { text-align: center; color: rgba(255,255,255,0.3); margin-bottom: 10px; font-size: 13px;
+                  font-weight: 500; letter-spacing: 1px; }
+        
+        /* 主导航：生图 / 修图（左铺满）+ 记录入口（右对齐） */
+        .nav-primary { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            margin-bottom: 12px; width: 100%; }
+        .nav-primary-tabs { display: flex; flex: 1; gap: 10px; min-width: 0; }
+        .nav-primary-tabs .tab-btn { flex: 1; padding: 12px 18px; border: none; border-radius: 12px;
+            cursor: pointer; font-size: 15px; font-weight: 600; transition: all 0.2s;
+            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); white-space: nowrap; }
+        .nav-primary-tabs .tab-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.78); }
+        .nav-primary-tabs .tab-btn.active { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white;
+            box-shadow: 0 4px 16px rgba(139,92,246,0.4); }
+        /* 辅助工具：开屏 / 裁切 / GIF */
+        .nav-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .nav-tools-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: rgba(255,255,255,0.32);
+            padding: 0 6px 0 2px; user-select: none; }
+        .tab-btn-tool { padding: 7px 14px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer;
+            font-size: 12px; font-weight: 500; transition: all 0.2s; background: rgba(255,255,255,0.03);
+            color: rgba(255,255,255,0.5); white-space: nowrap; }
+        .tab-btn-tool:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.72);
+            border-color: rgba(255,255,255,0.18); }
+        .tab-btn-tool.active { background: rgba(99,102,241,0.18); border-color: rgba(129,140,248,0.45);
+            color: #c7d2fe; box-shadow: 0 2px 8px rgba(99,102,241,0.2); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        @media (max-width: 640px) {
+            .nav-primary { flex-wrap: wrap; gap: 10px; }
+            .nav-primary-tabs { width: 100%; }
+            .history-entry { margin-left: auto; padding-right: 0; }
+            .nav-tools { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+                padding-bottom: 10px; scrollbar-width: thin; }
+            .nav-tools-label { flex-shrink: 0; }
+            .tab-btn-tool { flex-shrink: 0; }
+        }
+        
+        /* 修图区域 */
+        .edit-section { margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .edit-section h3 { color: white; font-size: 16px; margin-bottom: 16px; }
+        .edit-type-select { width: 100%; padding: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
+                        border-radius: 8px; color: white; font-size: 14px; margin-bottom: 16px; }
+        .edit-type-select option { background: #1a1a3e; color: #eee; }
+        .edit-upload-zone { border: 2px dashed rgba(167,139,250,0.4); border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .edit-upload-zone:hover { border-color: rgba(167,139,250,0.7); background: rgba(167,139,250,0.05); }
+        .edit-upload-zone.dragover { border-color: #a78bfa; background: rgba(167,139,250,0.1); }
+        .edit-preview-wrap { margin-top: 16px; text-align: center; position: relative; display: inline-block; }
+        .edit-preview-wrap img { max-width: 100%; max-height: 300px; border-radius: 8px; border: 2px solid rgba(167,139,250,0.3); }
+        .edit-preview-wrap .edit-remove { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%;
+                            background: rgba(239,68,68,0.9); color: white; border: none; cursor: pointer; font-size: 18px; line-height: 1; }
+        .edit-desc textarea { width: 100%; min-height: 100px; padding: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+                         border-radius: 8px; color: white; font-size: 14px; resize: vertical; font-family: inherit; margin-bottom: 12px; }
+        .edit-desc textarea:focus { outline: none; border-color: #667eea; }
+        .edit-results { margin-top: 24px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .edit-results-title { font-size: 18px; font-weight: 600; color: white; margin-bottom: 16px; text-align: center; }
+        .edit-comparison { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
+        .edit-side { flex: 1; min-width: 200px; max-width: 350px; text-align: center; }
+        .edit-side img { width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .edit-side-label { font-size: 14px; color: rgba(255,255,255,0.6); margin: 10px 0; }
+        .edit-arrow { font-size: 32px; color: #667eea; font-weight: bold; }
+        .edit-result-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+        
+        /* 选区工具 */
+        .edit-canvas-wrap { position: relative; display: inline-block; margin-top: 16px; }
+        .edit-canvas-wrap img { display: block; max-width: 100%; max-height: 350px; border-radius: 8px; }
+        .edit-canvas-wrap .canvas-overlay { position: absolute; top: 0; left: 0; cursor: crosshair; }
+        .edit-canvas-wrap .selection-rect {
+            position: absolute; top: 0; left: 0; border: 2px dashed #a78bfa; background: rgba(167,139,250,0.15);
+            pointer-events: none; display: none; box-sizing: border-box;
+        }
+        .edit-canvas-wrap .selection-rect.active { display: block; }
+        .edit-toolbar { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+        .edit-toolbar button { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: 13px; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); transition: 0.2s; }
+        .edit-toolbar button:hover { background: rgba(167,139,250,0.3); }
+        .edit-toolbar button.active { background: #a78bfa; color: white; }
+        .selection-info { text-align: center; font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 8px; }
+        .edit-regions-list { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+        .edit-region-item { padding: 12px; background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.25); border-radius: 8px; }
+        .edit-region-item .region-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .edit-region-item .region-label { font-size: 13px; color: #a78bfa; font-weight: 500; }
+        .edit-region-item .region-remove { background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 16px; padding: 0 4px; }
+        .edit-region-item .region-remove:hover { color: #ef4444; }
+        .edit-region-item textarea { width: 100%; min-height: 60px; padding: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px; color: white; font-size: 13px; resize: vertical; font-family: inherit; }
+        .edit-region-item textarea:focus { outline: none; border-color: #667eea; }
+        .edit-canvas-wrap .edit-remove { position: absolute; top: 8px; right: 8px; z-index: 10; }
+
+        .svga-result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+
+        /* 多尺寸导出 */
+        .multi-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .multi-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
+        .multi-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 16px; line-height: 1.6; }
+        .multi-upload-zone { border: 2px dashed rgba(99,102,241,0.45); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .multi-upload-zone:hover { border-color: rgba(99,102,241,0.75); background: rgba(99,102,241,0.06); }
+        .multi-sizes-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+        .multi-size-tag { font-size: 11px; padding: 6px 10px; border-radius: 8px; background: rgba(99,102,241,0.15);
+            border: 1px solid rgba(99,102,241,0.3); color: rgba(255,255,255,0.75); }
+        .multi-preview img { max-width: 100%; max-height: 220px; border-radius: 8px; border: 2px solid rgba(99,102,241,0.35); }
+        .multi-export-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: 600; color: white;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6); box-shadow: 0 4px 16px rgba(99,102,241,0.35); margin-top: 16px; }
+        .multi-export-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .multi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-top: 20px; }
+        .multi-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
+        .multi-card img { width: 100%; height: 120px; object-fit: contain; background: rgba(0,0,0,0.2); cursor: zoom-in; }
+        .multi-card-info { padding: 10px; font-size: 12px; color: rgba(255,255,255,0.7); text-align: center; }
+        .multi-card-info a { color: #a78bfa; text-decoration: none; font-size: 11px; display: inline-block; margin-top: 6px; }
+        .multi-card-info a:hover { text-decoration: underline; }
+
+        /* 尺寸裁切 */
+        .crop-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .crop-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
+        .crop-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 16px; line-height: 1.6; }
+        .crop-size-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+        .crop-size-row label { font-size: 13px; color: rgba(255,255,255,0.88); font-weight: 500; }
+        .crop-size-row .ratio-hint { color: #fcd34d; font-weight: 600; }
+        .crop-size-row input { width: 100px; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.28);
+            background: rgba(255,255,255,0.12); color: #fff; font-size: 14px; }
+        .crop-size-row input:focus { outline: none; border-color: rgba(251,191,36,0.65); box-shadow: 0 0 0 2px rgba(251,191,36,0.2); }
+        .crop-upload-zone { border: 2px dashed rgba(251,191,36,0.45); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; }
+        .crop-upload-zone:hover { border-color: rgba(251,191,36,0.75); background: rgba(251,191,36,0.06); }
+        .crop-workspace { display: none; margin-top: 16px; text-align: center; position: relative; z-index: 1; }
+        .crop-canvas-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0;
+            overflow: hidden; border-radius: 8px; isolation: isolate; }
+        .crop-canvas-wrap .crop-overlay { pointer-events: none; }
+        .crop-canvas-wrap img { display: block; max-width: 100%; max-height: 420px; border-radius: 8px; user-select: none; }
+        .crop-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+        .crop-box { position: absolute; border: 2px solid #fbbf24;
+            box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+            cursor: move; pointer-events: auto; box-sizing: border-box; z-index: 2; }
+        .crop-box::before { content: ''; position: absolute; inset: 0; border: 1px dashed rgba(255,255,255,0.65); }
+        .crop-handle { position: absolute; width: 14px; height: 14px; background: #fbbf24; border: 2px solid #fff;
+            border-radius: 3px; pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
+        .crop-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+        .crop-info { font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 12px; }
+        .crop-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 16px;
+            position: relative; z-index: 5; }
+        .crop-actions .crop-apply-btn { padding: 12px 28px; border: none; border-radius: 10px; cursor: pointer;
+            font-size: 15px; font-weight: 600; color: #1a1200;
+            background: linear-gradient(135deg, #fcd34d, #f59e0b);
+            box-shadow: 0 4px 14px rgba(251,191,36,0.35); transition: transform 0.15s, box-shadow 0.15s; }
+        .crop-actions .crop-apply-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(251,191,36,0.45); }
+        .crop-actions .crop-apply-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+        .crop-actions .action-btn.btn-outline {
+            color: #fff; border: 1px solid rgba(255,255,255,0.38);
+            background: rgba(255,255,255,0.1); font-weight: 600; }
+        .crop-actions .action-btn.btn-outline:hover {
+            color: #fde68a; border-color: rgba(251,191,36,0.65);
+            background: rgba(251,191,36,0.15); }
+        .crop-result { margin-top: 20px; text-align: center; display: none; position: relative; z-index: 5; }
+        .crop-result .action-btn.btn-primary {
+            box-shadow: 0 4px 14px rgba(139,92,246,0.35); font-weight: 600; }
+        .crop-result img { max-width: 100%; max-height: 280px; border-radius: 8px; border: 2px solid rgba(251,191,36,0.4); }
+
+        /* GIF 呼吸动图 */
+        .gifmaker-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .gifmaker-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
+        .gifmaker-hint { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 16px; line-height: 1.6; }
+        .gifmaker-uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        @media (max-width: 640px) { .gifmaker-uploads { grid-template-columns: 1fr; } }
+        .gifmaker-slot { border: 2px dashed rgba(236,72,153,0.4); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; min-height: 140px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; transition: 0.2s; }
+        .gifmaker-slot:hover { border-color: rgba(236,72,153,0.7); background: rgba(236,72,153,0.06); }
+        .gifmaker-slot.dragover { border-color: #f472b6; background: rgba(236,72,153,0.12); }
+        .gifmaker-slot.filled { border-style: solid; border-color: rgba(236,72,153,0.55); }
+        .gifmaker-slot img { max-width: 100%; max-height: 100px; margin-top: 10px; border-radius: 6px; }
+        .gifmaker-slot-title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.85); }
+        .gifmaker-slot-desc { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 6px; }
+        .gifmaker-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+        .gifmaker-options label { font-size: 13px; color: rgba(255,255,255,0.85); display: flex; align-items: center; gap: 8px; }
+        .gifmaker-options select, .gifmaker-options input[type="number"] {
+            padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.28);
+            background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; }
+        .gifmaker-options input[type="number"] { width: 72px; }
+        .gifmaker-gen-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; cursor: pointer;
+            font-size: 16px; font-weight: 600; color: #fff;
+            background: linear-gradient(135deg, #ec4899, #8b5cf6);
+            box-shadow: 0 4px 16px rgba(236,72,153,0.35); transition: transform 0.15s, box-shadow 0.15s; }
+        .gifmaker-gen-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(236,72,153,0.45); }
+        .gifmaker-gen-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .gifmaker-preview { margin-top: 20px; text-align: center; display: none; }
+        .gifmaker-preview img { max-width: 100%; max-height: 320px; border-radius: 8px; border: 2px solid rgba(236,72,153,0.4); }
+        .gifmaker-meta { font-size: 13px; color: rgba(255,255,255,0.7); margin: 12px 0; }
+        .gifmaker-result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+        .gifmaker-result-actions .action-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+        .gifmaker-svga-meta { font-size: 12px; color: rgba(167,139,250,0.9); margin-top: 8px; display: none; }
+        .gifmaker-layout { margin-bottom: 16px; display: none; }
+        .gifmaker-layout-title { font-size: 13px; color: rgba(255,255,255,0.75); margin-bottom: 10px; line-height: 1.5; }
+        .gifmaker-canvas-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0;
+            overflow: hidden; border-radius: 8px; border: 1px solid rgba(236,72,153,0.35);
+            background: repeating-conic-gradient(#3a3a3a 0% 25%, #2a2a2a 0% 50%) 50% / 16px 16px; }
+        .gifmaker-canvas-wrap #gifLayoutBg { display: block; max-width: 100%; max-height: 420px; position: relative; z-index: 1; user-select: none; }
+        .gifmaker-canvas-wrap #gifLayoutBtn { position: absolute; z-index: 2; cursor: move; user-select: none;
+            touch-action: none; pointer-events: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="app-topbar">
+            <p class="credit">✦ AI 视觉设计助手 v4 ✦</p>
+        </div>
+        <nav class="nav-primary" aria-label="主要功能">
+            <div class="nav-primary-tabs">
+                <button type="button" class="tab-btn active" data-tab="generate" onclick="switchTab('generate', this)">🖼️ 生图</button>
+                <button type="button" class="tab-btn" data-tab="edit" onclick="switchTab('edit', this)">✏️ 修图</button>
+            </div>
+            <button type="button" class="history-entry" onclick="toggleHistory()" title="查看生图与修图的历史记录">生图 / 修图记录</button>
+        </nav>
+        <nav class="nav-tools" aria-label="制作工具">
+            <span class="nav-tools-label">工具</span>
+            <button type="button" class="tab-btn-tool" data-tab="multi" onclick="switchTab('multi', this)">📐 开屏</button>
+            <button type="button" class="tab-btn-tool" data-tab="crop" onclick="switchTab('crop', this)">✂️ 裁切</button>
+            <button type="button" class="tab-btn-tool" data-tab="gifmaker" onclick="switchTab('gifmaker', this)">🎞️ GIF</button>
+        </nav>
+        
+        <div class="card tab-content active" id="generateTab">
+            <h1>🎨 AI 视觉设计助手</h1>
+            <p class="subtitle">填写需求，一键生成多张变体</p>
+            
+            <!-- 项目组 + 设计类型 -->
+            <div class="project-section">
+                <div class="project-bar">
+                    <div class="project-bar-field">
+                        <label>📁 项目组</label>
+                        <select id="projectSelect" onchange="onProjectOrDesignTypeChange()">
+                            <option value="">请选择项目组</option>
+                        </select>
+                    </div>
+                    <div class="project-bar-field">
+                        <label>设计类型</label>
+                        <select id="designType" onchange="onDesignTypeChange()">
+                            <option value="">请选择设计类型</option>
+                            <option value="海报">海报</option>
+                            <option value="传单">传单</option>
+                            <option value="Banner">Banner</option>
+                            <option value="朋友圈图">朋友圈图</option>
+                            <option value="公众号封面">公众号封面</option>
+                            <option value="PPT封面">PPT封面</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="project-refs-hint" id="projectRefsHint">请先选择项目组和设计类型，再挑选参考图</p>
+                <div class="project-refs-wrap" id="projectRefsWrap" style="display: none;">
+                    <div class="project-info" id="projectInfo"></div>
+                    <div class="project-images-grid" id="projectImagesGrid"></div>
+                </div>
+            </div>
+            
+            <!-- 上传参考图 -->
+            <div class="upload-ref-section">
+                <div class="upload-ref-label">
+                    <span>🖼️ 上传参考图（可选）</span>
+                    <span style="opacity:0.6;font-size:12px;">最多3张，不影响生成</span>
+                </div>
+                <input type="file" id="refImagesInput" class="upload-ref-input" accept="image/*" multiple>
+                <div class="uploaded-previews" id="uploadedPreviews"></div>
+            </div>
+            
+            <!-- 需求表单 -->
+            <div class="requirement-form">
+                <h3>📝 填写设计需求</h3>
+
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>需求名称</label>
+                        <input type="text" id="requirementName" placeholder="用于下载文件名，如：暑期班开屏">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>主标题 <span class="required">*</span></label>
+                        <input type="text" id="mainTitle" placeholder="如：暑期班火热招生中">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-item">
+                        <label>副标题</label>
+                        <input type="text" id="subTitle" placeholder="如：限时优惠 前50名8折">
+                    </div>
+                    <div class="form-item">
+                        <label>画面描述</label>
+                        <input type="text" id="visualDesc" placeholder="如：蓝天白云，卡通儿童奔跑">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-item">
+                        <label>风格</label>
+                        <select id="styleSelect" onchange="toggleCustomStyle()">
+                            <option value="">默认</option>
+                            <option value="简约">简约</option>
+                            <option value="卡通">卡通</option>
+                            <option value="中国风">中国风</option>
+                            <option value="科技感">科技感</option>
+                            <option value="可爱">可爱</option>
+                            <option value="商务">商务</option>
+                            <option value="复古">复古</option>
+                            <option value="潮流">潮流</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-item" id="customStyleInput" style="display:none;">
+                        <label>自定义风格</label>
+                        <input type="text" id="customStyle" placeholder="如：赛博朋克、国潮">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>排版参考</label>
+                        <input type="text" id="layoutRef" placeholder="如：标题居中顶部，正文底部左对齐">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-item">
+                        <label>输出尺寸</label>
+                        <select id="ratioSelect" onchange="toggleCustomSize()">
+                            <option value="1:1">1:1 (方形)</option>
+                            <option value="16:9">16:9 (宽屏)</option>
+                            <option value="9:16">9:16 (竖版)</option>
+                            <option value="4:3">4:3 (横版)</option>
+                            <option value="3:4">3:4 (竖版)</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-item" id="customSizeInputs" style="display:none;">
+                        <label>宽 × 高 (px)</label>
+                        <div class="size-inputs">
+                            <input type="number" id="customWidth" placeholder="宽" min="100" max="4096">
+                            <span>×</span>
+                            <input type="number" id="customHeight" placeholder="高" min="100" max="4096">
+                            <span id="matchedRatio" class="ratio-hint"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>补充备注</label>
+                        <input type="text" id="extraNotes" placeholder="如：品牌色 #FF6B6B，LOGO 左上角">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>生图模型</label>
+                        <select id="imageBackendSelect">
+                            <option value="lovart">Lovart 龙虾</option>
+                            <option value="comfyui">ComfyUI</option>
+                            <option value="stable_diffusion">Stable Diffusion</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- 分析需求按钮 -->
+                <button class="analyze-btn" onclick="analyzeKeyword()">🔍 AI 分析关键词</button>
+                
+                <!-- 关键词展示区域（默认隐藏） -->
+                <div class="keyword-section" id="keywordSection" style="display:none">
+                    <div class="keyword-header">
+                        <span>📝 AI 分析的关键词</span>
+                        <span class="keyword-hint">可手动修改后生成</span>
+                    </div>
+                    <textarea id="keywordInput" class="keyword-textarea" placeholder="点击上方按钮生成关键词..."></textarea>
+                    <button class="generate-btn" onclick="generateWithKeyword()">✨ 生成魔法图</button>
+                </div>
+            </div>
+            
+            <!-- 加载中 -->
+            <div class="loading-card" id="loadingCard">
+                <div class="spinner"></div>
+                <p class="loading-text">AI 正在创作变体中...约需 1-2 分钟</p>
+            </div>
+            
+            <!-- 变体展示 -->
+            <div class="variants-section" id="variantsSection">
+                <div class="variants-title">🎨 选择满意的一张</div>
+                <div class="variants-grid" id="variantsGrid"></div>
+            </div>
+            
+            <!-- 操作按钮 -->
+            <div class="actions" id="actionsSection">
+                <button class="action-btn btn-primary" onclick="downloadSelected()">💾 下载选中</button>
+                <button class="action-btn btn-green" onclick="upscaleSelected('2k')">🔍 2K 放大</button>
+                <button class="action-btn btn-outline" onclick="resetAll()">🔄 重新开始</button>
+            </div>
+        </div>
+        
+        <!-- 修图标签页内容 -->
+        <div class="tab-content" id="editTab">
+            <div class="edit-section">
+                <h3>✏️ 图片局部修改</h3>
+                
+                <!-- 修图类型 -->
+                <select class="edit-type-select" id="editType">
+                    <option value="文案修改">📝 文案修改</option>
+                    <option value="颜色调整">🎨 颜色调整</option>
+                    <option value="元素替换">🔄 元素替换</option>
+                    <option value="布局调整">📐 布局调整</option>
+                    <option value="风格转换">✨ 风格转换</option>
+                    <option value="背景替换">🏞️ 背景替换</option>
+                </select>
+                
+                <!-- 上传图片 -->
+                <div class="edit-upload-zone" id="editUploadZone" onclick="document.getElementById('editImageInput').click()">
+                    <p style="color: rgba(255,255,255,0.6);">🖼️ 点击上传要修改的图片</p>
+                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                </div>
+                <input type="file" id="editImageInput" accept="image/*" style="display: none;" onchange="previewEditImage(event)">
+                
+                <!-- 图片预览与选区绘制 -->
+                <div class="edit-canvas-wrap" id="editCanvasWrap" style="display: none;">
+                    <img id="editPreviewImg" alt="待修图预览">
+                    <canvas class="canvas-overlay" id="editSelectionCanvas"></canvas>
+                    <div class="selection-rect" id="editSelectionRect"></div>
+                    <button class="edit-remove" type="button" onclick="removeEditImage()" title="移除图片">×</button>
+                </div>
+                <div class="edit-toolbar" id="editToolbar" style="display: none;">
+                    <button type="button" onclick="setDrawMode('rect')" id="btnRect" class="active">▢ 框选区域</button>
+                    <button type="button" onclick="confirmCurrentSelection()" id="btnConfirmRegion">✓ 确认选区</button>
+                    <button type="button" onclick="clearCurrentSelection()">✕ 清除当前</button>
+                </div>
+                <div class="selection-info" id="selectionInfo" style="display: none;">框选要修改的区域并确认；仅修改选区内内容，原图尺寸与选区外样式保持不变</div>
+                <div class="edit-regions-list" id="editRegionsList"></div>
+                
+                <!-- 修改描述 -->
+                <div class="edit-desc" style="margin-top: 16px;">
+                    <label style="font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 8px; display: block;">📝 修改要求</label>
+                    <textarea id="editDescription" placeholder="例如：把文字改成'欢庆六一'，保持其他部分不变（框选区域后也可在各选区中单独填写）"></textarea>
+                </div>
+                
+                <!-- 保留元素 -->
+                <div class="edit-desc" style="margin-top: 12px;">
+                    <label style="font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 8px; display: block;">🎯 需要保留的元素（可选）</label>
+                    <input type="text" id="keepElements" placeholder="例如：背景颜色、人物姿态" 
+                           style="width: 100%; padding: 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
+                           border-radius: 8px; color: white; font-size: 14px;">
+                </div>
+                
+                <!-- 开始修图按钮 -->
+                <button class="generate-btn" onclick="startEditImage()" style="margin-top: 20px;">✨ AI 智能修图</button>
+                
+                <!-- 加载状态 -->
+                <div class="loading-card" id="editLoadingCard" style="display: none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">AI 正在修图，预计需要 1-2 分钟...</p>
+                </div>
+                
+                <!-- 结果展示 -->
+                <div class="edit-results" id="editResultsSection" style="display: none;">
+                    <div class="edit-results-title">🎉 修图完成！</div>
+                    <div class="edit-comparison">
+                        <div class="edit-side">
+                            <div class="edit-side-label">原图</div>
+                            <img id="editOriginalImg" onclick="openEditComparisonFullscreen(0)" title="点击查看大图">
+                        </div>
+                        <div class="edit-arrow">→</div>
+                        <div class="edit-side">
+                            <div class="edit-side-label">修改后</div>
+                            <img id="editResultImg" onclick="openEditComparisonFullscreen(1)" title="点击查看大图">
+                        </div>
+                    </div>
+                    <div class="edit-result-actions">
+                        <button class="action-btn btn-primary" onclick="downloadEditResult()">💾 下载结果</button>
+                        <button class="action-btn btn-outline" onclick="resetEdit()">🔄 重新修图</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 开屏导出 -->
+        <div class="card tab-content" id="multiTab">
+            <div class="multi-section">
+                <h3>📐 开屏导出</h3>
+                <p class="multi-hint">上传一张图片，按系统预设的 <strong>9 种开屏尺寸</strong> 等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。尺寸可在 <code>backend/output_sizes.json</code> 中修改。</p>
+                <div class="multi-sizes-list" id="multiSizesList"></div>
+                <div class="multi-upload-zone" id="multiUploadZone" onclick="document.getElementById('multiImageInput').click()">
+                    <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
+                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                </div>
+                <input type="file" id="multiImageInput" accept="image/png,image/jpeg,image/webp" style="display: none;" onchange="onMultiImageSelected(event)">
+                <div class="multi-preview" id="multiPreview" style="display: none; margin-top: 16px; text-align: center;">
+                    <img id="multiPreviewImg" alt="预览">
+                    <p class="file-name" id="multiFileName" style="margin-top:8px;color:rgba(255,255,255,0.5);font-size:13px;"></p>
+                    <button type="button" class="action-btn btn-outline" style="margin-top: 10px;" onclick="clearMultiImage()">移除图片</button>
+                </div>
+                <button type="button" class="multi-export-btn" id="multiExportBtn" onclick="exportMultiSizes()" disabled>⚡ 生成开屏图</button>
+                <div class="loading-card" id="multiLoadingCard" style="display: none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">正在生成开屏尺寸图...</p>
+                </div>
+                <p id="multiErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:16px;"></p>
+                <div id="multiResultsWrap" style="display: none;">
+                    <div class="svga-result-actions" style="margin-top: 16px;">
+                        <a class="action-btn btn-primary" id="multiZipDownload" href="#" download>📦 打包下载全部 (ZIP)</a>
+                    </div>
+                    <div class="multi-grid" id="multiResultsGrid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 尺寸裁切 -->
+        <div class="card tab-content" id="cropTab">
+            <div class="crop-section">
+                <h3>✂️ 尺寸裁切</h3>
+                <p class="crop-hint">上传图片并填写目标宽高，在预览中<strong>拖动黄框</strong>调整裁切范围，右下角可缩放；点击「应用裁切」后输出指定尺寸。</p>
+                <div class="crop-upload-zone" id="cropUploadZone" onclick="document.getElementById('cropImageInput').click()">
+                    <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
+                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                </div>
+                <input type="file" id="cropImageInput" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="onCropImageSelected(event)">
+                <div class="crop-size-row" id="cropSizeRow" style="display:none;">
+                    <label>输出宽度 <input type="number" id="cropOutW" min="1" max="8192" value="1080" oninput="onCropTargetSizeChange()"></label>
+                    <label>输出高度 <input type="number" id="cropOutH" min="1" max="8192" value="1920" oninput="onCropTargetSizeChange()"></label>
+                    <span class="ratio-hint" id="cropRatioHint"></span>
+                </div>
+                <div class="crop-workspace" id="cropWorkspace">
+                    <div class="crop-canvas-wrap" id="cropCanvasWrap">
+                        <img id="cropPreviewImg" alt="裁切预览" draggable="false">
+                        <div class="crop-overlay" id="cropOverlay">
+                            <div class="crop-box" id="cropBox">
+                                <div class="crop-handle se" data-handle="se"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="crop-info" id="cropInfo">拖动黄框移动裁切区域，拖动右下角缩放</p>
+                    <div class="crop-actions">
+                        <button type="button" class="crop-apply-btn" id="cropApplyBtn" onclick="applyCrop()">✓ 应用裁切</button>
+                        <button type="button" class="action-btn btn-outline" onclick="resetCropBox()">↺ 重置选区</button>
+                        <button type="button" class="action-btn btn-outline" onclick="clearCropImage()">移除图片</button>
+                    </div>
+                </div>
+                <div class="loading-card" id="cropLoadingCard" style="display:none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">正在裁切...</p>
+                </div>
+                <p id="cropErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:12px;"></p>
+                <div class="crop-result" id="cropResult">
+                    <p style="color:rgba(255,255,255,0.7);margin-bottom:12px;" id="cropResultMeta"></p>
+                    <img id="cropResultImg" alt="裁切结果">
+                    <div class="crop-actions" style="margin-top:14px;">
+                        <a class="action-btn btn-primary" id="cropDownloadBtn" href="#" download>💾 下载裁切图</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GIF 呼吸动图 -->
+        <div class="card tab-content" id="gifmakerTab">
+            <div class="gifmaker-section">
+                <h3>🎞️ 按钮呼吸 GIF</h3>
+                <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图与按钮图（建议透明底 PNG），自动生成按钮缩放呼吸循环动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>（开屏动效常用）。</p>
+                <div class="gifmaker-uploads">
+                    <div class="gifmaker-slot" id="gifBgSlot" onclick="document.getElementById('gifBgInput').click()">
+                        <span class="gifmaker-slot-title">🖼️ 底图（不动）</span>
+                        <span class="gifmaker-slot-desc">背景 / 场景</span>
+                        <img id="gifBgPreview" alt="" style="display:none;">
+                    </div>
+                    <div class="gifmaker-slot" id="gifBtnSlot" onclick="document.getElementById('gifBtnInput').click()">
+                        <span class="gifmaker-slot-title">🔘 按钮图（要动）</span>
+                        <span class="gifmaker-slot-desc">透明底 PNG 最佳</span>
+                        <img id="gifBtnPreview" alt="" style="display:none;">
+                    </div>
+                </div>
+                <input type="file" id="gifBgInput" accept="image/*" style="display:none" onchange="onGifBgSelected(event)">
+                <input type="file" id="gifBtnInput" accept="image/*" style="display:none" onchange="onGifBtnSelected(event)">
+                <div class="gifmaker-layout" id="gifLayoutSection">
+                    <p class="gifmaker-layout-title">📍 在下方预览区<strong>拖动按钮</strong>调整位置；透明区域会显示棋盘格。下方数字可微调。</p>
+                    <div class="gifmaker-canvas-wrap" id="gifLayoutWrap">
+                        <img id="gifLayoutBg" alt="底图摆位预览" draggable="false">
+                        <img id="gifLayoutBtn" alt="按钮摆位" draggable="false">
+                    </div>
+                </div>
+                <div class="gifmaker-options">
+                    <label>呼吸幅度
+                        <select id="gifIntensity">
+                            <option value="weak">弱</option>
+                            <option value="medium" selected>中</option>
+                            <option value="strong">强</option>
+                        </select>
+                    </label>
+                    <label>循环时长(秒) <input type="number" id="gifDuration" value="1.6" min="0.8" max="5" step="0.1"></label>
+                    <label>水平偏移 <input type="number" id="gifOffsetX" value="0" step="1"></label>
+                    <label>垂直偏移 <input type="number" id="gifOffsetY" value="0" step="1"></label>
+                </div>
+                <button type="button" class="gifmaker-gen-btn" id="gifGenBtn" onclick="generateBreathingGif()" disabled>✨ 生成呼吸 GIF</button>
+                <div class="loading-card" id="gifLoadingCard" style="display:none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">正在合成 GIF...</p>
+                </div>
+                <p id="gifErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:12px;"></p>
+                <div class="gifmaker-preview" id="gifmakerPreview">
+                    <p class="gifmaker-meta" id="gifmakerMeta"></p>
+                    <img id="gifmakerResultImg" alt="GIF 预览">
+                    <div class="gifmaker-result-actions" id="gifmakerResultActions" style="display:none;">
+                        <a class="action-btn btn-primary" id="gifDownloadBtn" href="#" download>💾 下载 GIF</a>
+                        <button type="button" class="action-btn btn-green" id="gifSvgaBtn" onclick="convertBreathingGifToSvga()">🎬 下载 SVGA</button>
+                    </div>
+                    <p class="gifmaker-svga-meta" id="gifSvgaMeta"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    
+    <!-- 历史记录侧边抽屉 -->
+    <div class="drawer-overlay" id="drawerOverlay" onclick="toggleHistory()"></div>
+    <div class="history-drawer" id="historyDrawer">
+        <div class="drawer-header">
+            <span class="drawer-title">生图 / 修图记录</span>
+            <button class="drawer-close" onclick="toggleHistory()">×</button>
+        </div>
+        <div class="drawer-content" id="historyList"></div>
+    </div>
+    
+    <!-- 全屏图片查看 -->
+    <div class="fullscreen-overlay" id="fullscreenOverlay" onclick="closeFullscreen()">
+        <button class="fullscreen-close" onclick="event.stopPropagation(); closeFullscreen()">×</button>
+        <a class="fullscreen-download" id="fullscreenDownload" download href="#" onclick="event.stopPropagation()">⬇ 下载图片</a>
+        <img class="fullscreen-img" id="fullscreenImg">
+        <button class="fullscreen-nav fullscreen-prev" onclick="event.stopPropagation(); prevImage()">‹</button>
+        <button class="fullscreen-nav fullscreen-next" onclick="event.stopPropagation(); nextImage()">›</button>
+        <div class="fullscreen-counter" id="fullscreenCounter"></div>
+    </div>
+    
+<script>
+var currentProject = null;
+var selectedProjectImages = [];
+var selectedVariant = null;
+var variants = [];
+var editImageData = null;
+
+// Tab 切换
+function switchTab(tab, btnEl) {
+    document.querySelectorAll('.tab-btn, .tab-btn-tool').forEach(function(btn) { btn.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+    var btn = btnEl || document.querySelector('.tab-btn[data-tab="' + tab + '"], .tab-btn-tool[data-tab="' + tab + '"]');
+    if (btn) btn.classList.add('active');
+    var panel = document.getElementById(tab + 'Tab');
+    if (panel) panel.classList.add('active');
+}
+
+// 初始化
+window.onload = function() {
+    updateProjectRefsVisibility();
+    initImageBackendSelect();
+    loadProjects();
+    loadHistory();
+    initMultiUploadZone();
+    loadMultiSizePresets();
+    initCropUploadZone();
+    bindCropInteractions();
+    bindGifLayoutInteractions();
+    initGifUploadZones();
+    updateGifGenBtnState();
+};
+
+function sanitizeDownloadNamePart(text) {
+    return (text || '').trim().replace(/[/\\?%*:|"<>#\s]+/g, '_').replace(/_+/g, '_').slice(0, 80) || '未命名';
+}
+
+function getRequirementName() {
+    var el = document.getElementById('requirementName');
+    return sanitizeDownloadNamePart(el && el.value);
+}
+
+function buildVariantDownloadName(v) {
+    var ext = '.png';
+    if (v && v.filename) {
+        var m = v.filename.match(/(\.[a-zA-Z0-9]+)$/);
+        if (m) ext = m[1].toLowerCase();
+    }
+    var w = (v && v.width) ? v.width : 0;
+    var h = (v && v.height) ? v.height : 0;
+    if (!w || !h) return getRequirementName() + ext;
+    return getRequirementName() + '_' + w + 'x' + h + ext;
+}
+
+function getMultiSourceBaseName() {
+    return multiSourceBaseName || '开屏';
+}
+
+function buildMultiDownloadName(img) {
+    if (img && img.downloadName) return img.downloadName;
+    return sanitizeDownloadNamePart(getMultiSourceBaseName()) + '_' + img.width + 'x' + img.height + '.jpg';
+}
+
+function triggerFileDownload(url, filename) {
+    fetch(url).then(function(r) { return r.blob(); }).then(function(blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+    }).catch(function() {
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
+}
+
+function findVariantDownloadNameByUrl(url) {
+    if (!url || !variants || !variants.length) return null;
+    var base = url.split('/').pop().split('?')[0];
+    for (var i = 0; i < variants.length; i++) {
+        if (variants[i].filename === base) return buildVariantDownloadName(variants[i]);
+    }
+    return null;
+}
+
+function initImageBackendSelect() {
+    var sel = document.getElementById('imageBackendSelect');
+    if (!sel) return;
+    var saved = localStorage.getItem('imageBackendSelect');
+    if (saved) sel.value = saved;
+    sel.addEventListener('change', function() {
+        localStorage.setItem('imageBackendSelect', sel.value);
+    });
+}
+
+function getSelectedImageBackend() {
+    var sel = document.getElementById('imageBackendSelect');
+    return sel ? sel.value : 'lovart';
+}
+
+var DESIGN_TYPE_RATIO_DEFAULTS = {
+    '海报': '9:16',
+    '传单': '9:16',
+    '朋友圈图': '1:1',
+    '公众号封面': '16:9',
+    'Banner': '16:9',
+    'PPT封面': '16:9'
+};
+
+function shouldShowProjectRefs() {
+    var project = document.getElementById('projectSelect').value;
+    var designType = document.getElementById('designType').value;
+    return !!(project && designType);
+}
+
+function updateProjectRefsVisibility() {
+    var show = shouldShowProjectRefs();
+    var wrap = document.getElementById('projectRefsWrap');
+    var hint = document.getElementById('projectRefsHint');
+    if (wrap) wrap.style.display = show ? 'block' : 'none';
+    if (hint) hint.style.display = show ? 'none' : 'block';
+    if (!show) clearProjectRefs();
+}
+
+function clearProjectRefs() {
+    currentProject = null;
+    selectedProjectImages = [];
+    var info = document.getElementById('projectInfo');
+    var grid = document.getElementById('projectImagesGrid');
+    if (info) info.textContent = '';
+    if (grid) {
+        grid.innerHTML = '';
+        grid.classList.remove('active');
+    }
+}
+
+function onDesignTypeChange() {
+    applyDefaultRatioForDesignType();
+    var designType = document.getElementById('designType').value;
+    if (designType === '其他') {
+        document.getElementById('styleSelect').value = 'custom';
+        toggleCustomStyle();
+    }
+    onProjectOrDesignTypeChange();
+}
+
+function onProjectOrDesignTypeChange() {
+    updateProjectRefsVisibility();
+    if (!shouldShowProjectRefs()) return;
+    selectProject();
+}
+
+function applyDefaultRatioForDesignType() {
+    var designType = document.getElementById('designType').value;
+    if (!designType) return;
+    var ratio = DESIGN_TYPE_RATIO_DEFAULTS[designType];
+    if (!ratio) return;
+    var ratioSel = document.getElementById('ratioSelect');
+    var hasOption = Array.prototype.some.call(ratioSel.options, function(opt) {
+        return opt.value === ratio;
+    });
+    if (!hasOption) return;
+    ratioSel.value = ratio;
+    toggleCustomSize();
+}
+
+// 加载项目列表
+async function loadProjects() {
+    try {
+        var res = await fetch('/projects');
+        var data = await res.json();
+        var sel = document.getElementById('projectSelect');
+        sel.innerHTML = '<option value="">请选择项目组</option>';
+        (data.projects || []).forEach(function(p) {
+            var opt = document.createElement('option');
+            opt.value = p.name;
+            opt.textContent = p.display_name + ' (' + p.count + '张参考)';
+            opt.dataset.tags = (p.style_tags || []).join(', ');
+            opt.dataset.desc = p.description || '';
+            sel.appendChild(opt);
+        });
+    } catch(e) {
+        console.error('加载项目失败', e);
+    }
+}
+
+// 选择项目
+function selectProject() {
+    if (!shouldShowProjectRefs()) {
+        clearProjectRefs();
+        return;
+    }
+    var sel = document.getElementById('projectSelect');
+    var opt = sel.selectedOptions[0];
+    var grid = document.getElementById('projectImagesGrid');
+    selectedProjectImages = [];
+    
+    if (opt && opt.value) {
+        currentProject = {
+            name: opt.value,
+            tags: opt.dataset.tags,
+            desc: opt.dataset.desc
+        };
+        document.getElementById('projectInfo').textContent = 
+            (currentProject.tags ? '风格标签：' + currentProject.tags + '。' : '') +
+            (currentProject.desc || '');
+        // 加载项目图片
+        loadProjectImages(opt.value, grid);
+    } else {
+        clearProjectRefs();
+    }
+}
+
+// 加载项目图片
+async function loadProjectImages(projectName, grid) {
+    try {
+        var res = await fetch('/projects/' + encodeURIComponent(projectName) + '/images');
+        var data = await res.json();
+        var images = data.images || [];
+        
+        if (images.length === 0) {
+            grid.innerHTML = '<span class="select-hint">该项目暂无参考图</span>';
+            grid.classList.add('active');
+            return;
+        }
+        
+        grid.innerHTML = '<span class="select-hint">点击选择参考图（最多10张）：</span>';
+        grid.classList.add('active');
+        
+        images.forEach(function(imgName) {
+            var wrap = document.createElement('div');
+            wrap.className = 'img-thumb-wrap';
+            wrap.dataset.name = imgName;
+            wrap.onclick = function() { toggleProjectImage(this, projectName, imgName); };
+            
+            var img = document.createElement('img');
+            img.className = 'img-thumb';
+            img.src = '/projects/' + projectName + '/images/' + imgName;
+            img.onerror = function() { this.style.display = 'none'; };
+            
+            wrap.appendChild(img);
+            grid.appendChild(wrap);
+        });
+    } catch(e) {
+        console.error('加载项目图片失败', e);
+    }
+}
+
+// 切换项目图片选择状态
+function toggleProjectImage(el, projectName, imgName) {
+    var idx = selectedProjectImages.indexOf(projectName + '/' + imgName);
+    if (idx >= 0) {
+        selectedProjectImages.splice(idx, 1);
+        el.classList.remove('selected');
+    } else {
+        if (selectedProjectImages.length >= 10) {
+            alert('最多选择10张参考图');
+            return;
+        }
+        selectedProjectImages.push(projectName + '/' + imgName);
+        el.classList.add('selected');
+    }
+}
+
+// 上传参考图处理
+var uploadedRefImages = [];
+document.getElementById('refImagesInput').addEventListener('change', function(e) {
+    var files = e.target.files;
+    var maxFiles = 3;
+    var remaining = maxFiles - uploadedRefImages.length;
+    if (files.length > remaining) {
+        alert('最多上传' + maxFiles + '张参考图，已选择' + files.length + '张，剩余' + remaining + '张名额');
+    }
+    for (var i = 0; i < Math.min(files.length, remaining); i++) {
+        (function(file) {
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                uploadedRefImages.push(evt.target.result);
+                renderUploadedPreviews();
+            };
+            reader.readAsDataURL(file);
+        })(files[i]);
+    }
+    e.target.value = '';
+});
+
+function renderUploadedPreviews() {
+    var container = document.getElementById('uploadedPreviews');
+    container.innerHTML = '';
+    for (var i = 0; i < uploadedRefImages.length; i++) {
+        (function(idx, dataUrl) {
+            var wrap = document.createElement('div');
+            wrap.className = 'uploaded-thumb-wrap';
+            var img = document.createElement('img');
+            img.className = 'uploaded-thumb';
+            img.src = dataUrl;
+            var btn = document.createElement('div');
+            btn.className = 'uploaded-thumb-remove';
+            btn.textContent = '×';
+            btn.onclick = function() {
+                uploadedRefImages.splice(idx, 1);
+                renderUploadedPreviews();
+            };
+            wrap.appendChild(img);
+            wrap.appendChild(btn);
+            container.appendChild(wrap);
+        })(i, uploadedRefImages[i]);
+    }
+}
+
+// 自定义尺寸切换
+function toggleCustomSize() {
+    var sel = document.getElementById('ratioSelect');
+    var customInputs = document.getElementById('customSizeInputs');
+    if (sel.value === 'custom') {
+        customInputs.style.display = 'block';
+    } else {
+        customInputs.style.display = 'none';
+    }
+}
+
+// 自定义风格切换
+function toggleCustomStyle() {
+    var sel = document.getElementById('styleSelect');
+    var customInput = document.getElementById('customStyleInput');
+    if (sel.value === 'custom') {
+        customInput.style.display = 'block';
+    } else {
+        customInput.style.display = 'none';
+    }
+}
+
+// 获取风格值
+function getStyleValue() {
+    var sel = document.getElementById('styleSelect');
+    if (sel.value === 'custom') {
+        return document.getElementById('customStyle').value.trim();
+    }
+    return sel.value;
+}
+
+// 匹配最接近的预设比例
+var RATIO_MAP = [
+    {ratio: '21:9', value: 21/9},
+    {ratio: '16:9', value: 16/9},
+    {ratio: '4:3', value: 4/3},
+    {ratio: '3:2', value: 3/2},
+    {ratio: '1:1', value: 1},
+    {ratio: '4:5', value: 4/5},
+    {ratio: '3:4', value: 3/4},
+    {ratio: '2:3', value: 2/3},
+    {ratio: '9:16', value: 9/16}
+];
+
+function updateMatchedRatio() {
+    var w = parseInt(document.getElementById('customWidth').value) || 0;
+    var h = parseInt(document.getElementById('customHeight').value) || 0;
+    var hint = document.getElementById('matchedRatio');
+    
+    if (w > 0 && h > 0) {
+        var inputRatio = w / h;
+        var closest = RATIO_MAP.reduce(function(prev, curr) {
+            return Math.abs(curr.value - inputRatio) < Math.abs(prev.value - inputRatio) ? curr : prev;
+        });
+        hint.textContent = '→ 匹配 ' + closest.ratio;
+        hint.dataset.ratio = closest.ratio;
+    } else {
+        hint.textContent = '';
+        hint.dataset.ratio = '';
+    }
+}
+
+document.getElementById('customWidth').addEventListener('input', updateMatchedRatio);
+document.getElementById('customHeight').addEventListener('input', updateMatchedRatio);
+
+// 分析关键词
+async function analyzeKeyword() {
+    var designType = document.getElementById('designType').value;
+    var mainTitle = document.getElementById('mainTitle').value.trim();
+    
+    if (!mainTitle) {
+        alert('请填写主标题');
+        return;
+    }
+    
+    var summary = {
+        '设计类型': designType,
+        '主标题': mainTitle,
+        '副标题': document.getElementById('subTitle').value.trim(),
+        '画面描述': document.getElementById('visualDesc').value.trim(),
+        '排版参考': document.getElementById('layoutRef').value.trim(),
+        '风格': getStyleValue(),
+        '补充备注': document.getElementById('extraNotes').value.trim()
+    };
+    
+    document.getElementById('loadingCard').style.display = 'block';
+    document.querySelector('.loading-text').textContent = 'AI 正在分析关键词...';
+    document.querySelector('.analyze-btn').disabled = true;
+    
+    try {
+        var formData = new FormData();
+        formData.append('summary', JSON.stringify(summary));
+        formData.append('project', currentProject ? currentProject.name : '');
+        
+        var res = await fetch('/api/analyze', { method: 'POST', body: formData });
+        var data = await res.json();
+        
+        if (data.error) {
+            alert('分析失败: ' + data.error);
+            return;
+        }
+        
+        // 显示关键词区域，填充内容
+        document.getElementById('keywordSection').style.display = 'block';
+        document.getElementById('keywordInput').value = data.prompt || '';
+        
+        // 隐藏分析按钮，显示关键词区域
+        document.querySelector('.analyze-btn').style.display = 'none';
+        
+    } catch(e) {
+        alert('分析请求失败: ' + e.message);
+    }
+    
+    document.getElementById('loadingCard').style.display = 'none';
+    document.querySelector('.analyze-btn').disabled = false;
+}
+
+// 使用关键词生成图片
+async function generateWithKeyword() {
+    var prompt = document.getElementById('keywordInput').value.trim();
+    
+    if (!prompt) {
+        alert('请先分析关键词或手动填写');
+        return;
+    }
+    
+    // 处理尺寸
+    var ratioSel = document.getElementById('ratioSelect');
+    var ratio = ratioSel.value;
+    if (ratio === 'custom') {
+        var hint = document.getElementById('matchedRatio');
+        ratio = hint.dataset.ratio || '1:1';
+    }
+    
+    document.getElementById('loadingCard').style.display = 'block';
+    document.querySelector('.loading-text').textContent = 'AI 正在创作变体中...约需 1-2 分钟';
+    document.querySelector('.generate-btn').disabled = true;
+    
+    var formData = new FormData();
+    formData.append('prompt', prompt);
+    formData.append('project', currentProject ? currentProject.name : '');
+    formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
+    formData.append('count', '3');
+    formData.append('ratio', ratio);
+    formData.append('image_backend', getSelectedImageBackend());
+    // 添加上传的参考图
+    for (var i = 0; i < uploadedRefImages.length; i++) {
+        formData.append('ref_image_' + i, uploadedRefImages[i]);
+    }
+    
+    try {
+        var res = await fetch('/generate-with-prompt', { method: 'POST', body: formData });
+        var data = await res.json();
+        
+        if (data.error) {
+            alert('生成失败: ' + data.error);
+            return;
+        }
+        
+        variants = data.variants || [];
+        renderVariants(variants);
+        
+        document.getElementById('variantsSection').style.display = 'block';
+        document.getElementById('actionsSection').style.display = 'flex';
+        loadHistory();
+        
+    } catch(e) {
+        alert('生成请求失败: ' + e.message);
+    }
+    
+    document.getElementById('loadingCard').style.display = 'none';
+    document.querySelector('.generate-btn').disabled = false;
+}
+
+// 生成变体（保留旧函数兼容）
+async function generateVariants() {
+    var designType = document.getElementById('designType').value;
+    var mainTitle = document.getElementById('mainTitle').value.trim();
+    
+    if (!mainTitle) {
+        alert('请填写主标题');
+        return;
+    }
+    
+    var summary = {
+        '设计类型': designType,
+        '主标题': mainTitle,
+        '副标题': document.getElementById('subTitle').value.trim(),
+        '画面描述': document.getElementById('visualDesc').value.trim(),
+        '排版参考': document.getElementById('layoutRef').value.trim(),
+        '风格': getStyleValue(),
+        '补充备注': document.getElementById('extraNotes').value.trim()
+    };
+    
+    // 处理尺寸
+    var ratioSel = document.getElementById('ratioSelect');
+    var ratio = ratioSel.value;
+    if (ratio === 'custom') {
+        var hint = document.getElementById('matchedRatio');
+        ratio = hint.dataset.ratio || '1:1';
+    }
+    
+    document.getElementById('loadingCard').style.display = 'block';
+    document.querySelector('.generate-btn').disabled = true;
+    
+    var formData = new FormData();
+    formData.append('summary', JSON.stringify(summary));
+    formData.append('project', currentProject ? currentProject.name : '');
+    formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
+    formData.append('count', '3');
+    formData.append('ratio', ratio);
+    formData.append('image_backend', getSelectedImageBackend());
+    
+    try {
+        var res = await fetch('/generate-variants', { method: 'POST', body: formData });
+        var data = await res.json();
+        
+        if (data.error) {
+            alert('生成失败: ' + data.error);
+            return;
+        }
+        
+        variants = data.variants || [];
+        renderVariants(variants);
+        
+        document.getElementById('variantsSection').style.display = 'block';
+        document.getElementById('actionsSection').style.display = 'flex';
+        loadHistory();
+        
+    } catch(e) {
+        alert('生成请求失败: ' + e.message);
+    }
+    
+    document.getElementById('loadingCard').style.display = 'none';
+    document.querySelector('.generate-btn').disabled = false;
+}
+
+// 渲染变体
+function renderVariants(vars) {
+    var grid = document.getElementById('variantsGrid');
+    var valid = (vars || []).filter(function(v) { return v && v.filename; });
+
+    if (!valid.length) {
+        var errorMsg = (vars || []).map(function(v) { return v && v.error; }).filter(Boolean)[0] || '没有成功生成任何图片';
+        grid.innerHTML = '<div class="variant-error" style="grid-column:1/-1;padding:16px;border-radius:12px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fecaca;line-height:1.6;">' +
+            '生成失败：' + errorMsg +
+            '</div>';
+        return;
+    }
+
+    var allFilenames = valid.map(function(v) { return '/outputs/' + v.filename; });
+    var allUrlsEnc = encodeURIComponent(JSON.stringify(allFilenames));
+    grid.innerHTML = valid.map(function(v, i) {
+        return '<div class="variant-card" onclick="selectVariant(' + i + ')" id="variant-' + i + '">' +
+            '<img src="/outputs/' + v.filename + '" loading="lazy" data-images="' + allUrlsEnc + '" data-index="' + i + '" onclick="event.stopPropagation(); openHistoryThumb(this)">' +
+            '<div class="label">魔法图 ' + (i + 1) + '</div>' +
+            '</div>';
+    }).join('');
+    variants = valid;
+}
+
+// 选择变体
+function selectVariant(idx) {
+    selectedVariant = idx;
+    document.querySelectorAll('.variant-card').forEach(function(el, i) {
+        el.classList.toggle('selected', i === idx);
+    });
+}
+
+// 下载选中
+function downloadSelected() {
+    if (selectedVariant === null) {
+        alert('请先选择一张图片');
+        return;
+    }
+    var v = variants[selectedVariant];
+    triggerFileDownload('/outputs/' + v.filename, buildVariantDownloadName(v));
+}
+
+// 放大选中
+async function upscaleSelected(resolution) {
+    if (selectedVariant === null) {
+        alert('请先选择一张图片');
+        return;
+    }
+    var v = variants[selectedVariant];
+    
+    document.getElementById('loadingCard').style.display = 'block';
+    document.querySelector('.loading-text').textContent = '放大中 ' + resolution + '...';
+    
+    try {
+        var res = await fetch('/upscale', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filename: v.filename, resolution: resolution})
+        });
+        var data = await res.json();
+        
+        if (data.error) {
+            alert('放大失败: ' + data.error);
+        } else {
+            variants[selectedVariant].filename = data.output_image;
+            renderVariants(variants);
+            selectVariant(selectedVariant);
+            alert(resolution + ' 放大完成！');
+            loadHistory();
+        }
+    } catch(e) {
+        alert('放大请求失败: ' + e.message);
+    }
+    
+    document.getElementById('loadingCard').style.display = 'none';
+    document.querySelector('.loading-text').textContent = 'AI 正在创作变体中...约需 1-2 分钟';
+}
+
+// 修图选区
+var editRegions = [];
+var editRegionIdCounter = 0;
+var isDrawing = false;
+var startX, startY, selectionRect = null;
+
+function previewEditImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        editImageData = e.target.result;
+        const img = document.getElementById('editPreviewImg');
+        img.onload = function() { initEditCanvas(); };
+        img.src = e.target.result;
+        document.getElementById('editCanvasWrap').style.display = 'inline-block';
+        document.getElementById('editUploadZone').style.display = 'none';
+        document.getElementById('editToolbar').style.display = 'flex';
+        document.getElementById('selectionInfo').style.display = 'block';
+        editRegions = [];
+        editRegionIdCounter = 0;
+        document.getElementById('editRegionsList').innerHTML = '';
+        clearCurrentSelection();
+    };
+    reader.readAsDataURL(file);
+}
+
+function initEditCanvas() {
+    const img = document.getElementById('editPreviewImg');
+    const canvas = document.getElementById('editSelectionCanvas');
+    if (!img || !canvas) return;
+    const w = img.clientWidth;
+    const h = img.clientHeight;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.onmousedown = startSelection;
+    canvas.onmousemove = drawSelection;
+    canvas.onmouseup = endSelection;
+    canvas.onmouseleave = endSelection;
+    renderConfirmedRegions();
+}
+
+function getEventPos(e) {
+    const canvas = document.getElementById('editSelectionCanvas');
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function startSelection(e) {
+    e.preventDefault();
+    const pos = getEventPos(e);
+    startX = pos.x;
+    startY = pos.y;
+    isDrawing = true;
+    selectionRect = { x: startX, y: startY, w: 0, h: 0 };
+}
+
+function drawSelection(e) {
+    if (!isDrawing) return;
+    const pos = getEventPos(e);
+    const x = Math.min(startX, pos.x);
+    const y = Math.min(startY, pos.y);
+    const w = Math.abs(pos.x - startX);
+    const h = Math.abs(pos.y - startY);
+    const rectEl = document.getElementById('editSelectionRect');
+    rectEl.style.left = x + 'px';
+    rectEl.style.top = y + 'px';
+    rectEl.style.width = w + 'px';
+    rectEl.style.height = h + 'px';
+    if (w > 5 && h > 5) {
+        rectEl.classList.add('active');
+        selectionRect = { x, y, w, h };
+        updateSelectionInfo(x, y, w, h);
+    }
+}
+
+function endSelection(e) {
+    isDrawing = false;
+}
+
+function clearCurrentSelection() {
+    const rectEl = document.getElementById('editSelectionRect');
+    if (rectEl) {
+        rectEl.classList.remove('active');
+        rectEl.style.width = '0';
+        rectEl.style.height = '0';
+    }
+    selectionRect = null;
+    updateSelectionInfo(0, 0, 0, 0);
+}
+
+function updateSelectionInfo(x, y, w, h) {
+    const info = document.getElementById('selectionInfo');
+    if (!info) return;
+    if (w > 0 && h > 0) {
+        info.textContent = '当前选区: ' + Math.round(x) + ',' + Math.round(y) + ' ' + Math.round(w) + 'x' + Math.round(h) + ' — 点击「确认选区」添加';
+    } else {
+        info.textContent = '框选要修改的区域并确认；仅修改选区内内容，原图尺寸与选区外样式保持不变';
+    }
+}
+
+function displayToNaturalCoords(rect) {
+    const img = document.getElementById('editPreviewImg');
+    const scaleX = img.naturalWidth / img.clientWidth;
+    const scaleY = img.naturalHeight / img.clientHeight;
+    return {
+        x: Math.round(rect.x * scaleX),
+        y: Math.round(rect.y * scaleY),
+        w: Math.round(rect.w * scaleX),
+        h: Math.round(rect.h * scaleY)
+    };
+}
+
+function naturalToDisplayCoords(coords) {
+    const img = document.getElementById('editPreviewImg');
+    const scaleX = img.clientWidth / img.naturalWidth;
+    const scaleY = img.clientHeight / img.naturalHeight;
+    return {
+        x: coords.x * scaleX,
+        y: coords.y * scaleY,
+        w: coords.w * scaleX,
+        h: coords.h * scaleY
+    };
+}
+
+function confirmCurrentSelection() {
+    if (!selectionRect || selectionRect.w < 10 || selectionRect.h < 10) {
+        alert('请先在图片上框选足够大的区域');
+        return;
+    }
+    const natural = displayToNaturalCoords(selectionRect);
+    const id = 'region_' + (++editRegionIdCounter);
+    editRegions.push({
+        id: id,
+        x: natural.x,
+        y: natural.y,
+        w: natural.w,
+        h: natural.h,
+        description: ''
+    });
+    renderConfirmedRegions();
+    clearCurrentSelection();
+}
+
+function renderConfirmedRegions() {
+    const wrap = document.getElementById('editCanvasWrap');
+    if (!wrap) return;
+    wrap.querySelectorAll('.region-marker').forEach(function(el) { el.remove(); });
+    editRegions.forEach(function(region, idx) {
+        const disp = naturalToDisplayCoords(region);
+        const marker = document.createElement('div');
+        marker.className = 'selection-rect region-marker active';
+        marker.style.left = disp.x + 'px';
+        marker.style.top = disp.y + 'px';
+        marker.style.width = disp.w + 'px';
+        marker.style.height = disp.h + 'px';
+        marker.style.borderColor = '#34d399';
+        marker.style.background = 'rgba(52,211,153,0.12)';
+        marker.title = '选区 ' + (idx + 1);
+        wrap.appendChild(marker);
+    });
+    const list = document.getElementById('editRegionsList');
+    list.innerHTML = '';
+    editRegions.forEach(function(region, idx) {
+        const item = document.createElement('div');
+        item.className = 'edit-region-item';
+        item.innerHTML = '<div class="region-header"><span class="region-label">选区 ' + (idx + 1) + ' (' + region.w + '×' + region.h + ')</span>' +
+            '<button type="button" class="region-remove" onclick="removeEditRegion(\'' + region.id + '\')" title="删除选区">×</button></div>' +
+            '<textarea id="desc_' + region.id + '" placeholder="描述此区域的修改要求，例如：把文字改成「欢庆六一」"></textarea>';
+        list.appendChild(item);
+        const ta = item.querySelector('textarea');
+        ta.value = region.description || '';
+        ta.oninput = function() { region.description = ta.value; };
+    });
+}
+
+function removeEditRegion(id) {
+    editRegions = editRegions.filter(function(r) { return r.id !== id; });
+    renderConfirmedRegions();
+}
+
+function setDrawMode(mode) {
+    document.getElementById('btnRect').classList.add('active');
+}
+
+function getEditPayloadRegions() {
+    const globalDesc = document.getElementById('editDescription').value.trim();
+    if (editRegions.length > 0) {
+        return editRegions.map(function(r) {
+            var descEl = document.getElementById('desc_' + r.id);
+            var desc = (descEl ? descEl.value : r.description || '').trim() || globalDesc;
+            return { x: r.x, y: r.y, w: r.w, h: r.h, description: desc };
+        }).filter(function(r) { return r.description; });
+    }
+    if (selectionRect && selectionRect.w >= 10 && selectionRect.h >= 10) {
+        const natural = displayToNaturalCoords(selectionRect);
+        if (globalDesc) {
+            return [{ x: natural.x, y: natural.y, w: natural.w, h: natural.h, description: globalDesc }];
+        }
+    }
+    return [];
+}
+
+function removeEditImage() {
+    editImageData = null;
+    editRegions = [];
+    document.getElementById('editCanvasWrap').style.display = 'none';
+    document.getElementById('editToolbar').style.display = 'none';
+    document.getElementById('selectionInfo').style.display = 'none';
+    document.getElementById('editRegionsList').innerHTML = '';
+    document.getElementById('editUploadZone').style.display = 'block';
+    document.getElementById('editImageInput').value = '';
+    document.getElementById('editResultsSection').style.display = 'none';
+    clearCurrentSelection();
+}
+
+function compressImageDataUrl(dataUrl, maxDim, quality) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        img.onload = function() {
+            var w = img.naturalWidth || img.width;
+            var h = img.naturalHeight || img.height;
+            var scale = Math.min(1, maxDim / Math.max(w, h, 1));
+            var cw = Math.max(1, Math.round(w * scale));
+            var ch = Math.max(1, Math.round(h * scale));
+            var canvas = document.createElement('canvas');
+            canvas.width = cw;
+            canvas.height = ch;
+            canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = function() { reject(new Error('图片加载失败')); };
+        img.src = dataUrl;
+    });
+}
+
+// 开始修图
+async function startEditImage() {
+    if (!editImageData) {
+        alert('请先上传要修改的图片');
+        return;
+    }
+    
+    const editType = document.getElementById('editType').value;
+    const editDesc = document.getElementById('editDescription').value.trim();
+    const keepElements = document.getElementById('keepElements').value.trim();
+    const regions = getEditPayloadRegions();
+    
+    if (regions.length === 0 && !editDesc) {
+        alert('请框选要修改的区域并填写修改要求，或在下方填写全局修改描述');
+        return;
+    }
+    
+    document.getElementById('editLoadingCard').style.display = 'block';
+    document.getElementById('editResultsSection').style.display = 'none';
+    document.getElementById('editOriginalImg').src = editImageData;
+    
+    try {
+        var imageToSend = editImageData;
+        try {
+            imageToSend = await compressImageDataUrl(editImageData, 2048, 0.88);
+        } catch (e) {
+            console.warn('图片压缩跳过', e);
+        }
+        const payload = {
+            image: imageToSend,
+            editType: editType,
+            description: editDesc,
+            keepElements: keepElements,
+            image_backend: localStorage.getItem('imageBackendSelect') || 'lovart'
+        };
+        if (regions.length > 0) {
+            payload.regions = regions;
+        }
+        const response = await fetch('/api/edit-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if (response.status === 404) {
+            alert('修图接口未找到(404)，请确认已用 ./start.sh 重启服务，并访问终端里显示的端口');
+            return;
+        }
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('editResultImg').src = '/outputs/' + data.output_image + '?t=' + Date.now();
+            document.getElementById('editResultsSection').style.display = 'block';
+            currentEditResult = data.output_image;
+            editImageData = document.getElementById('editResultImg').src;
+            loadHistory();
+        } else {
+            alert('修图失败: ' + (data.error || '未知错误'));
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+    } finally {
+        document.getElementById('editLoadingCard').style.display = 'none';
+    }
+}
+
+var currentEditResult = null;
+
+// 下载修图结果
+function downloadEditResult() {
+    if (!currentEditResult) return;
+    const link = document.createElement('a');
+    link.href = '/outputs/' + currentEditResult;
+    link.download = 'edit_result_' + Date.now() + '.png';
+    link.click();
+}
+
+// 重置修图
+function resetEdit() {
+    removeEditImage();
+    document.getElementById('editDescription').value = '';
+    document.getElementById('keepElements').value = '';
+    currentEditResult = null;
+}
+
+// 重置
+function resetAll() {
+    document.getElementById('variantsSection').style.display = 'none';
+    document.getElementById('actionsSection').style.display = 'none';
+    document.getElementById('mainTitle').value = '';
+    document.getElementById('subTitle').value = '';
+    document.getElementById('visualDesc').value = '';
+    document.getElementById('layoutRef').value = '';
+    document.getElementById('extraNotes').value = '';
+    selectedVariant = null;
+    variants = [];
+}
+
+// 历史记录侧边栏开关
+function toggleHistory() {
+    document.getElementById('historyDrawer').classList.toggle('open');
+    document.getElementById('drawerOverlay').classList.toggle('open');
+}
+
+// 全屏查看图片
+// 全屏查看 - 支持键盘左右键切换
+var fullscreenImages = [];
+var fullscreenLabels = [];
+var fullscreenIndex = 0;
+
+function normalizeImageUrls(images) {
+    if (!images) return [];
+    var list = Array.isArray(images) ? images : [images];
+    return list.map(function(img) {
+        if (!img) return '';
+        if (img.indexOf('http') === 0 || img.indexOf('/') === 0 || img.indexOf('data:') === 0) return img;
+        return '/outputs/' + img;
+    }).filter(Boolean);
+}
+
+function openHistoryThumb(el) {
+    if (!el || !el.getAttribute('data-images')) return;
+    try {
+        var images = JSON.parse(decodeURIComponent(el.getAttribute('data-images')));
+        var index = parseInt(el.getAttribute('data-index'), 10) || 0;
+        openFullscreen(images, index);
+    } catch (e) {
+        console.error('历史图片打开失败', e);
+    }
+}
+
+function openEditComparisonFullscreen(startIndex) {
+    var orig = document.getElementById('editOriginalImg');
+    var result = document.getElementById('editResultImg');
+    var images = [];
+    var labels = [];
+    if (orig && orig.src) {
+        images.push(orig.src);
+        labels.push('原图');
+    }
+    if (result && result.src) {
+        images.push(result.src);
+        labels.push('修改后');
+    }
+    if (!images.length) return;
+    openFullscreen(images, startIndex || 0, labels);
+}
+
+function openFullscreen(images, startIndex, labels) {
+    if (typeof images === 'string') {
+        try {
+            var parsed = JSON.parse(images);
+            images = Array.isArray(parsed) ? parsed : [images];
+        } catch (e) {
+            images = [images];
+        }
+    }
+    fullscreenImages = normalizeImageUrls(images);
+    fullscreenLabels = labels || [];
+    fullscreenIndex = startIndex || 0;
+    if (!fullscreenImages.length) return;
+    updateFullscreenImage();
+    document.getElementById('fullscreenOverlay').classList.add('open');
+    document.addEventListener('keydown', handleFullscreenKey);
+}
+
+function updateFullscreenNav() {
+    var multi = fullscreenImages.length > 1;
+    var prevBtn = document.querySelector('.fullscreen-prev');
+    var nextBtn = document.querySelector('.fullscreen-next');
+    if (prevBtn) prevBtn.classList.toggle('hidden', !multi);
+    if (nextBtn) nextBtn.classList.toggle('hidden', !multi);
+}
+
+function updateFullscreenImage() {
+    var currentImg = fullscreenImages[fullscreenIndex];
+    document.getElementById('fullscreenImg').src = currentImg;
+    var downloadBtn = document.getElementById('fullscreenDownload');
+    downloadBtn.href = currentImg;
+    var named = findVariantDownloadNameByUrl(currentImg);
+    downloadBtn.download = named || currentImg.split('/').pop().split('?')[0] || 'image.png';
+    downloadBtn.onclick = named ? function(ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        triggerFileDownload(currentImg, named);
+    } : null;
+    var counter = document.getElementById('fullscreenCounter');
+    if (counter) {
+        var label = fullscreenLabels[fullscreenIndex] || '';
+        counter.textContent = (fullscreenIndex + 1) + ' / ' + fullscreenImages.length +
+            (label ? ' · ' + label : '');
+    }
+    updateFullscreenNav();
+}
+
+function handleFullscreenKey(e) {
+    if (e.key === 'ArrowLeft') {
+        fullscreenIndex = (fullscreenIndex - 1 + fullscreenImages.length) % fullscreenImages.length;
+        updateFullscreenImage();
+    } else if (e.key === 'ArrowRight') {
+        fullscreenIndex = (fullscreenIndex + 1) % fullscreenImages.length;
+        updateFullscreenImage();
+    } else if (e.key === 'Escape') {
+        closeFullscreen();
+    }
+}
+
+function closeFullscreen() {
+    document.getElementById('fullscreenOverlay').classList.remove('open');
+    document.removeEventListener('keydown', handleFullscreenKey);
+}
+
+function prevImage() {
+    fullscreenIndex = (fullscreenIndex - 1 + fullscreenImages.length) % fullscreenImages.length;
+    updateFullscreenImage();
+}
+
+function nextImage() {
+    fullscreenIndex = (fullscreenIndex + 1) % fullscreenImages.length;
+    updateFullscreenImage();
+}
+
+// 加载历史
+async function loadHistory() {
+    try {
+        var res = await fetch('/history');
+        var data = await res.json();
+        renderHistory(data.items || []);
+    } catch(e) {}
+}
+
+function renderHistory(items) {
+    var el = document.getElementById('historyList');
+    if (!items.length) {
+        el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">暂无记录</div>';
+        return;
+    }
+    var visible = items.filter(function(item) {
+        var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
+        return imgs.length > 0;
+    });
+    el.innerHTML = visible.slice(0, 30).map(function(item) {
+        var time = new Date(item.timestamp).toLocaleString('zh-CN', {hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+        var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
+        var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
+        var images = item.output_images || (item.output_image ? [item.output_image] : []);
+        var imageUrls = images.map(function(img) { return '/outputs/' + String(img).split('?')[0]; });
+        var thumbsHtml = imageUrls.length ? imageUrls.map(function(imgSrc, i) {
+            return '<img class="history-thumb" src="' + imgSrc + '" loading="lazy" ' +
+                'data-images="' + encodeURIComponent(JSON.stringify(imageUrls)) + '" data-index="' + i + '" ' +
+                'onclick="event.stopPropagation(); openHistoryThumb(this)" style="cursor:pointer;">';
+        }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,0.35);">无图</div>';
+        var downloadsHtml = imageUrls.map(function(imgSrc, i) {
+            var name = images[i] || ('image_' + i + '.png');
+            return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
+        }).join('');
+        var clickAttr = imageUrls.length ? ' onclick="openHistoryThumb(this.querySelector(\'.history-thumb\'))"' : '';
+        return '<div class="history-item"' + clickAttr + '>' +
+            '<div class="history-img-wrap" style="display:flex;gap:4px;flex-wrap:wrap;position:relative;">' +
+            thumbsHtml +
+            downloadsHtml +
+            '</div>' +
+            '<div class="history-info">' +
+            '<div class="history-time">' + time + '</div>' +
+            '<div class="history-prompt">' + (item.prompt || '').substring(0, 40) + (item.prompt && item.prompt.length > 40 ? '...' : '') + '</div>' +
+            '<div class="history-meta">' + mode + variants + '</div>' +
+            '</div></div>';
+    }).join('');
+}
+
+// ─── 开屏导出 ───────────────────────────────────────
+var multiImageFile = null;
+var multiSourceBaseName = '开屏';
+
+function loadMultiSizePresets() {
+    fetch('/api/output-sizes').then(function(r) { return r.json(); }).then(function(data) {
+        var list = document.getElementById('multiSizesList');
+        if (!list || !data.sizes) return;
+        list.innerHTML = data.sizes.map(function(s) {
+            return '<span class="multi-size-tag">' + s.width + 'x' + s.height + '</span>';
+        }).join('');
+    }).catch(function() {});
+}
+
+function initMultiUploadZone() {
+    var zone = document.getElementById('multiUploadZone');
+    if (!zone) return;
+    zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        var file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) setMultiImageFile(file);
+    });
+}
+
+function onMultiImageSelected(ev) {
+    var file = ev.target.files && ev.target.files[0];
+    if (file) setMultiImageFile(file);
+    ev.target.value = '';
+}
+
+function setMultiImageFile(file) {
+    multiImageFile = file;
+    var stem = file.name.replace(/\.[^.]+$/, '');
+    multiSourceBaseName = sanitizeDownloadNamePart(stem) || '开屏';
+    document.getElementById('multiPreview').style.display = 'block';
+    document.getElementById('multiFileName').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+    document.getElementById('multiPreviewImg').src = URL.createObjectURL(file);
+    document.getElementById('multiExportBtn').disabled = false;
+    document.getElementById('multiResultsWrap').style.display = 'none';
+    document.getElementById('multiErrorMsg').style.display = 'none';
+}
+
+function clearMultiImage() {
+    multiImageFile = null;
+    multiSourceBaseName = '开屏';
+    document.getElementById('multiPreview').style.display = 'none';
+    document.getElementById('multiExportBtn').disabled = true;
+    document.getElementById('multiImageInput').value = '';
+}
+
+async function exportMultiSizes() {
+    if (!multiImageFile) {
+        alert('请先上传图片');
+        return;
+    }
+    var btn = document.getElementById('multiExportBtn');
+    var loading = document.getElementById('multiLoadingCard');
+    var errEl = document.getElementById('multiErrorMsg');
+    var wrap = document.getElementById('multiResultsWrap');
+    btn.disabled = true;
+    loading.style.display = 'block';
+    errEl.style.display = 'none';
+    wrap.style.display = 'none';
+    var form = new FormData();
+    form.append('image', multiImageFile);
+    form.append('source_name', multiImageFile.name || '开屏');
+    try {
+        var resp = await fetch('/api/multi-size-export', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            errEl.textContent = '服务器返回异常，请重试';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!resp.ok || data.error) {
+            errEl.textContent = data.error || ('HTTP ' + resp.status);
+            errEl.style.display = 'block';
+            return;
+        }
+        if (data.zip_url) {
+            var zipA = document.getElementById('multiZipDownload');
+            zipA.href = data.zip_url;
+            zipA.download = data.zip_download_name ||
+                (sanitizeDownloadNamePart(data.sourceBaseName || getMultiSourceBaseName()) + '_全部尺寸.zip');
+        }
+        if (data.sourceBaseName) multiSourceBaseName = data.sourceBaseName;
+        window._multiResults = data.images || [];
+        var grid = document.getElementById('multiResultsGrid');
+        grid.innerHTML = window._multiResults.map(function(img, i) {
+            return '<div class="multi-card">' +
+                '<img src="' + img.url + '" alt="' + img.name + '" onclick="openMultiPreview(' + i + ')">' +
+                '<div class="multi-card-info">' + img.width + 'x' + img.height +
+                '<br><a href="#" onclick="event.preventDefault();downloadMultiImage(' + i + ');return false;">⬇ 下载</a></div></div>';
+        }).join('');
+        window._multiResultUrls = window._multiResults.map(function(img) { return img.url; });
+        wrap.style.display = 'block';
+    } catch (err) {
+        errEl.textContent = '请求失败: ' + (err.message || String(err));
+        errEl.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+        btn.disabled = !multiImageFile;
+    }
+}
+
+function downloadMultiImage(index) {
+    var img = window._multiResults && window._multiResults[index];
+    if (!img) return;
+    triggerFileDownload(img.url, buildMultiDownloadName(img));
+}
+
+function openMultiPreview(index) {
+    if (!window._multiResultUrls || !window._multiResultUrls.length) return;
+    openFullscreen(window._multiResultUrls, index);
+}
+
+// ─── 尺寸裁切 ───────────────────────────────────────
+var cropImageFile = null;
+var cropNatural = { x: 0, y: 0, w: 0, h: 0 };
+var cropDrag = { mode: null, startX: 0, startY: 0, startBox: null };
+
+function initCropUploadZone() {
+    var zone = document.getElementById('cropUploadZone');
+    if (!zone) return;
+    zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f && f.type.startsWith('image/')) setCropImageFile(f);
+    });
+}
+
+function bindCropInteractions() {
+    var box = document.getElementById('cropBox');
+    if (!box) return;
+    box.addEventListener('mousedown', function(e) {
+        if (e.target.dataset.handle === 'se') {
+            cropDrag.mode = 'resize';
+        } else {
+            cropDrag.mode = 'move';
+        }
+        e.preventDefault();
+        cropDrag.startX = e.clientX;
+        cropDrag.startY = e.clientY;
+        cropDrag.startBox = Object.assign({}, cropNatural);
+        document.addEventListener('mousemove', onCropDragMove);
+        document.addEventListener('mouseup', onCropDragEnd);
+    });
+}
+
+function onCropDragMove(e) {
+    if (!cropDrag.mode || !cropDrag.startBox) return;
+    var img = document.getElementById('cropPreviewImg');
+    var scaleX = img.naturalWidth / img.clientWidth;
+    var scaleY = img.naturalHeight / img.clientHeight;
+    var dx = (e.clientX - cropDrag.startX) * scaleX;
+    var dy = (e.clientY - cropDrag.startY) * scaleY;
+    var b = cropDrag.startBox;
+    var natW = img.naturalWidth, natH = img.naturalHeight;
+    var aspect = getCropAspect();
+    if (cropDrag.mode === 'move') {
+        cropNatural.x = clamp(b.x + dx, 0, natW - b.w);
+        cropNatural.y = clamp(b.y + dy, 0, natH - b.h);
+        cropNatural.w = b.w;
+        cropNatural.h = b.h;
+    } else if (cropDrag.mode === 'resize' && aspect > 0) {
+        var newW = Math.max(20, b.w + dx);
+        var newH = newW / aspect;
+        if (newH > natH) { newH = natH; newW = newH * aspect; }
+        if (newW > natW) { newW = natW; newH = newW / aspect; }
+        cropNatural.w = newW;
+        cropNatural.h = newH;
+        cropNatural.x = clamp(b.x, 0, natW - newW);
+        cropNatural.y = clamp(b.y, 0, natH - newH);
+    }
+    renderCropBox();
+}
+
+function onCropDragEnd() {
+    cropDrag.mode = null;
+    cropDrag.startBox = null;
+    document.removeEventListener('mousemove', onCropDragMove);
+    document.removeEventListener('mouseup', onCropDragEnd);
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function getCropAspect() {
+    var w = parseInt(document.getElementById('cropOutW').value, 10) || 0;
+    var h = parseInt(document.getElementById('cropOutH').value, 10) || 0;
+    if (w < 1 || h < 1) return 0;
+    return w / h;
+}
+
+function maxCropRect(natW, natH, aspect) {
+    var cropW, cropH;
+    if (natW / natH > aspect) {
+        cropH = natH;
+        cropW = natH * aspect;
+    } else {
+        cropW = natW;
+        cropH = natW / aspect;
+    }
+    return {
+        x: (natW - cropW) / 2,
+        y: (natH - cropH) / 2,
+        w: cropW,
+        h: cropH
+    };
+}
+
+function onCropImageSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setCropImageFile(f);
+    ev.target.value = '';
+}
+
+function setCropImageFile(file) {
+    cropImageFile = file;
+    document.getElementById('cropUploadZone').style.display = 'none';
+    document.getElementById('cropSizeRow').style.display = 'flex';
+    document.getElementById('cropWorkspace').style.display = 'block';
+    document.getElementById('cropResult').style.display = 'none';
+    document.getElementById('cropErrorMsg').style.display = 'none';
+    var img = document.getElementById('cropPreviewImg');
+    img.onload = function() {
+        onCropTargetSizeChange();
+    };
+    img.src = URL.createObjectURL(file);
+}
+
+function clearCropImage() {
+    cropImageFile = null;
+    document.getElementById('cropUploadZone').style.display = 'block';
+    document.getElementById('cropSizeRow').style.display = 'none';
+    document.getElementById('cropWorkspace').style.display = 'none';
+    document.getElementById('cropResult').style.display = 'none';
+    document.getElementById('cropImageInput').value = '';
+}
+
+function onCropTargetSizeChange() {
+    var img = document.getElementById('cropPreviewImg');
+    if (!img.naturalWidth) return;
+    var aspect = getCropAspect();
+    var hint = document.getElementById('cropRatioHint');
+    if (aspect <= 0) {
+        hint.textContent = '请填写有效宽高';
+        return;
+    }
+    hint.textContent = '比例 ' + (aspect).toFixed(3);
+    cropNatural = maxCropRect(img.naturalWidth, img.naturalHeight, aspect);
+    renderCropBox();
+}
+
+function resetCropBox() {
+    onCropTargetSizeChange();
+}
+
+function renderCropBox() {
+    var img = document.getElementById('cropPreviewImg');
+    var box = document.getElementById('cropBox');
+    if (!img.clientWidth || !cropNatural.w) return;
+    var sx = img.clientWidth / img.naturalWidth;
+    var sy = img.clientHeight / img.naturalHeight;
+    var dx = cropNatural.x * sx;
+    var dy = cropNatural.y * sy;
+    var dw = cropNatural.w * sx;
+    var dh = cropNatural.h * sy;
+    box.style.left = dx + 'px';
+    box.style.top = dy + 'px';
+    box.style.width = dw + 'px';
+    box.style.height = dh + 'px';
+    var info = document.getElementById('cropInfo');
+    var ow = document.getElementById('cropOutW').value;
+    var oh = document.getElementById('cropOutH').value;
+    info.textContent = '选区 ' + Math.round(cropNatural.w) + '×' + Math.round(cropNatural.h) +
+        ' px → 输出 ' + ow + '×' + oh + ' px（拖动移动，右下角缩放）';
+}
+
+async function applyCrop() {
+    if (!cropImageFile) {
+        alert('请先上传图片');
+        return;
+    }
+    var outW = parseInt(document.getElementById('cropOutW').value, 10);
+    var outH = parseInt(document.getElementById('cropOutH').value, 10);
+    if (!outW || !outH) {
+        alert('请填写输出宽度和高度');
+        return;
+    }
+    var loading = document.getElementById('cropLoadingCard');
+    var errEl = document.getElementById('cropErrorMsg');
+    var btn = document.getElementById('cropApplyBtn');
+    loading.style.display = 'block';
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    var form = new FormData();
+    form.append('image', cropImageFile);
+    form.append('output_width', String(outW));
+    form.append('output_height', String(outH));
+    form.append('crop_x', String(Math.round(cropNatural.x)));
+    form.append('crop_y', String(Math.round(cropNatural.y)));
+    form.append('crop_w', String(Math.round(cropNatural.w)));
+    form.append('crop_h', String(Math.round(cropNatural.h)));
+    try {
+        var resp = await fetch('/api/crop-image', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            errEl.textContent = '服务器返回异常';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!resp.ok || data.error) {
+            errEl.textContent = data.error || ('HTTP ' + resp.status);
+            errEl.style.display = 'block';
+            return;
+        }
+        document.getElementById('cropResultImg').src = data.download_url + '?t=' + Date.now();
+        document.getElementById('cropResultMeta').textContent =
+            '已输出 ' + data.width + '×' + data.height + '（' + (data.fileSize / 1024).toFixed(1) + ' KB）';
+        var dl = document.getElementById('cropDownloadBtn');
+        dl.href = data.download_url;
+        dl.download = data.output_file;
+        document.getElementById('cropResult').style.display = 'block';
+    } catch (err) {
+        errEl.textContent = '请求失败: ' + (err.message || String(err));
+        errEl.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+        btn.disabled = false;
+    }
+}
+
+// ─── GIF 呼吸动图 ─────────────────────────────────────
+var gifBgFile = null;
+var gifBtnFile = null;
+var gifLayout = { offsetX: 0, offsetY: 0, bgNatW: 0, bgNatH: 0, btnNatW: 0, btnNatH: 0 };
+var gifBtnDrag = { active: false, startX: 0, startY: 0, startOffX: 0, startOffY: 0 };
+var gifLayoutBgUrl = null;
+var gifLayoutBtnUrl = null;
+var gifLastResult = null;
+
+function updateGifGenBtnState() {
+    var btn = document.getElementById('gifGenBtn');
+    if (btn) btn.disabled = !(gifBgFile && gifBtnFile);
+}
+
+function revokeGifLayoutUrls() {
+    if (gifLayoutBgUrl) { URL.revokeObjectURL(gifLayoutBgUrl); gifLayoutBgUrl = null; }
+    if (gifLayoutBtnUrl) { URL.revokeObjectURL(gifLayoutBtnUrl); gifLayoutBtnUrl = null; }
+}
+
+function waitImgLoad(img) {
+    return new Promise(function(resolve) {
+        if (img.complete && img.naturalWidth) { resolve(); return; }
+        img.onload = function() { resolve(); };
+        img.onerror = function() { resolve(); };
+    });
+}
+
+function renderGifButtonPosition() {
+    var bg = document.getElementById('gifLayoutBg');
+    var btn = document.getElementById('gifLayoutBtn');
+    if (!bg || !btn || !gifLayout.bgNatW) return;
+    var sx = bg.clientWidth / gifLayout.bgNatW;
+    var sy = bg.clientHeight / gifLayout.bgNatH;
+    var bw = gifLayout.btnNatW;
+    var bh = gifLayout.btnNatH;
+    var x = (gifLayout.bgNatW - bw) / 2 + gifLayout.offsetX;
+    var y = (gifLayout.bgNatH - bh) / 2 + gifLayout.offsetY;
+    btn.style.width = Math.round(bw * sx) + 'px';
+    btn.style.height = Math.round(bh * sy) + 'px';
+    btn.style.left = Math.round(x * sx) + 'px';
+    btn.style.top = Math.round(y * sy) + 'px';
+}
+
+function syncGifOffsetInputs() {
+    var ox = document.getElementById('gifOffsetX');
+    var oy = document.getElementById('gifOffsetY');
+    if (ox) ox.value = String(gifLayout.offsetX);
+    if (oy) oy.value = String(gifLayout.offsetY);
+}
+
+async function refreshGifLayoutEditor() {
+    var section = document.getElementById('gifLayoutSection');
+    if (!section) return;
+    if (!gifBgFile || !gifBtnFile) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = 'block';
+    revokeGifLayoutUrls();
+    var bgImg = document.getElementById('gifLayoutBg');
+    var btnImg = document.getElementById('gifLayoutBtn');
+    gifLayoutBgUrl = URL.createObjectURL(gifBgFile);
+    gifLayoutBtnUrl = URL.createObjectURL(gifBtnFile);
+    bgImg.src = gifLayoutBgUrl;
+    btnImg.src = gifLayoutBtnUrl;
+    await Promise.all([waitImgLoad(bgImg), waitImgLoad(btnImg)]);
+    gifLayout.bgNatW = bgImg.naturalWidth;
+    gifLayout.bgNatH = bgImg.naturalHeight;
+    gifLayout.btnNatW = btnImg.naturalWidth;
+    gifLayout.btnNatH = btnImg.naturalHeight;
+    gifLayout.offsetX = parseInt(document.getElementById('gifOffsetX').value, 10) || 0;
+    gifLayout.offsetY = parseInt(document.getElementById('gifOffsetY').value, 10) || 0;
+    renderGifButtonPosition();
+}
+
+function bindGifLayoutInteractions() {
+    var btn = document.getElementById('gifLayoutBtn');
+    var bg = document.getElementById('gifLayoutBg');
+    if (!btn) return;
+    btn.addEventListener('mousedown', function(e) {
+        if (!gifLayout.bgNatW) return;
+        e.preventDefault();
+        gifBtnDrag.active = true;
+        gifBtnDrag.startX = e.clientX;
+        gifBtnDrag.startY = e.clientY;
+        gifBtnDrag.startOffX = gifLayout.offsetX;
+        gifBtnDrag.startOffY = gifLayout.offsetY;
+        document.addEventListener('mousemove', onGifBtnDragMove);
+        document.addEventListener('mouseup', onGifBtnDragEnd);
+    });
+    if (bg) {
+        bg.addEventListener('load', function() { renderGifButtonPosition(); });
+        window.addEventListener('resize', function() {
+            if (document.getElementById('gifLayoutSection').style.display !== 'none') renderGifButtonPosition();
+        });
+    }
+    ['gifOffsetX', 'gifOffsetY'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', function() {
+            gifLayout.offsetX = parseInt(document.getElementById('gifOffsetX').value, 10) || 0;
+            gifLayout.offsetY = parseInt(document.getElementById('gifOffsetY').value, 10) || 0;
+            renderGifButtonPosition();
+        });
+    });
+}
+
+function onGifBtnDragMove(e) {
+    if (!gifBtnDrag.active) return;
+    var bg = document.getElementById('gifLayoutBg');
+    if (!bg || !bg.clientWidth) return;
+    var sx = bg.clientWidth / gifLayout.bgNatW;
+    var sy = bg.clientHeight / gifLayout.bgNatH;
+    gifLayout.offsetX = Math.round(gifBtnDrag.startOffX + (e.clientX - gifBtnDrag.startX) / sx);
+    gifLayout.offsetY = Math.round(gifBtnDrag.startOffY + (e.clientY - gifBtnDrag.startY) / sy);
+    syncGifOffsetInputs();
+    renderGifButtonPosition();
+}
+
+function onGifBtnDragEnd() {
+    gifBtnDrag.active = false;
+    document.removeEventListener('mousemove', onGifBtnDragMove);
+    document.removeEventListener('mouseup', onGifBtnDragEnd);
+}
+
+function setGifBgFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+        alert('请拖入图片文件');
+        return;
+    }
+    gifBgFile = file;
+    var img = document.getElementById('gifBgPreview');
+    img.src = URL.createObjectURL(file);
+    img.style.display = 'block';
+    document.getElementById('gifBgSlot').classList.add('filled');
+    updateGifGenBtnState();
+    refreshGifLayoutEditor();
+}
+
+function setGifBtnFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+        alert('请拖入图片文件');
+        return;
+    }
+    gifBtnFile = file;
+    var img = document.getElementById('gifBtnPreview');
+    img.src = URL.createObjectURL(file);
+    img.style.display = 'block';
+    document.getElementById('gifBtnSlot').classList.add('filled');
+    updateGifGenBtnState();
+    refreshGifLayoutEditor();
+}
+
+function initGifUploadZones() {
+    [['gifBgSlot', setGifBgFile], ['gifBtnSlot', setGifBtnFile]].forEach(function(pair) {
+        var slot = document.getElementById(pair[0]);
+        if (!slot) return;
+        slot.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            slot.classList.add('dragover');
+        });
+        slot.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            slot.classList.remove('dragover');
+        });
+        slot.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            slot.classList.remove('dragover');
+            var f = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) pair[1](f);
+        });
+    });
+}
+
+function onGifBgSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setGifBgFile(f);
+    ev.target.value = '';
+}
+
+function onGifBtnSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setGifBtnFile(f);
+    ev.target.value = '';
+}
+
+function resetGifSvgaDownload() {
+    gifLastResult = null;
+    var actions = document.getElementById('gifmakerResultActions');
+    var svgaMeta = document.getElementById('gifSvgaMeta');
+    var svgaBtn = document.getElementById('gifSvgaBtn');
+    if (actions) actions.style.display = 'none';
+    if (svgaMeta) { svgaMeta.style.display = 'none'; svgaMeta.textContent = ''; }
+    if (svgaBtn) {
+        svgaBtn.disabled = true;
+        svgaBtn.textContent = '🎬 下载 SVGA';
+    }
+}
+
+async function convertBreathingGifToSvga() {
+    if (!gifLastResult || !gifLastResult.output_file) {
+        alert('请先生成 GIF');
+        return;
+    }
+    if (gifLastResult.svgaDownloadUrl) {
+        var a0 = document.createElement('a');
+        a0.href = gifLastResult.svgaDownloadUrl + '?t=' + Date.now();
+        a0.download = gifLastResult.svgaOutputFile || 'output.svga';
+        document.body.appendChild(a0);
+        a0.click();
+        document.body.removeChild(a0);
+        return;
+    }
+    var btn = document.getElementById('gifSvgaBtn');
+    var errEl = document.getElementById('gifErrorMsg');
+    var svgaMeta = document.getElementById('gifSvgaMeta');
+    var prevText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '正在转 SVGA...';
+    }
+    if (errEl) errEl.style.display = 'none';
+    if (svgaMeta) svgaMeta.style.display = 'none';
+    var form = new FormData();
+    form.append('source_output', gifLastResult.output_file);
+    form.append('max_bytes', '1048576');
+    if (gifLastResult.fps) form.append('fps', String(gifLastResult.fps));
+    try {
+        var resp = await fetch('/api/gif-to-svga', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            if (errEl) {
+                errEl.textContent = 'SVGA 转换：服务器返回异常';
+                errEl.style.display = 'block';
+            }
+            return;
+        }
+        if (!resp.ok || data.error) {
+            if (errEl) {
+                errEl.textContent = data.error || ('SVGA 转换失败 HTTP ' + resp.status);
+                errEl.style.display = 'block';
+            }
+            return;
+        }
+        var a = document.createElement('a');
+        a.href = data.download_url;
+        a.download = data.output_file || 'output.svga';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        if (svgaMeta) {
+            var sizeStr = data.fileSize ? (data.fileSize / 1024).toFixed(1) + ' KB' : '';
+            var dimNote = (data.originalWidth && data.originalWidth !== data.width)
+                ? data.originalWidth + '×' + data.originalHeight + ' → ' : '';
+            svgaMeta.textContent = 'SVGA 已就绪：' + sizeStr + ' · ' + dimNote +
+                data.width + '×' + data.height + ' · ' + data.totalFrames + ' 帧 · ' + data.fps + ' FPS';
+            svgaMeta.style.display = 'block';
+        }
+        if (btn) btn.textContent = '🎬 再次下载 SVGA';
+        gifLastResult.svgaDownloadUrl = data.download_url;
+        gifLastResult.svgaOutputFile = data.output_file;
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = 'SVGA 转换失败: ' + (err.message || String(err));
+            errEl.style.display = 'block';
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+        if (btn && btn.textContent === '正在转 SVGA...') btn.textContent = prevText || '🎬 下载 SVGA';
+    }
+}
+
+async function generateBreathingGif() {
+    if (!gifBgFile || !gifBtnFile) {
+        alert('请先上传底图和按钮图');
+        return;
+    }
+    var genBtn = document.getElementById('gifGenBtn');
+    var loading = document.getElementById('gifLoadingCard');
+    var errEl = document.getElementById('gifErrorMsg');
+    var preview = document.getElementById('gifmakerPreview');
+    genBtn.disabled = true;
+    loading.style.display = 'block';
+    errEl.style.display = 'none';
+    preview.style.display = 'none';
+    resetGifSvgaDownload();
+    var form = new FormData();
+    form.append('background', gifBgFile);
+    form.append('button', gifBtnFile);
+    form.append('intensity', document.getElementById('gifIntensity').value);
+    form.append('duration_sec', document.getElementById('gifDuration').value);
+    form.append('offset_x', document.getElementById('gifOffsetX').value);
+    form.append('offset_y', document.getElementById('gifOffsetY').value);
+    try {
+        var resp = await fetch('/api/make-breathing-gif', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            errEl.textContent = '服务器返回异常';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!resp.ok || data.error) {
+            errEl.textContent = data.error || ('HTTP ' + resp.status);
+            errEl.style.display = 'block';
+            return;
+        }
+        var url = data.download_url + '?t=' + Date.now();
+        document.getElementById('gifmakerResultImg').src = url;
+        document.getElementById('gifmakerMeta').textContent =
+            data.width + '×' + data.height + ' · ' + data.frameCount + ' 帧 · ' +
+            data.fps + ' FPS · ' + data.durationSec + ' 秒/循环 · ' +
+            (data.fileSize / 1024).toFixed(1) + ' KB';
+        gifLastResult = data;
+        var dl = document.getElementById('gifDownloadBtn');
+        dl.href = data.download_url;
+        dl.download = data.output_file;
+        var actions = document.getElementById('gifmakerResultActions');
+        var svgaBtn = document.getElementById('gifSvgaBtn');
+        if (actions) actions.style.display = 'flex';
+        if (svgaBtn) svgaBtn.disabled = false;
+        preview.style.display = 'block';
+    } catch (err) {
+        errEl.textContent = '请求失败: ' + (err.message || String(err));
+        errEl.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+        updateGifGenBtnState();
+    }
+}
+</script>
+</body>
+</html>

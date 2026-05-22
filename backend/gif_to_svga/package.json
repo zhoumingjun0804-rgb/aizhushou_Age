@@ -1,0 +1,21 @@
+{
+  "name": "gif-to-svga",
+  "version": "1.0.0",
+  "description": "Convert GIF animations to SVGA format for cross-platform playback",
+  "main": "scripts/gif2svga.js",
+  "bin": {
+    "gif2svga": "scripts/gif2svga.js"
+  },
+  "scripts": {
+    "convert": "node scripts/gif2svga.js"
+  },
+  "keywords": ["gif", "svga", "animation", "convert", "converter"],
+  "license": "MIT",
+  "dependencies": {
+    "sharp": "^0.33.0",
+    "adm-zip": "^0.5.10"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
