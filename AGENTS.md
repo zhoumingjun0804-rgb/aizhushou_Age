@@ -36,6 +36,10 @@ cp .env.example .env
 | GET | `/api/output-sizes?type=xdt\|hll` | 多尺寸导出预设（随 type 变化） |
 | POST | `/api/multi-size-export` | 单图导出 9 种尺寸 |
 | POST | `/api/crop-image` | 框选裁切 |
+| POST | `/api/magic-cutout` | 魔棒选区抠透明 PNG |
+| POST | `/api/smart-cutout` | 框选 + 描述，AI（Lovart img2img）提取透明 PNG |
+| POST | `/api/layout-extend` | 规范延展：框选 Logo/IP，按模板输出多尺寸 |
+| GET | `/api/layout-extend/presets` | 规范延展模板列表 |
 | POST | `/api/make-breathing-gif` | 呼吸动效 GIF |
 | POST | `/api/gif-to-svga` | GIF → SVGA |
 

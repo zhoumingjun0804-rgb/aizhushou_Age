@@ -1,4 +1,9 @@
-"""GIF → SVGA 2.0 转换（Protobuf + zlib，兼容 svga.dev；支持压缩至目标体积）。"""
+"""GIF → SVGA 2.0 转换（Protobuf + zlib，兼容 svga.dev）。
+
+- 画布宽高始终与原 GIF 一致（不缩放像素）
+- 默认将文件体积控制在 1MB 内（可通过 SVGA_MAX_BYTES 调整，0=不限制）
+"""
+import hashlib
 import os
 import zlib
 from io import BytesIO
@@ -10,20 +15,11 @@ from gif_to_svga.proto import svga_pb2
 
 VALID_FPS = [1, 2, 3, 5, 6, 10, 12, 15, 20, 30, 60]
 SVGA_VERSION = "2.0.0"
-DEFAULT_MAX_BYTES = int(os.environ.get("SVGA_MAX_BYTES", "1048576"))  # 1MB
+DEFAULT_MAX_BYTES = int(os.environ.get("SVGA_MAX_BYTES", str(1024 * 1024)))
 
-# 逐步加强压缩，直到体积低于 max_bytes
-COMPRESS_PROFILES = [
-    {"colors": 256, "scale": 1.0, "max_side": None},
-    {"colors": 160, "scale": 1.0, "max_side": 960},
-    {"colors": 128, "scale": 1.0, "max_side": 720},
-    {"colors": 96, "scale": 0.92, "max_side": 640},
-    {"colors": 64, "scale": 0.85, "max_side": 560},
-    {"colors": 48, "scale": 0.75, "max_side": 480},
-    {"colors": 32, "scale": 0.65, "max_side": 400},
-    {"colors": 24, "scale": 0.55, "max_side": 360},
-    {"colors": 16, "scale": 0.5, "max_side": 320},
-]
+FULL_SIZE_COLOR_LEVELS = [256, 200, 160, 128, 96, 72, 64, 48, 36, 32, 24, 16, 12, 8]
+THIN_FRAME_STEPS = (2, 3, 4, 5, 6, 8)
+THIN_FRAME_COLOR_LEVELS = [128, 96, 64, 48, 32, 24, 16, 12, 8]
 
 
 def nearest_valid_fps(raw_fps: float) -> int:
@@ -64,26 +60,17 @@ def _read_gif_frames(input_path: Path) -> tuple[list[Image.Image], int, int, lis
     return frames, width, height, durations_ms
 
 
-def _resize_frame(img: Image.Image, scale: float, max_side: int | None) -> Image.Image:
-    if max_side:
-        w, h = img.size
-        longest = max(w, h)
-        if longest > max_side:
-            ratio = max_side / longest
-            scale *= ratio
-    if scale != 1.0:
-        nw = max(1, int(img.width * scale))
-        nh = max(1, int(img.height * scale))
-        img = img.resize((nw, nh), Image.Resampling.LANCZOS)
-    return img
+def _thin_frames(frames: list[Image.Image], step: int) -> list[Image.Image]:
+    if step <= 1 or len(frames) <= 2:
+        return frames
+    thinned = frames[::step]
+    return thinned if len(thinned) >= 2 else frames
 
 
 def _encode_png(frame: Image.Image, colors: int) -> bytes:
-    """PNG-8 调色板压缩，显著减小体积。"""
     img = frame.convert("RGBA")
     if colors < 256:
         n_colors = max(2, min(colors, 255))
-        # Pillow 12+：RGBA 仅支持 FASTOCTREE / LIBIMAGEQUANT，不能用 MEDIANCUT
         try:
             img = img.quantize(colors=n_colors, method=Image.Quantize.LIBIMAGEQUANT)
         except (ValueError, OSError, AttributeError):
@@ -93,19 +80,15 @@ def _encode_png(frame: Image.Image, colors: int) -> bytes:
     return buf.getvalue()
 
 
-def _prepare_frame_images(
-    frames: list[Image.Image],
-    *,
-    colors: int,
-    scale: float,
-    max_side: int | None,
-) -> tuple[list[bytes], int, int]:
+def _prepare_frame_pngs(frames: list[Image.Image], colors: int) -> tuple[list[bytes], int, int]:
+    if not frames:
+        raise ValueError("没有可用帧")
+    out_w, out_h = frames[0].size
     png_list: list[bytes] = []
-    out_w, out_h = 0, 0
     for frame in frames:
-        img = _resize_frame(frame, scale, max_side)
-        out_w, out_h = img.size
-        png_list.append(_encode_png(img, colors))
+        if frame.size != (out_w, out_h):
+            raise ValueError("GIF 各帧尺寸不一致，无法保持统一画布输出")
+        png_list.append(_encode_png(frame, colors))
     return png_list, out_w, out_h
 
 
@@ -123,9 +106,16 @@ def _build_movie_entity(
     movie.params.fps = int(fps)
     movie.params.frames = int(total_frames)
 
+    # 相同 PNG 内容复用 imageKey，减小体积
+    key_by_digest: dict[str, str] = {}
+
     for i, png_data in enumerate(png_frames):
-        image_key = f"frame_{i}.png"
-        movie.images[image_key] = png_data
+        digest = hashlib.md5(png_data).hexdigest()
+        if digest not in key_by_digest:
+            key = f"img_{len(key_by_digest)}.png"
+            key_by_digest[digest] = key
+            movie.images[key] = png_data
+        image_key = key_by_digest[digest]
 
         sprite = svga_pb2.SpriteEntity()
         sprite.imageKey = image_key
@@ -150,11 +140,18 @@ def _movie_to_svga_bytes(movie: svga_pb2.MovieEntity) -> bytes:
     return zlib.compress(movie.SerializeToString(), level=9)
 
 
-def _thin_frames(frames: list[Image.Image], step: int) -> list[Image.Image]:
-    if step <= 1 or len(frames) <= 2:
-        return frames
-    thinned = frames[::step]
-    return thinned if len(thinned) >= 2 else frames
+def _iter_compress_attempts(frames: list[Image.Image]):
+    """原尺寸：先全帧减色，再在不改宽高前提下隔帧抽取。"""
+    for colors in FULL_SIZE_COLOR_LEVELS:
+        yield frames, colors, 1
+    for thin_step in THIN_FRAME_STEPS:
+        if len(frames) < thin_step * 2:
+            continue
+        thinned = _thin_frames(frames, thin_step)
+        if len(thinned) >= len(frames):
+            continue
+        for colors in THIN_FRAME_COLOR_LEVELS:
+            yield thinned, colors, thin_step
 
 
 def validate_svga_file(path: Path) -> dict:
@@ -179,6 +176,13 @@ def validate_svga_file(path: Path) -> dict:
     }
 
 
+def _assert_dimensions(orig_w: int, orig_h: int, out_w: int, out_h: int) -> None:
+    if out_w != orig_w or out_h != orig_h:
+        raise ValueError(
+            f"输出尺寸 {out_w}×{out_h} 与原图 {orig_w}×{orig_h} 不一致（已禁止缩放）"
+        )
+
+
 def gif_to_svga(
     input_path: str | Path,
     output_path: str | Path,
@@ -191,57 +195,64 @@ def gif_to_svga(
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
 
     max_bytes = max_bytes if max_bytes is not None else DEFAULT_MAX_BYTES
+    enforce_limit = max_bytes > 0
     input_size = input_path.stat().st_size
 
     frames, orig_w, orig_h, durations_ms = _read_gif_frames(input_path)
+    orig_frame_count = len(frames)
     if fps is None:
         fps = estimate_fps_from_durations_ms(durations_ms)
     fps = fps or 20
     if fps not in VALID_FPS:
         fps = nearest_valid_fps(float(fps))
 
-    work_frames = frames
-    thin_step = 1
     compressed: bytes | None = None
-    final_w = orig_w
-    final_h = orig_h
     profile_used: dict | None = None
+    output_frame_count = orig_frame_count
+    thin_step_used = 1
 
-    for thin_step in (1, 2, 3):
-        if thin_step > 1:
-            work_frames = _thin_frames(frames, thin_step)
-        for profile in COMPRESS_PROFILES:
-            png_list, final_w, final_h = _prepare_frame_images(
-                work_frames,
-                colors=profile["colors"],
-                scale=profile["scale"],
-                max_side=profile["max_side"],
-            )
-            movie = _build_movie_entity(png_list, final_w, final_h, fps)
-            candidate = _movie_to_svga_bytes(movie)
-            if len(candidate) <= max_bytes:
-                compressed = candidate
-                profile_used = {**profile, "thin_step": thin_step}
-                break
-        if compressed is not None:
+    for work_frames, colors, thin_step in _iter_compress_attempts(frames):
+        png_list, final_w, final_h = _prepare_frame_pngs(work_frames, colors)
+        _assert_dimensions(orig_w, orig_h, final_w, final_h)
+        movie = _build_movie_entity(png_list, final_w, final_h, fps)
+        candidate = _movie_to_svga_bytes(movie)
+        profile_used = {
+            "colors": colors,
+            "thin_step": thin_step,
+            "phase": "full_size" if thin_step <= 1 else "thin_frames",
+        }
+        output_frame_count = len(work_frames)
+        thin_step_used = thin_step
+        if not enforce_limit or len(candidate) <= max_bytes:
+            compressed = candidate
             break
 
-    if compressed is None:
-        # 最后一搏：极限参数
-        png_list, final_w, final_h = _prepare_frame_images(
-            _thin_frames(frames, 4), colors=12, scale=0.45, max_side=280
+    if compressed is None and enforce_limit:
+        limit_mb = max_bytes / (1024 * 1024)
+        raise ValueError(
+            f"在保持原尺寸 {orig_w}×{orig_h} 的前提下，无法将 SVGA 压缩到 {limit_mb:.0f}MB 以内。"
+            f"原 GIF 约 {orig_frame_count} 帧、{input_size / 1024:.0f}KB。"
+            "可尝试：减少 GIF 帧数、简化画面颜色/细节，或联系管理员调高 SVGA_MAX_BYTES。"
         )
+
+    if compressed is None:
+        work_frames, colors, thin_step = frames, FULL_SIZE_COLOR_LEVELS[0], 1
+        png_list, final_w, final_h = _prepare_frame_pngs(work_frames, colors)
         movie = _build_movie_entity(png_list, final_w, final_h, fps)
         compressed = _movie_to_svga_bytes(movie)
-        profile_used = {"colors": 12, "scale": 0.45, "max_side": 280, "thin_step": 4}
+        profile_used = {"colors": colors, "thin_step": 1, "phase": "unlimited"}
 
     if output_path.suffix.lower() != ".svga":
         output_path = output_path.with_suffix(".svga")
     output_path.write_bytes(compressed)
 
     meta = validate_svga_file(output_path)
+    final_w = meta["width"]
+    final_h = meta["height"]
+    _assert_dimensions(orig_w, orig_h, final_w, final_h)
+
     out_size = output_path.stat().st_size
-    under_limit = out_size <= max_bytes
+    frames_reduced = output_frame_count < orig_frame_count
     return {
         "inputPath": str(input_path),
         "outputPath": str(output_path),
@@ -249,13 +260,17 @@ def gif_to_svga(
         "height": final_h,
         "originalWidth": orig_w,
         "originalHeight": orig_h,
+        "sizePreserved": True,
         "totalFrames": meta["totalFrames"],
+        "originalFrameCount": orig_frame_count,
+        "framesReduced": frames_reduced,
+        "frameThinStep": thin_step_used if frames_reduced else 1,
         "fps": fps,
         "version": meta["version"],
         "output_filename": output_path.name,
         "fileSize": out_size,
         "inputFileSize": input_size,
-        "underLimit": under_limit,
-        "maxBytes": max_bytes,
+        "underLimit": (not enforce_limit) or out_size <= max_bytes,
+        "maxBytes": max_bytes if enforce_limit else None,
         "compressProfile": profile_used,
     }

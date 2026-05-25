@@ -5,3 +5,6 @@ playwright
 Pillow
 watchdog
 protobuf
+psd-tools
+onnxruntime; python_version < "3.14"
+rembg; python_version < "3.14"

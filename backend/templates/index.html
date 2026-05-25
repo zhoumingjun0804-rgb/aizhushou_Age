@@ -231,7 +231,7 @@
         .nav-primary-tabs .tab-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.78); }
         .nav-primary-tabs .tab-btn.active { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white;
             box-shadow: 0 4px 16px rgba(139,92,246,0.4); }
-        /* 辅助工具：开屏 / 裁切 / GIF */
+        /* 辅助工具：开屏 / 裁切 / 动图 */
         .nav-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
             margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.1); }
         .nav-tools-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: rgba(255,255,255,0.32);
@@ -312,12 +312,24 @@
         .multi-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
         .multi-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
         .multi-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 16px; line-height: 1.6; }
-        .multi-upload-zone { border: 2px dashed rgba(99,102,241,0.45); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .multi-upload-zone { position: relative; border: 2px dashed rgba(99,102,241,0.45); border-radius: 12px;
+            padding: 28px; min-height: 160px; text-align: center; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center; overflow: hidden; box-sizing: border-box; }
         .multi-upload-zone:hover { border-color: rgba(99,102,241,0.75); background: rgba(99,102,241,0.06); }
+        .multi-upload-zone.dragover { border-color: #818cf8; background: rgba(99,102,241,0.12); }
+        .multi-upload-zone.has-image { padding: 14px; cursor: default; }
+        .multi-upload-zone.has-image:hover { background: rgba(99,102,241,0.04); }
+        .multi-upload-zone.has-image .multi-upload-placeholder { display: none; }
+        .multi-upload-placeholder { width: 100%; }
+        .multi-upload-preview { display: none; width: 100%; flex-direction: column; align-items: center; gap: 10px; }
+        .multi-upload-preview.visible { display: flex; }
+        .multi-upload-preview img { max-width: 100%; max-height: 280px; width: auto; height: auto;
+            object-fit: contain; border-radius: 8px; border: 2px solid rgba(99,102,241,0.35);
+            background: rgba(0,0,0,0.15); }
+        .multi-upload-preview .file-name { margin: 0; color: rgba(255,255,255,0.5); font-size: 13px; }
         .multi-sizes-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
         .multi-size-tag { font-size: 11px; padding: 6px 10px; border-radius: 8px; background: rgba(99,102,241,0.15);
             border: 1px solid rgba(99,102,241,0.3); color: rgba(255,255,255,0.75); }
-        .multi-preview img { max-width: 100%; max-height: 220px; border-radius: 8px; border: 2px solid rgba(99,102,241,0.35); }
         .multi-export-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: 600; color: white;
             background: linear-gradient(135deg, #6366f1, #8b5cf6); box-shadow: 0 4px 16px rgba(99,102,241,0.35); margin-top: 16px; }
         .multi-export-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -327,6 +339,32 @@
         .multi-card-info { padding: 10px; font-size: 12px; color: rgba(255,255,255,0.7); text-align: center; }
         .multi-card-info a { color: #a78bfa; text-decoration: none; font-size: 11px; display: inline-block; margin-top: 6px; }
         .multi-card-info a:hover { text-decoration: underline; }
+
+        /* 规范延展 */
+        .layout-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .layout-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
+        .layout-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 16px; line-height: 1.6; }
+        .layout-mode-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .layout-mode-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.75); cursor: pointer; font-size: 13px; }
+        .layout-mode-btn.active { border-color: rgba(110,231,183,0.7); background: rgba(16,185,129,0.2); color: #6ee7b7; }
+        .layout-mode-btn.ip.active { border-color: rgba(96,165,250,0.7); background: rgba(59,130,246,0.2); color: #93c5fd; }
+        .layout-templates { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+        .layout-template-tag { font-size: 11px; padding: 6px 10px; border-radius: 8px;
+            background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+        .layout-upload-zone { border: 2px dashed rgba(16,185,129,0.45); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; }
+        .layout-upload-zone:hover { border-color: rgba(16,185,129,0.75); background: rgba(16,185,129,0.06); }
+        .layout-workspace { display: none; margin-top: 16px; text-align: center; }
+        .layout-canvas-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0; border-radius: 8px; overflow: hidden; }
+        .layout-canvas-wrap img { display: block; max-width: 100%; max-height: 420px; user-select: none; }
+        .layout-overlay { position: absolute; inset: 0; pointer-events: none; }
+        .layout-info { font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 12px; }
+        .layout-opt-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; justify-content: center; margin: 12px 0; font-size: 13px; color: rgba(255,255,255,0.7); }
+        .layout-export-btn { display: block; width: 100%; max-width: 360px; margin: 16px auto 0; padding: 14px 24px;
+            border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 600; color: #042f2e;
+            background: linear-gradient(135deg, #6ee7b7, #10b981); box-shadow: 0 4px 14px rgba(16,185,129,0.35); }
+        .layout-export-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+        .layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
 
         /* 尺寸裁切 */
         .crop-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
@@ -373,9 +411,59 @@
             box-shadow: 0 4px 14px rgba(139,92,246,0.35); font-weight: 600; }
         .crop-result img { max-width: 100%; max-height: 280px; border-radius: 8px; border: 2px solid rgba(251,191,36,0.4); }
 
-        /* GIF 呼吸动图 */
+        /* 魔棒抠图 */
+        .cutout-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+        .cutout-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
+        .cutout-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 16px; line-height: 1.6; }
+        .cutout-upload-zone { border: 2px dashed rgba(52,211,153,0.45); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; }
+        .cutout-upload-zone:hover { border-color: rgba(52,211,153,0.75); background: rgba(52,211,153,0.06); }
+        .cutout-options { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+        .cutout-options label { font-size: 13px; color: rgba(255,255,255,0.75); display: flex; align-items: center; gap: 10px; }
+        .cutout-options input[type="range"] { width: 160px; accent-color: #34d399; }
+        .cutout-tolerance-val { min-width: 28px; color: #6ee7b7; font-weight: 600; font-size: 13px; }
+        .cutout-mode-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .cutout-mode-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.65); font-size: 12px; cursor: pointer; }
+        .cutout-mode-btn.active { background: rgba(52,211,153,0.2); border-color: rgba(52,211,153,0.55); color: #a7f3d0; }
+        .cutout-opt-wand, .cutout-opt-extract { display: none; }
+        .cutout-opt-wand.visible, .cutout-opt-extract.visible {
+            display: flex; gap: 12px; flex-wrap: wrap; align-items: center; width: 100%; }
+        .cutout-prompt-input { width: 100%; max-width: 420px; margin-top: 6px; padding: 8px 10px; border-radius: 8px;
+            border: 1px solid rgba(52,211,153,0.35); background: rgba(255,255,255,0.08); color: #fff; font-size: 13px; }
+        .cutout-workspace { display: none; margin-top: 16px; text-align: center; }
+        .cutout-canvas-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0;
+            border-radius: 8px; overflow: hidden; background: rgba(15,23,42,0.82);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+        .cutout-canvas-wrap img { display: block; max-width: 100%; max-height: 420px; user-select: none; pointer-events: none; }
+        .cutout-canvas-wrap canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+        .cutout-info { font-size: 13px; color: rgba(255,255,255,0.7); margin-top: 12px; }
+        .cutout-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+        .cutout-actions .cutout-apply-btn { padding: 12px 28px; border: none; border-radius: 10px; cursor: pointer;
+            font-size: 15px; font-weight: 600; color: #042f1a;
+            background: linear-gradient(135deg, #6ee7b7, #34d399);
+            box-shadow: 0 4px 14px rgba(52,211,153,0.35); }
+        .cutout-actions .cutout-apply-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .cutout-result { margin-top: 20px; text-align: center; display: none; }
+        .cutout-result img { max-width: 100%; max-height: 280px; border-radius: 8px; border: 2px solid rgba(52,211,153,0.45);
+            padding: 12px; background: rgba(15,23,42,0.92); box-shadow: 0 10px 30px rgba(0,0,0,0.22); }
+
+        /* 动图：呼吸 GIF / GIF 转 SVGA */
         .gifmaker-section { margin-top: 8px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
         .gifmaker-section h3 { color: white; font-size: 16px; margin-bottom: 8px; }
+        .gifmaker-mode-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .gifmaker-mode-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.65); font-size: 12px; cursor: pointer; }
+        .gifmaker-mode-btn.active { background: rgba(236,72,153,0.22); border-color: rgba(236,72,153,0.55); color: #fbcfe8; }
+        .gifmaker-panel { display: block; }
+        .gifmaker-panel.hidden { display: none; }
+        .gifmaker-svga-upload { border: 2px dashed rgba(236,72,153,0.4); border-radius: 12px; padding: 28px 20px; text-align: center;
+            cursor: pointer; min-height: 120px; transition: border-color 0.2s, background 0.2s; }
+        .gifmaker-svga-upload:hover { border-color: rgba(236,72,153,0.7); background: rgba(236,72,153,0.06); }
+        .gifmaker-svga-upload.dragover { border-color: #f472b6; background: rgba(236,72,153,0.12); }
+        .gifmaker-svga-upload.filled { border-style: solid; border-color: rgba(236,72,153,0.55); }
+        .gifmaker-svga-upload img { max-width: 100%; max-height: 200px; margin-top: 12px; border-radius: 6px; }
+        .gifmaker-svga-preview { margin-top: 20px; text-align: center; display: none; }
+        .gifmaker-svga-preview img { max-width: 100%; max-height: 240px; border-radius: 8px; border: 2px solid rgba(167,139,250,0.45); }
         .gifmaker-hint { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 16px; line-height: 1.6; }
         .gifmaker-uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
         @media (max-width: 640px) { .gifmaker-uploads { grid-template-columns: 1fr; } }
@@ -411,6 +499,9 @@
             overflow: hidden; border-radius: 8px; border: 1px solid rgba(236,72,153,0.35);
             background: repeating-conic-gradient(#3a3a3a 0% 25%, #2a2a2a 0% 50%) 50% / 16px 16px; }
         .gifmaker-canvas-wrap #gifLayoutBg { display: block; max-width: 100%; max-height: 420px; position: relative; z-index: 1; user-select: none; }
+        /* 暂未开放的功能（延展 / 抠图） */
+        .feature-hidden { display: none !important; }
+
         .gifmaker-canvas-wrap #gifLayoutBtn { position: absolute; z-index: 2; cursor: move; user-select: none;
             touch-action: none; pointer-events: auto; }
     </style>
@@ -430,8 +521,10 @@
         <nav class="nav-tools" aria-label="制作工具">
             <span class="nav-tools-label">工具</span>
             <button type="button" class="tab-btn-tool" data-tab="multi" onclick="switchTab('multi', this)">📐 开屏</button>
+            <button type="button" class="tab-btn-tool feature-hidden" data-tab="layout" onclick="switchTab('layout', this)">📋 延展</button>
             <button type="button" class="tab-btn-tool" data-tab="crop" onclick="switchTab('crop', this)">✂️ 裁切</button>
-            <button type="button" class="tab-btn-tool" data-tab="gifmaker" onclick="switchTab('gifmaker', this)">🎞️ GIF</button>
+            <button type="button" class="tab-btn-tool feature-hidden" data-tab="cutout" onclick="switchTab('cutout', this)">🪄 抠图</button>
+            <button type="button" class="tab-btn-tool" data-tab="gifmaker" onclick="switchTab('gifmaker', this)">🎞️ 动图</button>
         </nav>
         
         <div class="card tab-content active" id="generateTab">
@@ -692,16 +785,18 @@
                 <h3>📐 开屏导出</h3>
                 <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。</p>
                 <div class="multi-sizes-list" id="multiSizesList"></div>
-                <div class="multi-upload-zone" id="multiUploadZone" onclick="document.getElementById('multiImageInput').click()">
-                    <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
-                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                <div class="multi-upload-zone" id="multiUploadZone" onclick="onMultiUploadZoneClick(event)">
+                    <div class="multi-upload-placeholder" id="multiUploadPlaceholder">
+                        <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
+                        <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                    </div>
+                    <div class="multi-upload-preview" id="multiPreview">
+                        <img id="multiPreviewImg" alt="预览">
+                        <p class="file-name" id="multiFileName"></p>
+                        <button type="button" class="action-btn btn-outline" onclick="clearMultiImage(event)">移除图片</button>
+                    </div>
                 </div>
                 <input type="file" id="multiImageInput" accept="image/png,image/jpeg,image/webp" style="display: none;" onchange="onMultiImageSelected(event)">
-                <div class="multi-preview" id="multiPreview" style="display: none; margin-top: 16px; text-align: center;">
-                    <img id="multiPreviewImg" alt="预览">
-                    <p class="file-name" id="multiFileName" style="margin-top:8px;color:rgba(255,255,255,0.5);font-size:13px;"></p>
-                    <button type="button" class="action-btn btn-outline" style="margin-top: 10px;" onclick="clearMultiImage()">移除图片</button>
-                </div>
                 <button type="button" class="multi-export-btn" id="multiExportBtn" onclick="exportMultiSizes()" disabled>⚡ 生成开屏图</button>
                 <div class="loading-card" id="multiLoadingCard" style="display: none;">
                     <div class="spinner"></div>
@@ -713,6 +808,47 @@
                         <a class="action-btn btn-primary" id="multiZipDownload" href="#" download>📦 打包下载全部 (ZIP)</a>
                     </div>
                     <div class="multi-grid" id="multiResultsGrid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 规范延展 -->
+        <div class="card tab-content feature-hidden" id="layoutTab">
+            <div class="layout-section">
+                <h3>📋 规范延展</h3>
+                <p class="layout-hint" id="layoutHint">上传完整设计图，分别<strong>框选 Logo</strong>与<strong> IP 主体</strong>，按视觉规范模板延展输出（当前：一体机 732×976）。背景默认本地模糊补边；勾选 AI 阔图需 Lovart 可用。</p>
+                <div class="layout-templates" id="layoutTemplatesList"></div>
+                <div class="layout-upload-zone" id="layoutUploadZone" onclick="document.getElementById('layoutImageInput').click()">
+                    <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传设计图</p>
+                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                </div>
+                <input type="file" id="layoutImageInput" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="onLayoutImageSelected(event)">
+                <div id="layoutWorkspace" class="layout-workspace">
+                    <div class="layout-mode-row">
+                        <button type="button" class="layout-mode-btn active" id="layoutMarkLogoBtn" onclick="setLayoutMarkMode('logo', this)">① 框选 Logo</button>
+                        <button type="button" class="layout-mode-btn ip" id="layoutMarkIpBtn" onclick="setLayoutMarkMode('ip', this)">② 框选 IP 主体</button>
+                    </div>
+                    <div class="layout-canvas-wrap" id="layoutCanvasWrap">
+                        <img id="layoutPreviewImg" alt="延展预览" draggable="false">
+                        <canvas id="layoutOverlay" class="layout-overlay"></canvas>
+                    </div>
+                    <p class="layout-info" id="layoutInfo">请先框选 Logo 区域</p>
+                    <div class="layout-opt-row">
+                        <label><input type="checkbox" id="layoutUseAi"> AI 阔图补边（需 Lovart）</label>
+                    </div>
+                    <button type="button" class="layout-export-btn" id="layoutExportBtn" onclick="exportLayoutExtend()" disabled>⚡ 生成规范延展图</button>
+                    <button type="button" class="action-btn btn-outline" style="margin-top:12px;" onclick="clearLayoutImage()">移除图片</button>
+                </div>
+                <div class="loading-card" id="layoutLoadingCard" style="display: none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">正在生成规范延展图...</p>
+                </div>
+                <p id="layoutErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:16px;"></p>
+                <div id="layoutResultsWrap" style="display: none;">
+                    <div class="svga-result-actions" style="margin-top: 16px;">
+                        <a class="action-btn btn-primary" id="layoutZipDownload" href="#" download>📦 打包下载全部 (ZIP)</a>
+                    </div>
+                    <div class="layout-grid" id="layoutResultsGrid"></div>
                 </div>
             </div>
         </div>
@@ -763,11 +899,76 @@
             </div>
         </div>
 
-        <!-- GIF 呼吸动图 -->
+        <!-- 抠图工具 -->
+        <div class="card tab-content feature-hidden" id="cutoutTab">
+            <div class="cutout-section">
+                <h3>🪄 抠图工具</h3>
+                <p class="cutout-hint" id="cutoutHintText"><strong>魔棒</strong>删背景；<strong>智能提取</strong>框选主体区域，优先本地真实去背，复杂场景再自动回退 Lovart。</p>
+                <div class="cutout-mode-tabs">
+                    <button type="button" class="cutout-mode-btn active" data-cutout-mode="wand" onclick="setCutoutMode('wand', this)">🎯 魔棒（删背景）</button>
+                    <button type="button" class="cutout-mode-btn" data-cutout-mode="extract" onclick="setCutoutMode('extract', this)">✨ 智能提取</button>
+                </div>
+                <div class="cutout-upload-zone" id="cutoutUploadZone" onclick="document.getElementById('cutoutImageInput').click()">
+                    <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
+                    <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                </div>
+                <input type="file" id="cutoutImageInput" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="onCutoutImageSelected(event)">
+                <div class="cutout-workspace" id="cutoutWorkspace">
+                    <div class="cutout-options">
+                        <div class="cutout-opt-wand visible" id="cutoutOptWand">
+                            <label>容差
+                                <input type="range" id="cutoutTolerance" min="0" max="128" value="32" oninput="onCutoutToleranceChange()">
+                                <span class="cutout-tolerance-val" id="cutoutToleranceVal">32</span>
+                            </label>
+                        </div>
+                        <div class="cutout-opt-extract" id="cutoutOptExtract">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.85);width:100%;">
+                                提取说明（选填，复杂场景更稳）
+                                <input type="text" id="cutoutExtractPrompt" class="cutout-prompt-input" placeholder="例如：主标题 / Logo / 角色主体">
+                            </label>
+                            <label style="font-size:12px;color:rgba(255,255,255,0.65);">
+                                <input type="checkbox" id="cutoutTrim" checked> 自动裁切到主体边缘
+                            </label>
+                        </div>
+                    </div>
+                    <div class="cutout-canvas-wrap" id="cutoutCanvasWrap">
+                        <img id="cutoutPreviewImg" alt="抠图预览" draggable="false">
+                        <canvas id="cutoutOverlay"></canvas>
+                    </div>
+                    <p class="cutout-info" id="cutoutInfo">在图片上点击选择要删除的区域</p>
+                    <div class="cutout-actions">
+                        <button type="button" class="cutout-apply-btn" id="cutoutApplyBtn" onclick="applyCutout()" disabled>✓ 确定抠图</button>
+                        <button type="button" class="action-btn btn-outline" id="cutoutClearRoiBtn" onclick="clearCutoutRoi()" style="display:none;">清除框选</button>
+                        <button type="button" class="action-btn btn-outline" id="cutoutUndoBtn" onclick="undoCutoutSelection()">↩ 撤销</button>
+                        <button type="button" class="action-btn btn-outline" onclick="clearCutoutSelectionOrRoi()">清除选区</button>
+                        <button type="button" class="action-btn btn-outline" onclick="clearCutoutImage()">移除图片</button>
+                    </div>
+                </div>
+                <div class="loading-card" id="cutoutLoadingCard" style="display:none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">正在抠图...</p>
+                </div>
+                <p id="cutoutErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:12px;"></p>
+                <div class="cutout-result" id="cutoutResult">
+                    <p style="color:rgba(255,255,255,0.7);margin-bottom:12px;" id="cutoutResultMeta"></p>
+                    <img id="cutoutResultImg" alt="抠图结果">
+                    <div class="cutout-actions" style="margin-top:14px;">
+                        <a class="action-btn btn-primary" id="cutoutDownloadBtn" href="#" download>💾 下载透明 PNG</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 动图：呼吸 GIF / GIF 转 SVGA -->
         <div class="card tab-content" id="gifmakerTab">
             <div class="gifmaker-section">
-                <h3>🎞️ 按钮呼吸 GIF</h3>
-                <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图与按钮图（建议透明底 PNG），自动生成按钮缩放呼吸循环动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>（开屏动效常用）。</p>
+                <h3>🎞️ 动图工具</h3>
+                <div class="gifmaker-mode-tabs">
+                    <button type="button" class="gifmaker-mode-btn active" data-gif-mode="breathing" onclick="setGifmakerMode('breathing', this)">✨ 呼吸动图</button>
+                    <button type="button" class="gifmaker-mode-btn" data-gif-mode="svga" onclick="setGifmakerMode('svga', this)">🎬 GIF 转 SVGA</button>
+                </div>
+                <div class="gifmaker-panel" id="gifPanelBreathing">
+                <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图与按钮图（建议透明底 PNG），自动生成按钮缩放呼吸循环动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>（SVGA 同宽高，≤1MB）。</p>
                 <div class="gifmaker-uploads">
                     <div class="gifmaker-slot" id="gifBgSlot" onclick="document.getElementById('gifBgInput').click()">
                         <span class="gifmaker-slot-title">🖼️ 底图（不动）</span>
@@ -815,6 +1016,32 @@
                         <button type="button" class="action-btn btn-green" id="gifSvgaBtn" onclick="convertBreathingGifToSvga()">🎬 下载 SVGA</button>
                     </div>
                     <p class="gifmaker-svga-meta" id="gifSvgaMeta"></p>
+                </div>
+                </div>
+                <div class="gifmaker-panel hidden" id="gifPanelSvga">
+                    <p class="gifmaker-hint">直接上传已完成的 <strong>.gif</strong> 文件，转换为 <strong>SVGA</strong>（<strong>宽高与原 GIF 一致</strong>，文件自动压缩至 <strong>1MB 以内</strong>；极长动图可能隔帧抽帧，但不改画布尺寸）。</p>
+                    <div class="gifmaker-svga-upload" id="gifSvgaUploadSlot" onclick="document.getElementById('gifSvgaFileInput').click()">
+                        <span class="gifmaker-slot-title">📁 上传 GIF</span>
+                        <span class="gifmaker-slot-desc">点击或拖拽 .gif 文件到此处</span>
+                        <img id="gifSvgaUploadPreview" alt="" style="display:none;">
+                        <p class="gifmaker-slot-desc" id="gifSvgaUploadName" style="display:none;margin-top:8px;"></p>
+                    </div>
+                    <input type="file" id="gifSvgaFileInput" accept="image/gif,.gif" style="display:none" onchange="onGifSvgaFileSelected(event)">
+                    <button type="button" class="gifmaker-gen-btn" id="gifSvgaConvertBtn" onclick="convertUploadedGifToSvga()" disabled style="margin-top:16px;">🎬 转换为 SVGA 并下载</button>
+                    <div class="loading-card" id="gifSvgaLoadingCard" style="display:none;">
+                        <div class="spinner"></div>
+                        <p class="loading-text">正在转换 SVGA...</p>
+                    </div>
+                    <p id="gifSvgaUploadErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:12px;"></p>
+                    <div class="gifmaker-svga-preview" id="gifSvgaUploadPreviewWrap">
+                        <p class="gifmaker-meta" id="gifSvgaUploadMeta"></p>
+                        <img id="gifSvgaUploadResultPreview" alt="GIF 预览">
+                        <div class="gifmaker-result-actions" id="gifSvgaUploadResultActions" style="display:none;margin-top:14px;">
+                            <button type="button" class="action-btn btn-green" id="gifSvgaUploadDlBtn" onclick="downloadGifSvgaUploadResult()">💾 下载 SVGA</button>
+                            <button type="button" class="action-btn btn-outline" onclick="clearGifSvgaUpload()">🔄 重新上传</button>
+                        </div>
+                        <p class="gifmaker-svga-meta" id="gifSvgaUploadResultMeta"></p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -923,8 +1150,11 @@ window.onload = function() {
     loadHistory();
     initMultiUploadZone();
     loadMultiSizePresets();
+    initLayoutExtend();
     initCropUploadZone();
     bindCropInteractions();
+    initCutoutUploadZone();
+    bindCutoutInteractions();
     bindGifLayoutInteractions();
     initGifUploadZones();
     updateGifGenBtnState();
@@ -2168,22 +2398,40 @@ function onMultiImageSelected(ev) {
     ev.target.value = '';
 }
 
+function onMultiUploadZoneClick(ev) {
+    if (multiImageFile) return;
+    document.getElementById('multiImageInput').click();
+}
+
 function setMultiImageFile(file) {
     multiImageFile = file;
     var stem = file.name.replace(/\.[^.]+$/, '');
     multiSourceBaseName = sanitizeDownloadNamePart(stem) || '开屏';
-    document.getElementById('multiPreview').style.display = 'block';
+    var zone = document.getElementById('multiUploadZone');
+    var preview = document.getElementById('multiPreview');
+    if (zone) zone.classList.add('has-image');
+    if (preview) preview.classList.add('visible');
     document.getElementById('multiFileName').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
-    document.getElementById('multiPreviewImg').src = URL.createObjectURL(file);
+    var img = document.getElementById('multiPreviewImg');
+    if (img) img.src = URL.createObjectURL(file);
     document.getElementById('multiExportBtn').disabled = false;
     document.getElementById('multiResultsWrap').style.display = 'none';
     document.getElementById('multiErrorMsg').style.display = 'none';
 }
 
-function clearMultiImage() {
+function clearMultiImage(ev) {
+    if (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
     multiImageFile = null;
     multiSourceBaseName = '开屏';
-    document.getElementById('multiPreview').style.display = 'none';
+    var zone = document.getElementById('multiUploadZone');
+    var preview = document.getElementById('multiPreview');
+    var img = document.getElementById('multiPreviewImg');
+    if (zone) zone.classList.remove('has-image');
+    if (preview) preview.classList.remove('visible');
+    if (img) img.removeAttribute('src');
     document.getElementById('multiExportBtn').disabled = true;
     document.getElementById('multiImageInput').value = '';
 }
@@ -2257,6 +2505,996 @@ function openMultiPreview(index) {
     openFullscreen(window._multiResultUrls, index);
 }
 
+// ─── 规范延展 ───────────────────────────────────────
+var layoutImageFile = null;
+var layoutNatural = { w: 0, h: 0 };
+var layoutLogoRoi = null;
+var layoutIpRoi = null;
+var layoutMarkMode = 'logo';
+var layoutDrag = { active: false, startDx: 0, startDy: 0 };
+var layoutObjectUrl = null;
+
+function initLayoutExtend() {
+    var zone = document.getElementById('layoutUploadZone');
+    if (!zone) return;
+    zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f && f.type.startsWith('image/')) setLayoutImageFile(f);
+    });
+    loadLayoutPresets();
+    bindLayoutInteractions();
+}
+
+function loadLayoutPresets() {
+    fetch('/api/layout-extend/presets').then(function(r) { return r.json(); }).then(function(data) {
+        var list = document.getElementById('layoutTemplatesList');
+        var hint = document.getElementById('layoutHint');
+        if (!list || !data.presets || !data.presets.length) return;
+        var pack = data.presets[0];
+        list.innerHTML = (pack.templates || []).map(function(t) {
+            return '<span class="layout-template-tag">' + t.name + ' ' + t.width + '×' + t.height + '</span>';
+        }).join('');
+        if (hint && pack.templates && pack.templates.length) {
+            hint.innerHTML = '上传完整设计图，分别<strong>框选 Logo</strong>与<strong> IP 主体</strong>，按规范模板延展（当前 ' + pack.templates.length + ' 个尺寸）。背景默认本地模糊补边；勾选 AI 阔图需 Lovart。';
+        }
+    }).catch(function() {});
+}
+
+function bindLayoutInteractions() {
+    var wrap = document.getElementById('layoutCanvasWrap');
+    if (!wrap) return;
+    wrap.addEventListener('mousedown', onLayoutCanvasDown);
+    wrap.addEventListener('mousemove', onLayoutCanvasMove);
+    wrap.addEventListener('mouseup', onLayoutCanvasUp);
+    wrap.addEventListener('mouseleave', onLayoutCanvasUp);
+}
+
+function onLayoutImageSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setLayoutImageFile(f);
+    ev.target.value = '';
+}
+
+function setLayoutImageFile(file) {
+    if (file.size > 25 * 1024 * 1024) {
+        alert('图片过大，请选择 25MB 以内的文件');
+        return;
+    }
+    layoutImageFile = file;
+    layoutLogoRoi = null;
+    layoutIpRoi = null;
+    layoutMarkMode = 'logo';
+    document.getElementById('layoutUploadZone').style.display = 'none';
+    document.getElementById('layoutWorkspace').style.display = 'block';
+    document.getElementById('layoutResultsWrap').style.display = 'none';
+    document.getElementById('layoutErrorMsg').style.display = 'none';
+    document.getElementById('layoutExportBtn').disabled = true;
+    var img = document.getElementById('layoutPreviewImg');
+    if (layoutObjectUrl) try { URL.revokeObjectURL(layoutObjectUrl); } catch (e) {}
+    layoutObjectUrl = URL.createObjectURL(file);
+    img.onload = function() {
+        layoutNatural.w = img.naturalWidth;
+        layoutNatural.h = img.naturalHeight;
+        layoutCanvasLayout();
+        updateLayoutInfo();
+    };
+    img.src = layoutObjectUrl;
+    if (img.complete) img.onload();
+}
+
+function clearLayoutImage() {
+    layoutImageFile = null;
+    layoutLogoRoi = null;
+    layoutIpRoi = null;
+    document.getElementById('layoutUploadZone').style.display = 'block';
+    document.getElementById('layoutWorkspace').style.display = 'none';
+    document.getElementById('layoutExportBtn').disabled = true;
+    document.getElementById('layoutImageInput').value = '';
+}
+
+function setLayoutMarkMode(mode, btnEl) {
+    layoutMarkMode = mode;
+    document.querySelectorAll('.layout-mode-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btnEl) btnEl.classList.add('active');
+    updateLayoutInfo();
+}
+
+function layoutCanvasPointFromEvent(e) {
+    var img = document.getElementById('layoutPreviewImg');
+    var rect = img.getBoundingClientRect();
+    return { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+}
+
+function onLayoutCanvasDown(e) {
+    if (!layoutImageFile) return;
+    e.preventDefault();
+    var pt = layoutCanvasPointFromEvent(e);
+    layoutDrag.active = true;
+    layoutDrag.startDx = pt.dx;
+    layoutDrag.startDy = pt.dy;
+    var roi = { x: pt.dx, y: pt.dy, w: 0, h: 0 };
+    if (layoutMarkMode === 'logo') layoutLogoRoi = roi; else layoutIpRoi = roi;
+    renderLayoutOverlay();
+}
+
+function onLayoutCanvasMove(e) {
+    if (!layoutDrag.active) return;
+    var pt = layoutCanvasPointFromEvent(e);
+    var roi = layoutMarkMode === 'logo' ? layoutLogoRoi : layoutIpRoi;
+    if (!roi) return;
+    roi.w = pt.dx - layoutDrag.startDx;
+    roi.h = pt.dy - layoutDrag.startDy;
+    renderLayoutOverlay();
+}
+
+function onLayoutCanvasUp() {
+    if (!layoutDrag.active) return;
+    layoutDrag.active = false;
+    var roi = layoutMarkMode === 'logo' ? layoutLogoRoi : layoutIpRoi;
+    if (!roi) return;
+    var x = roi.w < 0 ? roi.x + roi.w : roi.x;
+    var y = roi.h < 0 ? roi.y + roi.h : roi.y;
+    var w = Math.abs(roi.w);
+    var h = Math.abs(roi.h);
+    var fixed = (w < 6 || h < 6) ? null : { x: x, y: y, w: w, h: h };
+    if (layoutMarkMode === 'logo') layoutLogoRoi = fixed; else layoutIpRoi = fixed;
+    renderLayoutOverlay();
+    updateLayoutInfo();
+}
+
+function layoutCanvasLayout() {
+    var img = document.getElementById('layoutPreviewImg');
+    var canvas = document.getElementById('layoutOverlay');
+    if (!img || !canvas || !img.clientWidth) return;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+    canvas.style.width = img.clientWidth + 'px';
+    canvas.style.height = img.clientHeight + 'px';
+    renderLayoutOverlay();
+}
+
+function renderLayoutOverlay() {
+    var canvas = document.getElementById('layoutOverlay');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawLayoutRoi(ctx, layoutLogoRoi, '#6ee7b7');
+    drawLayoutRoi(ctx, layoutIpRoi, '#93c5fd');
+}
+
+function drawLayoutRoi(ctx, roi, color) {
+    if (!roi || (roi.w === 0 && roi.h === 0)) return;
+    var x = roi.w < 0 ? roi.x + roi.w : roi.x;
+    var y = roi.h < 0 ? roi.y + roi.h : roi.y;
+    var w = Math.abs(roi.w);
+    var h = Math.abs(roi.h);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = color.replace(')', ',0.12)').replace('rgb', 'rgba').replace('#6ee7b7', 'rgba(110,231,183,0.15)').replace('#93c5fd', 'rgba(147,197,253,0.15)');
+    if (color.indexOf('#') === 0) {
+        ctx.fillStyle = color === '#6ee7b7' ? 'rgba(110,231,183,0.15)' : 'rgba(147,197,253,0.15)';
+    }
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+}
+
+function layoutRoiToNatural(roi) {
+    if (!roi || roi.w < 1 || roi.h < 1) return null;
+    var img = document.getElementById('layoutPreviewImg');
+    if (!img || !img.clientWidth) return null;
+    var scaleX = layoutNatural.w / img.clientWidth;
+    var scaleY = layoutNatural.h / img.clientHeight;
+    return {
+        x: Math.round(roi.x * scaleX),
+        y: Math.round(roi.y * scaleY),
+        w: Math.max(1, Math.round(roi.w * scaleX)),
+        h: Math.max(1, Math.round(roi.h * scaleY))
+    };
+}
+
+function updateLayoutInfo() {
+    var info = document.getElementById('layoutInfo');
+    var btn = document.getElementById('layoutExportBtn');
+    var logoNat = layoutRoiToNatural(layoutLogoRoi);
+    var ipNat = layoutRoiToNatural(layoutIpRoi);
+    var parts = [];
+    if (logoNat) parts.push('Logo ' + logoNat.w + '×' + logoNat.h);
+    if (ipNat) parts.push('IP ' + ipNat.w + '×' + ipNat.h);
+    if (info) {
+        if (!logoNat && layoutMarkMode === 'logo') info.textContent = '拖拽框选 Logo 区域';
+        else if (!ipNat) info.textContent = (logoNat ? 'Logo 已选，' : '') + '请切换到「框选 IP 主体」并拖拽框选';
+        else info.textContent = parts.join(' · ') + ' — 可以生成';
+    }
+    if (btn) btn.disabled = !(logoNat && ipNat);
+}
+
+async function exportLayoutExtend() {
+    var logoNat = layoutRoiToNatural(layoutLogoRoi);
+    var ipNat = layoutRoiToNatural(layoutIpRoi);
+    if (!layoutImageFile || !logoNat || !ipNat) {
+        alert('请先分别框选 Logo 与 IP 主体区域');
+        return;
+    }
+    var btn = document.getElementById('layoutExportBtn');
+    var loading = document.getElementById('layoutLoadingCard');
+    var errEl = document.getElementById('layoutErrorMsg');
+    var wrap = document.getElementById('layoutResultsWrap');
+    btn.disabled = true;
+    loading.style.display = 'block';
+    errEl.style.display = 'none';
+    wrap.style.display = 'none';
+    var form = new FormData();
+    form.append('image', layoutImageFile);
+    form.append('preset', 'hll-banner-extend');
+    form.append('logo_x', String(logoNat.x));
+    form.append('logo_y', String(logoNat.y));
+    form.append('logo_w', String(logoNat.w));
+    form.append('logo_h', String(logoNat.h));
+    form.append('ip_x', String(ipNat.x));
+    form.append('ip_y', String(ipNat.y));
+    form.append('ip_w', String(ipNat.w));
+    form.append('ip_h', String(ipNat.h));
+    form.append('source_name', layoutImageFile.name || '延展');
+    if (document.getElementById('layoutUseAi') && document.getElementById('layoutUseAi').checked) {
+        form.append('use_ai', '1');
+    }
+    appendProjectContext(form);
+    try {
+        var resp = await fetch('/api/layout-extend', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            errEl.textContent = '服务器返回异常';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!resp.ok || data.error) {
+            errEl.textContent = data.error || ('HTTP ' + resp.status);
+            errEl.style.display = 'block';
+            return;
+        }
+        if (data.zip_url) {
+            var zipA = document.getElementById('layoutZipDownload');
+            zipA.href = data.zip_url;
+            zipA.download = data.zip_download_name || '规范延展.zip';
+        }
+        var grid = document.getElementById('layoutResultsGrid');
+        grid.innerHTML = (data.outputs || []).map(function(o, i) {
+            return '<div class="multi-card"><img src="' + o.download_url + '?t=' + Date.now() + '" onclick="openLayoutPreview(' + i + ')" alt="">' +
+                '<div class="multi-card-info">' + o.name + '<br>' + o.width + '×' + o.height +
+                '<br><a href="' + o.download_url + '" download>下载</a></div></div>';
+        }).join('');
+        window._layoutResultUrls = (data.outputs || []).map(function(o) { return o.download_url; });
+        wrap.style.display = 'block';
+    } catch (err) {
+        errEl.textContent = '请求失败: ' + (err.message || String(err));
+        errEl.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+        btn.disabled = false;
+        updateLayoutInfo();
+    }
+}
+
+function openLayoutPreview(index) {
+    if (!window._layoutResultUrls || !window._layoutResultUrls.length) return;
+    openFullscreen(window._layoutResultUrls, index);
+}
+
+window.addEventListener('resize', function() {
+    if (document.getElementById('layoutTab') && document.getElementById('layoutTab').classList.contains('active')) {
+        layoutCanvasLayout();
+    }
+});
+
+// ─── 抠图工具 ───────────────────────────────────────
+var cutoutModeState = { wand: null, extract: null };
+var cutoutMode = 'wand';
+var cutoutImageFile = null;
+var cutoutImageData = null;
+var cutoutSelectionMask = null;
+var cutoutMaskHistory = [];
+var cutoutNatural = { w: 0, h: 0 };
+var cutoutObjectUrl = null;
+var cutoutRoi = null;
+var cutoutDrag = { active: false, startDx: 0, startDy: 0 };
+
+function initCutoutUploadZone() {
+    var zone = document.getElementById('cutoutUploadZone');
+    if (!zone) return;
+    zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f && f.type.startsWith('image/')) setCutoutImageFile(f);
+    });
+}
+
+function bindCutoutInteractions() {
+    var canvas = document.getElementById('cutoutOverlay');
+    if (!canvas) return;
+    canvas.addEventListener('mousedown', onCutoutCanvasDown);
+    canvas.addEventListener('mousemove', onCutoutCanvasMove);
+    canvas.addEventListener('mouseup', onCutoutCanvasUp);
+    canvas.addEventListener('mouseleave', onCutoutCanvasUp);
+    canvas.addEventListener('touchstart', onCutoutTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onCutoutTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onCutoutTouchEnd);
+    canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    window.addEventListener('resize', function() {
+        if (cutoutImageData) layoutCutoutOverlay();
+    });
+}
+
+function cutoutCloneMask(arr) {
+    return arr ? new Uint8Array(arr) : null;
+}
+
+function cutoutCloneMaskHistory(list) {
+    if (!list || !list.length) return [];
+    return list.map(function(m) { return new Uint8Array(m); });
+}
+
+function saveCutoutModeState(mode) {
+    var preview = document.getElementById('cutoutPreviewImg');
+    var url = preview && preview.src && preview.src.indexOf('blob:') === 0 ? preview.src : null;
+    cutoutModeState[mode] = {
+        imageFile: cutoutImageFile,
+        objectUrl: url,
+        imageData: cutoutImageData,
+        selectionMask: cutoutCloneMask(cutoutSelectionMask),
+        maskHistory: cutoutCloneMaskHistory(cutoutMaskHistory),
+        roi: cutoutRoi ? { x: cutoutRoi.x, y: cutoutRoi.y, w: cutoutRoi.w, h: cutoutRoi.h } : null,
+        natural: { w: cutoutNatural.w, h: cutoutNatural.h }
+    };
+}
+
+function restoreCutoutModeState(mode) {
+    var uploadZone = document.getElementById('cutoutUploadZone');
+    var workspace = document.getElementById('cutoutWorkspace');
+    var result = document.getElementById('cutoutResult');
+    var errEl = document.getElementById('cutoutErrorMsg');
+    var preview = document.getElementById('cutoutPreviewImg');
+    if (result) result.style.display = 'none';
+    if (errEl) errEl.style.display = 'none';
+
+    cutoutImageFile = null;
+    cutoutImageData = null;
+    cutoutSelectionMask = null;
+    cutoutMaskHistory = [];
+    cutoutRoi = null;
+    cutoutNatural = { w: 0, h: 0 };
+
+    var saved = cutoutModeState[mode];
+    if (!saved || !saved.imageFile) {
+        if (uploadZone) uploadZone.style.display = 'block';
+        if (workspace) workspace.style.display = 'none';
+        if (preview) preview.removeAttribute('src');
+        updateCutoutInfo();
+        return;
+    }
+
+    cutoutImageFile = saved.imageFile;
+    cutoutImageData = saved.imageData;
+    cutoutSelectionMask = cutoutCloneMask(saved.selectionMask);
+    cutoutMaskHistory = cutoutCloneMaskHistory(saved.maskHistory);
+    cutoutRoi = saved.roi ? { x: saved.roi.x, y: saved.roi.y, w: saved.roi.w, h: saved.roi.h } : null;
+    cutoutNatural = saved.natural ? { w: saved.natural.w, h: saved.natural.h } : { w: 0, h: 0 };
+    cutoutObjectUrl = saved.objectUrl;
+
+    if (uploadZone) uploadZone.style.display = 'none';
+    if (workspace) workspace.style.display = 'block';
+    if (preview && saved.objectUrl) {
+        preview.src = saved.objectUrl;
+        layoutCutoutOverlay();
+    }
+    updateCutoutInfo();
+}
+
+function setCutoutMode(mode, btnEl) {
+    var prev = cutoutMode;
+    if (mode !== prev) saveCutoutModeState(prev);
+    cutoutMode = mode;
+    document.querySelectorAll('.cutout-mode-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btnEl) btnEl.classList.add('active');
+    document.getElementById('cutoutOptWand').classList.toggle('visible', mode === 'wand');
+    document.getElementById('cutoutOptExtract').classList.toggle('visible', mode === 'extract');
+    document.getElementById('cutoutClearRoiBtn').style.display = mode === 'extract' ? '' : 'none';
+    var undoBtn = document.getElementById('cutoutUndoBtn');
+    if (undoBtn) undoBtn.style.display = mode === 'wand' ? '' : 'none';
+    var hint = document.getElementById('cutoutHintText');
+    if (hint) {
+        hint.innerHTML = mode === 'wand'
+            ? '<strong>魔棒：</strong>点击相近颜色（红色高亮）删除背景。'
+            : '<strong>智能提取：</strong>拖拽框选标题、Logo 或主体区域，优先做真实透明抠图，复杂场景自动回退 Lovart。';
+    }
+    if (mode === 'extract') {
+        fetch('/api/system-info').then(function(r) { return r.json(); }).then(function(info) {
+            if (cutoutMode !== 'extract' || !hint || !info) return;
+            if (info.smartCutoutBackend === 'rembg') {
+                hint.innerHTML += ' <span style="color:#86efac">（当前优先使用本地真实抠图）</span>';
+            } else if (info.smartCutoutBackend === 'local') {
+                hint.innerHTML += ' <span style="color:#93c5fd">（当前使用本地轻量抠图算法，无需联网）</span>';
+            } else if (info.lovartKeyCount > 0) {
+                hint.innerHTML += ' <span style="color:#fde68a">（当前未安装本地抠图模型，将使用 Lovart 兜底）</span>';
+            } else {
+                hint.innerHTML += ' <span style="color:#fca5a5">（当前环境未检测到可用抠图引擎）</span>';
+            }
+        }).catch(function() {});
+    }
+    if (mode !== prev) restoreCutoutModeState(mode);
+    else updateCutoutInfo();
+}
+
+function onCutoutTouchStart(e) {
+    if (!cutoutImageData) return;
+    e.preventDefault();
+    onCutoutCanvasDown(e);
+}
+
+function onCutoutTouchMove(e) {
+    if (!cutoutDrag.active || cutoutMode !== 'extract') return;
+    e.preventDefault();
+    onCutoutCanvasMove(e);
+}
+
+function onCutoutTouchEnd(e) {
+    onCutoutCanvasUp(e);
+}
+
+function onCutoutToleranceChange() {
+    var el = document.getElementById('cutoutTolerance');
+    var val = document.getElementById('cutoutToleranceVal');
+    if (val && el) val.textContent = el.value;
+}
+
+function onCutoutImageSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setCutoutImageFile(f);
+    ev.target.value = '';
+}
+
+function setCutoutImageFile(file) {
+    if (file.size > 25 * 1024 * 1024) {
+        alert('图片过大，请选择 25MB 以内的文件');
+        return;
+    }
+    if (cutoutObjectUrl) {
+        try { URL.revokeObjectURL(cutoutObjectUrl); } catch (e) {}
+    }
+    cutoutImageFile = file;
+    cutoutImageData = null;
+    cutoutSelectionMask = null;
+    cutoutMaskHistory = [];
+    cutoutRoi = null;
+    cutoutDrag.active = false;
+    cutoutModeState[cutoutMode] = null;
+    document.getElementById('cutoutUploadZone').style.display = 'none';
+    document.getElementById('cutoutWorkspace').style.display = 'block';
+    document.getElementById('cutoutResult').style.display = 'none';
+    document.getElementById('cutoutErrorMsg').style.display = 'none';
+    document.getElementById('cutoutApplyBtn').disabled = true;
+    var img = document.getElementById('cutoutPreviewImg');
+    cutoutObjectUrl = URL.createObjectURL(file);
+    img.onload = function() {
+        loadCutoutImageData(img);
+        saveCutoutModeState(cutoutMode);
+    };
+    img.src = cutoutObjectUrl;
+    if (img.complete) img.onload();
+}
+
+function loadCutoutImageData(img) {
+    var w = img.naturalWidth;
+    var h = img.naturalHeight;
+    if (w > 8192 || h > 8192) {
+        alert('图片尺寸过大（最大 8192×8192），请换一张较小的图');
+        clearCutoutImage();
+        return;
+    }
+    cutoutNatural.w = w;
+    cutoutNatural.h = h;
+    var c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    var ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    cutoutImageData = ctx.getImageData(0, 0, w, h);
+    cutoutSelectionMask = new Uint8Array(w * h);
+    layoutCutoutOverlay();
+    updateCutoutInfo();
+}
+
+function layoutCutoutOverlay() {
+    var img = document.getElementById('cutoutPreviewImg');
+    var canvas = document.getElementById('cutoutOverlay');
+    if (!img || !canvas || !img.clientWidth) return;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+    canvas.style.width = img.clientWidth + 'px';
+    canvas.style.height = img.clientHeight + 'px';
+    renderCutoutOverlay();
+}
+
+function cutoutCanvasPointFromEvent(e) {
+    var canvas = document.getElementById('cutoutOverlay');
+    var rect = canvas.getBoundingClientRect();
+    var clientX = e.clientX;
+    var clientY = e.clientY;
+    if (e.touches && e.touches.length) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+    }
+    return {
+        dx: clientX - rect.left,
+        dy: clientY - rect.top,
+        nat: cutoutDisplayToNatural(clientX - rect.left, clientY - rect.top)
+    };
+}
+
+function cutoutDisplayToNatural(dx, dy) {
+    var img = document.getElementById('cutoutPreviewImg');
+    var scaleX = cutoutNatural.w / img.clientWidth;
+    var scaleY = cutoutNatural.h / img.clientHeight;
+    return {
+        x: clamp(Math.floor(dx * scaleX), 0, cutoutNatural.w - 1),
+        y: clamp(Math.floor(dy * scaleY), 0, cutoutNatural.h - 1)
+    };
+}
+
+function cutoutColorDist(r1, g1, b1, r2, g2, b2) {
+    return Math.sqrt((r1 - r2) * (r1 - r2) + (g1 - g2) * (g1 - g2) + (b1 - b2) * (b1 - b2));
+}
+
+function floodFillCutout(nx, ny, tolerance) {
+    if (!cutoutImageData || !cutoutSelectionMask) return 0;
+    var w = cutoutNatural.w;
+    var h = cutoutNatural.h;
+    var data = cutoutImageData.data;
+    var mask = cutoutSelectionMask;
+    var pi = ny * w + nx;
+    if (mask[pi]) return 0;
+    var i0 = pi * 4;
+    var sr = data[i0], sg = data[i0 + 1], sb = data[i0 + 2];
+    var stack = [[nx, ny]];
+    var visited = new Uint8Array(w * h);
+    var added = 0;
+    while (stack.length) {
+        var pt = stack.pop();
+        var cx = pt[0], cy = pt[1];
+        var idx = cy * w + cx;
+        if (visited[idx]) continue;
+        visited[idx] = 1;
+        var di = idx * 4;
+        var r = data[di], g = data[di + 1], b = data[di + 2];
+        if (cutoutColorDist(r, g, b, sr, sg, sb) > tolerance) continue;
+        if (!mask[idx]) {
+            mask[idx] = 1;
+            added++;
+        }
+        if (cx > 0) stack.push([cx - 1, cy]);
+        if (cx < w - 1) stack.push([cx + 1, cy]);
+        if (cy > 0) stack.push([cx, cy - 1]);
+        if (cy < h - 1) stack.push([cx, cy + 1]);
+    }
+    return added;
+}
+
+function onCutoutCanvasDown(e) {
+    if (!cutoutImageData) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    var pt = cutoutCanvasPointFromEvent(e);
+    if (cutoutMode === 'wand') {
+        var tol = parseInt(document.getElementById('cutoutTolerance').value, 10) || 0;
+        cutoutMaskHistory.push(new Uint8Array(cutoutSelectionMask));
+        var added = floodFillCutout(pt.nat.x, pt.nat.y, tol);
+        if (added === 0) cutoutMaskHistory.pop();
+        renderCutoutOverlay();
+        updateCutoutInfo();
+        return;
+    }
+    cutoutDrag.active = true;
+    cutoutDrag.startDx = pt.dx;
+    cutoutDrag.startDy = pt.dy;
+    cutoutRoi = { x: pt.dx, y: pt.dy, w: 0, h: 0 };
+    renderCutoutOverlay();
+}
+
+function onCutoutCanvasMove(e) {
+    if (!cutoutDrag.active || cutoutMode !== 'extract' || !cutoutRoi) return;
+    var pt = cutoutCanvasPointFromEvent(e);
+    cutoutRoi.w = pt.dx - cutoutDrag.startDx;
+    cutoutRoi.h = pt.dy - cutoutDrag.startDy;
+    renderCutoutOverlay();
+}
+
+function onCutoutCanvasUp() {
+    if (!cutoutDrag.active || cutoutMode !== 'extract') return;
+    cutoutDrag.active = false;
+    if (!cutoutRoi) return;
+    var x = cutoutRoi.w < 0 ? cutoutRoi.x + cutoutRoi.w : cutoutRoi.x;
+    var y = cutoutRoi.h < 0 ? cutoutRoi.y + cutoutRoi.h : cutoutRoi.y;
+    var w = Math.abs(cutoutRoi.w);
+    var h = Math.abs(cutoutRoi.h);
+    cutoutRoi = (w < 6 || h < 6) ? null : { x: x, y: y, w: w, h: h };
+    renderCutoutOverlay();
+    updateCutoutInfo();
+}
+
+function cutoutRoiToNatural() {
+    if (!cutoutRoi || cutoutRoi.w < 1 || cutoutRoi.h < 1) return null;
+    var img = document.getElementById('cutoutPreviewImg');
+    var scaleX = cutoutNatural.w / img.clientWidth;
+    var scaleY = cutoutNatural.h / img.clientHeight;
+    return {
+        x: Math.round(cutoutRoi.x * scaleX),
+        y: Math.round(cutoutRoi.y * scaleY),
+        w: Math.max(1, Math.round(cutoutRoi.w * scaleX)),
+        h: Math.max(1, Math.round(cutoutRoi.h * scaleY))
+    };
+}
+
+function clearCutoutRoi() {
+    cutoutRoi = null;
+    cutoutDrag.active = false;
+    renderCutoutOverlay();
+    updateCutoutInfo();
+}
+
+function renderCutoutOverlay() {
+    var canvas = document.getElementById('cutoutOverlay');
+    if (!canvas || !cutoutImageData) return;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var dw = canvas.width;
+    var dh = canvas.height;
+    if (cutoutMode === 'wand' && cutoutSelectionMask) {
+        var nw = cutoutNatural.w;
+        var nh = cutoutNatural.h;
+        var off = document.createElement('canvas');
+        off.width = nw;
+        off.height = nh;
+        var octx = off.getContext('2d');
+        var imgData = octx.createImageData(nw, nh);
+        var mask = cutoutSelectionMask;
+        var out = imgData.data;
+        for (var i = 0, n = nw * nh; i < n; i++) {
+            if (!mask[i]) continue;
+            var j = i * 4;
+            out[j] = 248;
+            out[j + 1] = 72;
+            out[j + 2] = 72;
+            out[j + 3] = 110;
+        }
+        octx.putImageData(imgData, 0, 0);
+        ctx.drawImage(off, 0, 0, dw, dh);
+    }
+    if (cutoutMode === 'extract' && cutoutRoi && (cutoutRoi.w !== 0 || cutoutRoi.h !== 0)) {
+        var rx = cutoutRoi.w < 0 ? cutoutRoi.x + cutoutRoi.w : cutoutRoi.x;
+        var ry = cutoutRoi.h < 0 ? cutoutRoi.y + cutoutRoi.h : cutoutRoi.y;
+        var rw = Math.abs(cutoutRoi.w);
+        var rh = Math.abs(cutoutRoi.h);
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0, 0, dw, dh);
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = '#6ee7b7';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.restore();
+    }
+}
+
+function countCutoutSelected() {
+    if (!cutoutSelectionMask) return 0;
+    var n = 0;
+    for (var i = 0; i < cutoutSelectionMask.length; i++) {
+        if (cutoutSelectionMask[i]) n++;
+    }
+    return n;
+}
+
+function updateCutoutInfo() {
+    var info = document.getElementById('cutoutInfo');
+    var btn = document.getElementById('cutoutApplyBtn');
+    if (cutoutMode === 'extract') {
+        var nat = cutoutRoiToNatural();
+        var promptEl = document.getElementById('cutoutExtractPrompt');
+        var promptText = promptEl ? (promptEl.value || '').trim() : '';
+        var canApply = !!nat;
+        if (info) {
+            info.textContent = nat
+                ? '已框选 ' + nat.w + '×' + nat.h + (promptText ? ' — 将结合说明智能抠图' : ' — 可直接开始智能抠图')
+                : '拖拽框选要提取的区域（如标题、Logo、角色主体）';
+        }
+        if (btn) {
+            btn.disabled = !canApply;
+            btn.textContent = '✓ 智能抠图';
+        }
+        return;
+    }
+    var n = countCutoutSelected();
+    if (info) {
+        info.textContent = n > 0
+            ? '已选中 ' + n.toLocaleString() + ' 个像素（红色区域将被抠除），可继续点击累加'
+            : '在图片上点击选择要删除的区域';
+    }
+    if (btn) {
+        btn.disabled = n === 0;
+        btn.textContent = '✓ 确定抠图';
+    }
+}
+
+function clearCutoutSelection() {
+    if (!cutoutSelectionMask) return;
+    cutoutMaskHistory = [];
+    cutoutSelectionMask.fill(0);
+    renderCutoutOverlay();
+    updateCutoutInfo();
+}
+
+function clearCutoutSelectionOrRoi() {
+    if (cutoutMode === 'extract') clearCutoutRoi();
+    else clearCutoutSelection();
+}
+
+function undoCutoutSelection() {
+    if (cutoutMode !== 'wand' || !cutoutMaskHistory.length) return;
+    cutoutSelectionMask = cutoutMaskHistory.pop();
+    renderCutoutOverlay();
+    updateCutoutInfo();
+}
+
+function clearCutoutImage() {
+    if (cutoutObjectUrl) {
+        try { URL.revokeObjectURL(cutoutObjectUrl); } catch (e) {}
+        cutoutObjectUrl = null;
+    }
+    cutoutModeState[cutoutMode] = null;
+    cutoutImageFile = null;
+    cutoutImageData = null;
+    cutoutSelectionMask = null;
+    cutoutMaskHistory = [];
+    cutoutRoi = null;
+    var preview = document.getElementById('cutoutPreviewImg');
+    if (preview) preview.removeAttribute('src');
+    document.getElementById('cutoutUploadZone').style.display = 'block';
+    document.getElementById('cutoutWorkspace').style.display = 'none';
+    document.getElementById('cutoutResult').style.display = 'none';
+    document.getElementById('cutoutImageInput').value = '';
+    updateCutoutInfo();
+}
+
+function buildCutoutMaskBlob() {
+    var w = cutoutNatural.w;
+    var h = cutoutNatural.h;
+    var c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    var ctx = c.getContext('2d');
+    var imgData = ctx.createImageData(w, h);
+    var mask = cutoutSelectionMask;
+    var out = imgData.data;
+    for (var i = 0, n = w * h; i < n; i++) {
+        var v = mask[i] ? 255 : 0;
+        var j = i * 4;
+        out[j] = v;
+        out[j + 1] = v;
+        out[j + 2] = v;
+        out[j + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return new Promise(function(resolve) {
+        c.toBlob(function(blob) { resolve(blob); }, 'image/png');
+    });
+}
+
+async function applyCutout() {
+    if (!cutoutImageFile) {
+        alert('请先上传图片');
+        return;
+    }
+    if (cutoutMode === 'extract') {
+        await applySmartCutout();
+        return;
+    }
+    if (!cutoutSelectionMask || countCutoutSelected() === 0) {
+        alert('请先在图片上点击选择要抠除的区域');
+        return;
+    }
+    var loading = document.getElementById('cutoutLoadingCard');
+    var errEl = document.getElementById('cutoutErrorMsg');
+    var btn = document.getElementById('cutoutApplyBtn');
+    var loadingText = loading && loading.querySelector('.loading-text');
+    if (loadingText) loadingText.textContent = '正在抠图...';
+    loading.style.display = 'block';
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    try {
+        var maskBlob = await buildCutoutMaskBlob();
+        if (!maskBlob) throw new Error('生成蒙版失败');
+        var form = new FormData();
+        form.append('image', cutoutImageFile);
+        form.append('mask', maskBlob, 'mask.png');
+        var resp = await fetch('/api/magic-cutout', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            errEl.textContent = '服务器返回异常';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!resp.ok || data.error) {
+            errEl.textContent = data.error || ('HTTP ' + resp.status);
+            errEl.style.display = 'block';
+            return;
+        }
+        document.getElementById('cutoutResultImg').src = data.download_url + '?t=' + Date.now();
+        document.getElementById('cutoutResultMeta').textContent =
+            '已输出透明 PNG ' + data.width + '×' + data.height + '（' + (data.fileSize / 1024).toFixed(1) + ' KB）';
+        var dl = document.getElementById('cutoutDownloadBtn');
+        dl.href = data.download_url;
+        dl.download = data.output_file;
+        document.getElementById('cutoutResult').style.display = 'block';
+    } catch (err) {
+        errEl.textContent = '请求失败: ' + (err.message || String(err));
+        errEl.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+        updateCutoutInfo();
+    }
+}
+
+async function getCutoutUploadFile() {
+    if (cutoutImageFile) return cutoutImageFile;
+    var img = document.getElementById('cutoutPreviewImg');
+    if (!img || !img.naturalWidth || !cutoutNatural.w) return null;
+    var c = document.createElement('canvas');
+    c.width = cutoutNatural.w;
+    c.height = cutoutNatural.h;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return new Promise(function(resolve) {
+        c.toBlob(function(blob) {
+            resolve(blob ? new File([blob], 'cutout.png', { type: 'image/png' }) : null);
+        }, 'image/png');
+    });
+}
+
+function sleepMs(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
+async function fetchWithRetry(url, options, retries) {
+    retries = retries == null ? 3 : retries;
+    var lastErr = null;
+    for (var i = 0; i < retries; i++) {
+        try {
+            return await fetch(url, options);
+        } catch (err) {
+            lastErr = err;
+            if (i < retries - 1) await sleepMs(800);
+        }
+    }
+    throw lastErr;
+}
+
+async function pollSmartCutoutJob(jobId, loadingText) {
+    for (var i = 0; i < 180; i++) {
+        await sleepMs(2000);
+        var stResp;
+        try {
+            stResp = await fetchWithRetry('/api/smart-cutout/status?job=' + encodeURIComponent(jobId), {}, 2);
+        } catch (err) {
+            throw new Error('与服务器的连接中断，请确认 http://localhost:8000 可访问后重试');
+        }
+        var stText = await stResp.text();
+        var job = {};
+        try { job = stText ? JSON.parse(stText) : {}; } catch (e) {
+            throw new Error('查询任务状态失败');
+        }
+        if (!stResp.ok && !job.status) {
+            throw new Error(job.error || ('HTTP ' + stResp.status));
+        }
+        if (job.status === 'running') {
+            if (loadingText && job.message) loadingText.textContent = job.message;
+            continue;
+        }
+        if (job.error) throw new Error(job.error);
+        if (job.ok) return job;
+        throw new Error('AI 提取未完成');
+    }
+    throw new Error('智能抠图超时，请稍后重试；若是首次运行，本地模型可能正在初始化');
+}
+
+async function applySmartCutout() {
+    var nat = cutoutRoiToNatural();
+    var promptEl = document.getElementById('cutoutExtractPrompt');
+    var promptText = promptEl ? (promptEl.value || '').trim() : '';
+    if (!nat) {
+        alert('请先在图片上框选要提取的区域');
+        return;
+    }
+    var loading = document.getElementById('cutoutLoadingCard');
+    var errEl = document.getElementById('cutoutErrorMsg');
+    var btn = document.getElementById('cutoutApplyBtn');
+    var loadingText = loading && loading.querySelector('.loading-text');
+    if (loadingText) loadingText.textContent = '正在识别主体并去除背景，通常 5～20 秒…';
+    loading.style.display = 'block';
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    try {
+        var uploadFile = await getCutoutUploadFile();
+        if (!uploadFile) {
+            errEl.textContent = '图片数据无效，请重新上传后再试';
+            errEl.style.display = 'block';
+            return;
+        }
+        var form = new FormData();
+        form.append('image', uploadFile);
+        form.append('roi_x', String(nat.x));
+        form.append('roi_y', String(nat.y));
+        form.append('roi_w', String(nat.w));
+        form.append('roi_h', String(nat.h));
+        form.append('prompt', promptText);
+        var trimEl = document.getElementById('cutoutTrim');
+        form.append('trim', trimEl && trimEl.checked ? '1' : '0');
+        var project = getSelectedProjectName();
+        if (project) form.append('local_project', project);
+        var resp = await fetchWithRetry('/api/smart-cutout', { method: 'POST', body: form }, 2);
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            errEl.textContent = '服务器返回异常';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!resp.ok || data.error) {
+            errEl.textContent = data.error || ('HTTP ' + resp.status);
+            errEl.style.display = 'block';
+            return;
+        }
+        if (data.async && data.job_id) {
+            data = await pollSmartCutoutJob(data.job_id, loadingText);
+        }
+        document.getElementById('cutoutResultImg').src = data.download_url + '?t=' + Date.now();
+        var metaParts = ['已提取 ' + data.width + '×' + data.height + '（' + (data.fileSize / 1024).toFixed(1) + ' KB）'];
+        if (data.imageBackend === 'rembg') metaParts.push('本地真实抠图');
+        else if (data.imageBackend === 'local') metaParts.push('本地轻量抠图');
+        else if (data.extractMode === 'ai_fallback' || data.imageBackend === 'lovart') metaParts.push('Lovart 兜底');
+        else metaParts.push('智能抠图');
+        if (data.usedPrompt) metaParts.push('已参考说明');
+        document.getElementById('cutoutResultMeta').textContent = metaParts.join(' · ');
+        var dl = document.getElementById('cutoutDownloadBtn');
+        dl.href = data.download_url;
+        dl.download = data.output_file;
+        document.getElementById('cutoutResult').style.display = 'block';
+    } catch (err) {
+        var msg = err && err.message ? err.message : String(err);
+        if (msg === 'Failed to fetch') {
+            msg = '无法连接本地服务，请确认地址为 http://localhost:8000 且已执行 ./dev.sh start';
+        }
+        errEl.textContent = '请求失败: ' + msg;
+        errEl.style.display = 'block';
+    } finally {
+        if (loadingText) loadingText.textContent = '正在抠图...';
+        loading.style.display = 'none';
+        btn.disabled = false;
+        updateCutoutInfo();
+    }
+}
+
+document.getElementById('cutoutExtractPrompt') && document.getElementById('cutoutExtractPrompt').addEventListener('input', updateCutoutInfo);
 // ─── 尺寸裁切 ───────────────────────────────────────
 var cropImageFile = null;
 var cropNatural = { x: 0, y: 0, w: 0, h: 0 };
@@ -2475,7 +3713,16 @@ async function applyCrop() {
     }
 }
 
-// ─── GIF 呼吸动图 ─────────────────────────────────────
+// ─── 动图工具（呼吸 GIF / GIF 转 SVGA）─────────────────
+function formatSvgaResultMeta(data, prefix) {
+    prefix = prefix || 'SVGA';
+    var sizeStr = data.fileSize ? (data.fileSize / 1024).toFixed(1) + ' KB' : '';
+    var dimStr = (data.width || data.originalWidth) + '×' + (data.height || data.originalHeight) + '（与原图同尺寸）';
+    var line = prefix + '：' + sizeStr + ' · ' + dimStr + ' · ' + data.totalFrames + ' 帧 · ' + data.fps + ' FPS';
+    if (data.frameNote) line += ' · ' + data.frameNote;
+    return line;
+}
+
 var gifBgFile = null;
 var gifBtnFile = null;
 var gifLayout = { offsetX: 0, offsetY: 0, bgNatW: 0, bgNatH: 0, btnNatW: 0, btnNatH: 0 };
@@ -2483,6 +3730,167 @@ var gifBtnDrag = { active: false, startX: 0, startY: 0, startOffX: 0, startOffY:
 var gifLayoutBgUrl = null;
 var gifLayoutBtnUrl = null;
 var gifLastResult = null;
+var gifUploadFile = null;
+var gifSvgaUploadResult = null;
+var gifSvgaUploadPreviewUrl = null;
+
+function setGifmakerMode(mode, btnEl) {
+    document.querySelectorAll('.gifmaker-mode-btn').forEach(function(b) {
+        b.classList.toggle('active', b === btnEl);
+    });
+    var breathing = document.getElementById('gifPanelBreathing');
+    var svga = document.getElementById('gifPanelSvga');
+    if (breathing) breathing.classList.toggle('hidden', mode !== 'breathing');
+    if (svga) svga.classList.toggle('hidden', mode !== 'svga');
+}
+
+function updateGifSvgaConvertBtnState() {
+    var btn = document.getElementById('gifSvgaConvertBtn');
+    if (btn) btn.disabled = !gifUploadFile;
+}
+
+function setGifUploadFile(file) {
+    if (!file) return;
+    if (!/\.gif$/i.test(file.name)) {
+        alert('请上传 .gif 格式的动图文件');
+        return;
+    }
+    gifUploadFile = file;
+    gifSvgaUploadResult = null;
+    var slot = document.getElementById('gifSvgaUploadSlot');
+    var preview = document.getElementById('gifSvgaUploadPreview');
+    var nameEl = document.getElementById('gifSvgaUploadName');
+    var errEl = document.getElementById('gifSvgaUploadErrorMsg');
+    var wrap = document.getElementById('gifSvgaUploadPreviewWrap');
+    var actions = document.getElementById('gifSvgaUploadResultActions');
+    var meta = document.getElementById('gifSvgaUploadResultMeta');
+    if (gifSvgaUploadPreviewUrl) { URL.revokeObjectURL(gifSvgaUploadPreviewUrl); gifSvgaUploadPreviewUrl = null; }
+    if (errEl) errEl.style.display = 'none';
+    if (wrap) wrap.style.display = 'none';
+    if (actions) actions.style.display = 'none';
+    if (meta) { meta.style.display = 'none'; meta.textContent = ''; }
+    if (slot) slot.classList.add('filled');
+    if (preview) {
+        gifSvgaUploadPreviewUrl = URL.createObjectURL(file);
+        preview.src = gifSvgaUploadPreviewUrl;
+        preview.style.display = 'block';
+    }
+    if (nameEl) {
+        nameEl.textContent = file.name + ' · ' + (file.size / 1024).toFixed(1) + ' KB';
+        nameEl.style.display = 'block';
+    }
+    updateGifSvgaConvertBtnState();
+}
+
+function onGifSvgaFileSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setGifUploadFile(f);
+    ev.target.value = '';
+}
+
+function clearGifSvgaUpload() {
+    gifUploadFile = null;
+    gifSvgaUploadResult = null;
+    if (gifSvgaUploadPreviewUrl) { URL.revokeObjectURL(gifSvgaUploadPreviewUrl); gifSvgaUploadPreviewUrl = null; }
+    var slot = document.getElementById('gifSvgaUploadSlot');
+    var preview = document.getElementById('gifSvgaUploadPreview');
+    var nameEl = document.getElementById('gifSvgaUploadName');
+    var errEl = document.getElementById('gifSvgaUploadErrorMsg');
+    var wrap = document.getElementById('gifSvgaUploadPreviewWrap');
+    var actions = document.getElementById('gifSvgaUploadResultActions');
+    var meta = document.getElementById('gifSvgaUploadResultMeta');
+    if (slot) slot.classList.remove('filled');
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
+    if (nameEl) nameEl.style.display = 'none';
+    if (errEl) errEl.style.display = 'none';
+    if (wrap) wrap.style.display = 'none';
+    if (actions) actions.style.display = 'none';
+    if (meta) { meta.style.display = 'none'; meta.textContent = ''; }
+    updateGifSvgaConvertBtnState();
+}
+
+function downloadGifSvgaUploadResult() {
+    if (!gifSvgaUploadResult || !gifSvgaUploadResult.download_url) {
+        alert('请先完成转换');
+        return;
+    }
+    var a = document.createElement('a');
+    a.href = gifSvgaUploadResult.download_url + '?t=' + Date.now();
+    a.download = gifSvgaUploadResult.output_file || 'output.svga';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function showGifSvgaUploadResult(data) {
+    gifSvgaUploadResult = data;
+    var wrap = document.getElementById('gifSvgaUploadPreviewWrap');
+    var resultImg = document.getElementById('gifSvgaUploadResultPreview');
+    var meta = document.getElementById('gifSvgaUploadMeta');
+    var resultMeta = document.getElementById('gifSvgaUploadResultMeta');
+    var actions = document.getElementById('gifSvgaUploadResultActions');
+    if (resultImg && gifSvgaUploadPreviewUrl) resultImg.src = gifSvgaUploadPreviewUrl;
+    if (meta) meta.textContent = '源文件：' + (gifUploadFile ? gifUploadFile.name : '');
+    if (resultMeta) {
+        resultMeta.textContent = formatSvgaResultMeta(data);
+        resultMeta.style.display = 'block';
+    }
+    if (actions) actions.style.display = 'flex';
+    if (wrap) wrap.style.display = 'block';
+}
+
+async function convertUploadedGifToSvga() {
+    if (!gifUploadFile) {
+        alert('请先上传 GIF 文件');
+        return;
+    }
+    if (gifSvgaUploadResult && gifSvgaUploadResult.download_url) {
+        downloadGifSvgaUploadResult();
+        return;
+    }
+    var btn = document.getElementById('gifSvgaConvertBtn');
+    var loading = document.getElementById('gifSvgaLoadingCard');
+    var errEl = document.getElementById('gifSvgaUploadErrorMsg');
+    var prevText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '正在转换...'; }
+    if (loading) loading.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+    var form = new FormData();
+    form.append('gif', gifUploadFile);
+    try {
+        var resp = await fetch('/api/gif-to-svga', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            if (errEl) {
+                errEl.textContent = 'SVGA 转换：服务器返回异常';
+                errEl.style.display = 'block';
+            }
+            return;
+        }
+        if (!resp.ok || data.error) {
+            if (errEl) {
+                errEl.textContent = data.error || ('SVGA 转换失败 HTTP ' + resp.status);
+                errEl.style.display = 'block';
+            }
+            return;
+        }
+        showGifSvgaUploadResult(data);
+        downloadGifSvgaUploadResult();
+        if (btn) btn.textContent = '🎬 再次下载 SVGA';
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = 'SVGA 转换失败: ' + (err.message || String(err));
+            errEl.style.display = 'block';
+        }
+    } finally {
+        if (loading) loading.style.display = 'none';
+        if (btn) {
+            btn.disabled = !gifUploadFile;
+            if (btn.textContent === '正在转换...') btn.textContent = prevText || '🎬 转换为 SVGA 并下载';
+        }
+    }
+}
 
 function updateGifGenBtnState() {
     var btn = document.getElementById('gifGenBtn');
@@ -2629,7 +4037,7 @@ function setGifBtnFile(file) {
 }
 
 function initGifUploadZones() {
-    [['gifBgSlot', setGifBgFile], ['gifBtnSlot', setGifBtnFile]].forEach(function(pair) {
+    [['gifBgSlot', setGifBgFile], ['gifBtnSlot', setGifBtnFile], ['gifSvgaUploadSlot', setGifUploadFile]].forEach(function(pair) {
         var slot = document.getElementById(pair[0]);
         if (!slot) return;
         slot.addEventListener('dragover', function(e) {
@@ -2702,7 +4110,6 @@ async function convertBreathingGifToSvga() {
     if (svgaMeta) svgaMeta.style.display = 'none';
     var form = new FormData();
     form.append('source_output', gifLastResult.output_file);
-    form.append('max_bytes', '1048576');
     if (gifLastResult.fps) form.append('fps', String(gifLastResult.fps));
     try {
         var resp = await fetch('/api/gif-to-svga', { method: 'POST', body: form });
@@ -2729,11 +4136,7 @@ async function convertBreathingGifToSvga() {
         a.click();
         document.body.removeChild(a);
         if (svgaMeta) {
-            var sizeStr = data.fileSize ? (data.fileSize / 1024).toFixed(1) + ' KB' : '';
-            var dimNote = (data.originalWidth && data.originalWidth !== data.width)
-                ? data.originalWidth + '×' + data.originalHeight + ' → ' : '';
-            svgaMeta.textContent = 'SVGA 已就绪：' + sizeStr + ' · ' + dimNote +
-                data.width + '×' + data.height + ' · ' + data.totalFrames + ' 帧 · ' + data.fps + ' FPS';
+            svgaMeta.textContent = formatSvgaResultMeta(data, 'SVGA 已就绪');
             svgaMeta.style.display = 'block';
         }
         if (btn) btn.textContent = '🎬 再次下载 SVGA';

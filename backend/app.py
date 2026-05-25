@@ -21,19 +21,25 @@ from typing import Optional
 from lovart_client import (
     LovartClient,
     LovartError,
+    is_lovart_connection_error,
     is_lovart_limit_error,
     load_lovart_credentials,
     mask_access_key,
 )
 from comfyui_client import ComfyUIClient, ComfyUIClientError
 from sd_client import StableDiffusionClient, SDClientError
-from gif_to_svga.converter import gif_to_svga as convert_gif_to_svga, VALID_FPS as SVGA_VALID_FPS
+from gif_to_svga.converter import (
+    DEFAULT_MAX_BYTES,
+    gif_to_svga as convert_gif_to_svga,
+    VALID_FPS as SVGA_VALID_FPS,
+)
 from multi_size_export import (
     export_multi_sizes,
     load_output_sizes,
     normalize_product_type,
     sizes_config_path,
 )
+from layout_extend import export_layout_extend, list_layout_presets
 from product_design import (
     collect_reference_image_paths,
     count_project_assets,
@@ -47,6 +53,16 @@ from product_design import (
     typed_reference_dir,
 )
 from image_crop import crop_image_to_size
+from image_cutout import (
+    apply_cutout_mask,
+    build_ai_extract_prompt,
+    compute_extract_crop_bbox,
+    extract_subject_cutout,
+    has_rembg,
+    preferred_cutout_backend,
+    postprocess_ai_cutout_png,
+    save_extract_crop,
+)
 from gif_maker import make_breathing_gif
 
 
@@ -76,7 +92,7 @@ PROJECTS_DIR = pathlib.Path(os.environ.get("PROJECTS_DIR", str(BASE_DIR / "proje
 HISTORY_FILE = BASE_DIR / "history.json"
 
 
-def _load_env_file():
+def _load_env_file(overwrite: bool = False):
     env_path = BASE_DIR / ".env"
     if not env_path.exists():
         return
@@ -87,8 +103,18 @@ def _load_env_file():
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key and (overwrite or key not in os.environ):
             os.environ[key] = value
+
+
+def _reload_runtime_env():
+    """重新读取 .env，使修改 Key 后无需重启进程（开发模式）。"""
+    global LOVART_CREDENTIALS, LOVART_ACCESS_KEY, LOVART_SECRET_KEY, IMAGE_BACKEND
+    _load_env_file(overwrite=True)
+    LOVART_CREDENTIALS = load_lovart_credentials()
+    LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
+    LOVART_SECRET_KEY = LOVART_CREDENTIALS[0][1] if LOVART_CREDENTIALS else ""
+    IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "lovart").strip().lower()
 
 
 _load_env_file()
@@ -108,11 +134,12 @@ LOVART_QUALITY_HINT = os.environ.get(
     "适合手机屏幕与网页展示，宽度约1200到1536像素，细节清晰但不必4K",
 ).strip()
 LOVART_GENERATION_LOCK = threading.Lock()
+SMART_CUTOUT_JOB_DIR = UPLOAD_DIR / "smart_cutout_jobs"
 COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
 COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
 SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
 LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
-IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "auto").strip().lower()
+IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "lovart").strip().lower()
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -237,6 +264,7 @@ def call_kimi(messages, temperature=0.7, max_tokens=1000):
 DOUBAO_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
 DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
+DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
 
 
 def call_doubao(messages, temperature=0.7, max_tokens=1000):
@@ -624,6 +652,11 @@ def expand_prompt_from_summary(summary, project_meta=None):
 def _normalize_lovart_error(message):
     if not message:
         return message
+    if is_lovart_connection_error(message):
+        return (
+            f"无法连接 Lovart 服务器（{LOVART_BASE_URL}）。"
+            "请检查网络、VPN，或联系 IT 开放该域名后重试。"
+        )
     if "Concurrent task limit" in message:
         return (
             "Lovart 当前已有任务在生成，请等待上一张完成后再试；"
@@ -690,6 +723,9 @@ def call_lovart(
             if not error:
                 break
 
+            if is_lovart_connection_error(error):
+                break
+
             has_backup_key = cred_index + 1 < len(LOVART_CREDENTIALS)
             if is_lovart_limit_error(error) and has_backup_key:
                 print(
@@ -714,6 +750,26 @@ def call_lovart(
         break
 
     return None, last_error or "Lovart 生成失败"
+
+
+def check_lovart_reachable(timeout: int = 8) -> tuple[bool, str]:
+    """快速探测 Lovart API 是否可达（用于生图/智能提取前置检查）。"""
+    if not LOVART_CREDENTIALS:
+        return False, "未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY"
+    ak, sk = LOVART_CREDENTIALS[0]
+    client = LovartClient(
+        access_key=ak,
+        secret_key=sk,
+        base_url=LOVART_BASE_URL,
+        timeout=timeout,
+    )
+    try:
+        client.set_mode(unlimited=False)
+        return True, ""
+    except LovartError as e:
+        return False, _normalize_lovart_error(e.message)
+    except Exception as e:
+        return False, _normalize_lovart_error(str(e))
 
 
 # ─── 即梦 CLI 调用 ──────────────────────────────────────────────
@@ -772,10 +828,8 @@ def call_dreamina(mode, prompt, image_paths=None, model_version=None, resolution
 
 def _resolve_image_backend():
     backend = IMAGE_BACKEND
-    if backend == "auto":
-        if LOVART_CREDENTIALS:
-            return "lovart"
-        return "dreamina"
+    if backend in ("auto", ""):
+        return "lovart"
     return backend
 
 
@@ -1157,7 +1211,9 @@ def call_img2img_with_retry(
     ratio="1:1",
     max_retries=3,
     local_project=None,
+    image_backend=None,
 ):
+    backend = normalize_image_backend(image_backend)
     last_error = None
     for attempt in range(max_retries):
         try:
@@ -1167,6 +1223,7 @@ def call_img2img_with_retry(
                 image_paths=[str(input_path)],
                 ratio=ratio,
                 local_project=local_project,
+                image_backend=backend,
             )
             if image_url:
                 return image_url, None
@@ -1176,6 +1233,153 @@ def call_img2img_with_retry(
             last_error = str(e)
             print(f"[EDIT] 第{attempt + 1}次尝试异常: {last_error}")
     return None, last_error
+
+
+def run_ai_extract_subject(
+    input_path: pathlib.Path,
+    output_path: pathlib.Path,
+    roi_x: int,
+    roi_y: int,
+    roi_w: int,
+    roi_h: int,
+    prompt: str,
+    trim: bool = True,
+    local_project: Optional[str] = None,
+) -> dict:
+    """框选区域优先做真实抠图，失败时回退到 Lovart 兜底。"""
+    from PIL import Image
+
+    with Image.open(input_path) as im:
+        img_w, img_h = im.size
+    x, y, w, h = compute_extract_crop_bbox(img_w, img_h, roi_x, roi_y, roi_w, roi_h)
+    crop_path = UPLOAD_DIR / f"ai_extract_crop_{uuid.uuid4().hex[:12]}.png"
+    save_extract_crop(input_path, crop_path, x, y, w, h)
+    try:
+        try:
+            out_w, out_h, cutout_backend = extract_subject_cutout(crop_path, output_path, trim=trim)
+            return {
+                "width": out_w,
+                "height": out_h,
+                "roiX": x,
+                "roiY": y,
+                "roiWidth": w,
+                "roiHeight": h,
+                "extractMode": "cutout",
+                "imageBackend": cutout_backend,
+                "usedPrompt": bool((prompt or "").strip()),
+            }
+        except Exception as cutout_err:
+            if not LOVART_CREDENTIALS:
+                raise ValueError(f"智能抠图失败：{cutout_err}")
+            reachable, reach_err = check_lovart_reachable(timeout=8)
+            if not reachable:
+                raise ValueError(f"智能抠图失败：{cutout_err}；且无法连接 Lovart 兜底服务：{reach_err or '网络不可用'}")
+
+        ai_prompt = build_ai_extract_prompt(prompt)
+        ratio = bbox_to_ratio(w, h)
+        image_url, error = call_img2img_with_retry(
+            crop_path,
+            ai_prompt,
+            ratio=ratio,
+            max_retries=2,
+            local_project=local_project,
+        )
+        if not image_url:
+            raise ValueError(error or "智能抠图失败，且 Lovart 兜底未返回结果")
+
+        raw_path = UPLOAD_DIR / f"ai_extract_raw_{uuid.uuid4().hex[:12]}.png"
+        download_image(image_url, raw_path)
+        try:
+            out_w, out_h = postprocess_ai_cutout_png(raw_path, output_path, trim=trim)
+        finally:
+            try:
+                raw_path.unlink()
+            except OSError:
+                pass
+        return {
+            "width": out_w,
+            "height": out_h,
+            "roiX": x,
+            "roiY": y,
+            "roiWidth": w,
+            "roiHeight": h,
+            "extractMode": "ai_fallback",
+            "imageBackend": "lovart",
+            "usedPrompt": bool((prompt or "").strip()),
+        }
+    finally:
+        try:
+            crop_path.unlink()
+        except OSError:
+            pass
+
+
+def _write_smart_cutout_job(job_id: str, data: dict) -> None:
+    SMART_CUTOUT_JOB_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {"jobId": job_id, **data}
+    (SMART_CUTOUT_JOB_DIR / f"{job_id}.json").write_text(
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _read_smart_cutout_job(job_id: str) -> Optional[dict]:
+    path = SMART_CUTOUT_JOB_DIR / f"{job_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def _run_smart_cutout_job(
+    job_id: str,
+    input_path: pathlib.Path,
+    output_path: pathlib.Path,
+    roi_x: int,
+    roi_y: int,
+    roi_w: int,
+    roi_h: int,
+    prompt: str,
+    trim: bool,
+    local_project: Optional[str],
+) -> None:
+    try:
+        _reload_runtime_env()
+        meta = run_ai_extract_subject(
+            input_path,
+            output_path,
+            roi_x,
+            roi_y,
+            roi_w,
+            roi_h,
+            prompt,
+            trim=trim,
+            local_project=local_project,
+        )
+        _write_smart_cutout_job(job_id, {
+            "status": "done",
+            "ok": True,
+            "output_file": output_path.name,
+            "download_url": f"/outputs/{output_path.name}",
+            "fileSize": output_path.stat().st_size,
+            **meta,
+        })
+    except Exception as e:
+        print(f"[SMART-CUTOUT] 任务 {job_id} 失败: {e}")
+        import traceback
+        traceback.print_exc()
+        _write_smart_cutout_job(job_id, {
+            "status": "done",
+            "ok": False,
+            "error": str(e),
+        })
+    finally:
+        try:
+            input_path.unlink()
+        except OSError:
+            pass
 
 
 def edit_image_regions(base_path, regions, edit_type, keep_elements, ratio, local_project=None):
@@ -1314,7 +1518,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self._normalized_path()
         if path in ('/api/edit-image', '/edit-image', '/parse', '/api/analyze',
                     '/generate-variants', '/generate-with-prompt', '/upscale', '/api/gif-to-svga',
-                    '/api/multi-size-export', '/api/crop-image', '/api/make-breathing-gif'):
+                    '/api/multi-size-export', '/api/crop-image', '/api/magic-cutout',
+                    '/api/smart-cutout', '/api/make-breathing-gif', '/api/layout-extend'):
             self.send_response(204)
             self._send_cors_headers()
             self.end_headers()
@@ -1381,6 +1586,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "type": ptype,
                 "sizes": load_output_sizes(product_type=ptype),
             })
+        elif path == '/api/system-info':
+            self._handle_system_info()
+        elif path == '/api/smart-cutout/status':
+            self._handle_smart_cutout_status()
+        elif path == '/api/layout-extend/presets':
+            self._send_json({"presets": list_layout_presets()})
         elif path == '/api/design-types':
             params = self._query_params()
             project = urllib.parse.unquote(params.get("project", [""])[0])
@@ -1410,7 +1621,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/gif-to-svga': self._handle_gif_to_svga,
             '/api/multi-size-export': self._handle_multi_size_export,
             '/api/crop-image': self._handle_crop_image,
+            '/api/magic-cutout': self._handle_magic_cutout,
+            '/api/smart-cutout': self._handle_smart_cutout,
             '/api/make-breathing-gif': self._handle_make_breathing_gif,
+            '/api/layout-extend': self._handle_layout_extend,
         }
         handler = post_routes.get(path)
         if handler:
@@ -2042,6 +2256,259 @@ class Handler(http.server.BaseHTTPRequestHandler):
             traceback.print_exc()
             self._send_json({"error": str(e)})
 
+    def _handle_magic_cutout(self):
+        """魔棒选区抠图：蒙版白色区域变为透明"""
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传图片"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            img_field = fields.get("image")
+            mask_field = fields.get("mask")
+            if not img_field or not isinstance(img_field, dict):
+                self._send_json({"error": "请上传图片"})
+                return
+            if not mask_field or not isinstance(mask_field, dict):
+                self._send_json({"error": "请提供选区蒙版"})
+                return
+            job_id = uuid.uuid4().hex[:12]
+            ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                ext = ".png"
+            input_path = UPLOAD_DIR / f"cutout_src_{job_id}{ext}"
+            mask_path = UPLOAD_DIR / f"cutout_mask_{job_id}.png"
+            output_filename = f"cutout_{job_id}.png"
+            output_path = OUTPUT_DIR / output_filename
+            input_path.write_bytes(img_field["data"])
+            mask_path.write_bytes(mask_field["data"])
+            meta = apply_cutout_mask(input_path, mask_path, output_path)
+            self._send_json({
+                "ok": True,
+                "output_file": output_filename,
+                "download_url": f"/outputs/{output_filename}",
+                "fileSize": output_path.stat().st_size,
+                **meta,
+            })
+        except Exception as e:
+            print(f"[CUTOUT] 抠图失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
+    def _handle_system_info(self):
+        _reload_runtime_env()
+        self._send_json({
+            "lovartKeyCount": len(LOVART_CREDENTIALS),
+            "imageBackend": normalize_image_backend(),
+            "smartCutoutBackend": preferred_cutout_backend(),
+            "smartCutoutHasRembg": has_rembg(),
+            "smartCutoutAsync": True,
+            "lovartBaseUrl": LOVART_BASE_URL,
+        })
+
+    def _handle_smart_cutout_status(self):
+        params = self._query_params()
+        job_id = (params.get("job", [""])[0] or "").strip()
+        if not job_id:
+            self._send_json({"error": "缺少 job 参数"}, status=400)
+            return
+        job = _read_smart_cutout_job(job_id)
+        if not job:
+            self._send_json({"error": "任务不存在或已过期"}, status=404)
+            return
+        if job.get("status") == "running":
+            job_path = SMART_CUTOUT_JOB_DIR / f"{job_id}.json"
+            if job_path.exists():
+                age = time.time() - job_path.stat().st_mtime
+                if age > 480:
+                    job = {
+                        **job,
+                        "status": "done",
+                        "ok": False,
+                        "error": (
+                            f"任务超时（已等待 {int(age // 60)} 分钟）。"
+                            "可能是 Lovart 网络不通或生成过慢，请稍后重试。"
+                        ),
+                    }
+        self._send_json(job)
+
+    def _handle_smart_cutout(self):
+        """框选区域主体抠图为透明 PNG（优先本地抠图，必要时 Lovart 兜底）。"""
+        try:
+            _reload_runtime_env()
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传图片"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            img_field = fields.get("image")
+            if not img_field or not isinstance(img_field, dict):
+                self._send_json({"error": "请上传图片"})
+                return
+            prompt = str(fields.get("prompt", "") or "").strip()
+            try:
+                roi_x = int(str(fields.get("roi_x", "0")).strip())
+                roi_y = int(str(fields.get("roi_y", "0")).strip())
+                roi_w = int(str(fields.get("roi_w", "0")).strip())
+                roi_h = int(str(fields.get("roi_h", "0")).strip())
+            except ValueError:
+                self._send_json({"error": "选区参数格式无效"})
+                return
+            if roi_w < 12 or roi_h < 12:
+                self._send_json({"error": "请先在图片上框选要提取的区域（选区太小）"})
+                return
+            trim = str(fields.get("trim", "1")).strip().lower() not in ("0", "false", "no")
+            local_project = str(fields.get("local_project", "") or "").strip() or None
+            job_id = uuid.uuid4().hex[:12]
+            ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                ext = ".png"
+            input_path = UPLOAD_DIR / f"smart_cutout_src_{job_id}{ext}"
+            output_filename = f"smart_cutout_{job_id}.png"
+            output_path = OUTPUT_DIR / output_filename
+            input_path.write_bytes(img_field["data"])
+            _write_smart_cutout_job(job_id, {
+                "status": "running",
+                "message": "正在识别主体并去除背景，通常 5～20 秒…",
+            })
+            thread = threading.Thread(
+                target=_run_smart_cutout_job,
+                args=(
+                    job_id,
+                    input_path,
+                    output_path,
+                    roi_x,
+                    roi_y,
+                    roi_w,
+                    roi_h,
+                    prompt,
+                    trim,
+                    local_project,
+                ),
+                daemon=True,
+            )
+            thread.start()
+            self._send_json({
+                "ok": True,
+                "async": True,
+                "job_id": job_id,
+                "status_url": f"/api/smart-cutout/status?job={job_id}",
+            })
+        except Exception as e:
+            print(f"[SMART-CUTOUT] 智能提取失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
+    def _handle_layout_extend(self):
+        """规范延展：框选 Logo/IP，按模板合成多尺寸。"""
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传图片"})
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            img_field = fields.get("image")
+            if not img_field or not isinstance(img_field, dict):
+                self._send_json({"error": "请上传设计图"})
+                return
+            pack_id = str(fields.get("preset", "") or fields.get("pack_id", "") or "hll-banner-extend").strip()
+            try:
+                logo_x = int(str(fields.get("logo_x", "0")).strip())
+                logo_y = int(str(fields.get("logo_y", "0")).strip())
+                logo_w = int(str(fields.get("logo_w", "0")).strip())
+                logo_h = int(str(fields.get("logo_h", "0")).strip())
+                ip_x = int(str(fields.get("ip_x", "0")).strip())
+                ip_y = int(str(fields.get("ip_y", "0")).strip())
+                ip_w = int(str(fields.get("ip_w", "0")).strip())
+                ip_h = int(str(fields.get("ip_h", "0")).strip())
+            except ValueError:
+                self._send_json({"error": "Logo/IP 框选参数格式无效"})
+                return
+            if logo_w < 8 or logo_h < 8 or ip_w < 8 or ip_h < 8:
+                self._send_json({"error": "请分别框选 Logo 区域与 IP 主体区域"})
+                return
+            use_ai = str(fields.get("use_ai", "0")).strip().lower() in ("1", "true", "yes")
+            ai_fn = None
+            if use_ai:
+                _reload_runtime_env()
+                if LOVART_CREDENTIALS:
+                    local_project = str(fields.get("local_project", "") or "").strip() or None
+
+                    def ai_background_fn(src_img, meta):
+                        from PIL import Image
+
+                        tw, th = int(meta["width"]), int(meta["height"])
+                        tmp = UPLOAD_DIR / f"layout_ai_src_{uuid.uuid4().hex[:10]}.png"
+                        src_img.convert("RGBA").save(tmp, format="PNG")
+                        prompt = (
+                            f"将参考图延展为 {tw}x{th} 像素横竖比的设计背景，"
+                            "保持原图背景风格与色调一致，自然补边，不要新增文字或 Logo。"
+                        )
+                        ratio = bbox_to_ratio(tw, th)
+                        url, err = call_img2img_with_retry(
+                            tmp,
+                            prompt,
+                            ratio=ratio,
+                            max_retries=1,
+                            local_project=local_project,
+                        )
+                        try:
+                            tmp.unlink()
+                        except OSError:
+                            pass
+                        if not url:
+                            raise ValueError(err or "AI 阔图失败")
+                        raw = UPLOAD_DIR / f"layout_ai_out_{uuid.uuid4().hex[:10]}.png"
+                        download_image(url, raw)
+                        with Image.open(raw) as out:
+                            bg = out.convert("RGBA").resize((tw, th), Image.Resampling.LANCZOS)
+                        try:
+                            raw.unlink()
+                        except OSError:
+                            pass
+                        return bg
+
+                    ai_fn = ai_background_fn
+                else:
+                    print("[LAYOUT] 未配置 Lovart，AI 阔图回退为本地背景")
+
+            job_id = uuid.uuid4().hex[:12]
+            ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                ext = ".png"
+            input_path = UPLOAD_DIR / f"layout_src_{job_id}{ext}"
+            input_path.write_bytes(img_field["data"])
+            source_raw = fields.get("source_name", "") or img_field.get("filename", "")
+            result = export_layout_extend(
+                input_path,
+                OUTPUT_DIR,
+                job_id,
+                pack_id,
+                (logo_x, logo_y, logo_w, logo_h),
+                (ip_x, ip_y, ip_w, ip_h),
+                use_ai_background=bool(ai_fn),
+                ai_background_fn=ai_fn,
+                source_basename=str(source_raw),
+            )
+            try:
+                input_path.unlink()
+            except OSError:
+                pass
+            self._send_json({"ok": True, **result})
+        except Exception as e:
+            print(f"[LAYOUT-EXTEND] 规范延展失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)})
+
     def _handle_multi_size_export(self):
         """单图按产品版本预设尺寸导出（type=xdt 小灯塔 / type=hll 画啦啦）"""
         try:
@@ -2147,9 +2614,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._send_json({"error": "max_bytes 格式无效"})
                     return
             result = convert_gif_to_svga(input_path, output_path, fps=fps, max_bytes=max_bytes)
-            if not result.get("underLimit", True):
+            if not result.get("sizePreserved", True):
                 self._send_json({
-                    "error": f"无法在 1MB 限制内完成压缩（当前 {result['fileSize']} 字节），请缩短 GIF 或降低分辨率后重试",
+                    "error": (
+                        f"输出尺寸 {result.get('width')}×{result.get('height')} "
+                        f"与原图 {result.get('originalWidth')}×{result.get('originalHeight')} 不一致"
+                    ),
+                })
+                return
+            if not result.get("underLimit", True):
+                limit_mb = (result.get("maxBytes") or DEFAULT_MAX_BYTES) / (1024 * 1024)
+                self._send_json({
+                    "error": (
+                        f"在保持原尺寸 {result.get('originalWidth')}×{result.get('originalHeight')} 的前提下，"
+                        f"无法将 SVGA 压缩到 {limit_mb:.0f}MB 以内（当前约 {result.get('fileSize', 0) / 1024:.0f}KB）。"
+                        "请减少 GIF 帧数或简化画面后重试。"
+                    ),
                 })
                 return
             self._send_json({
@@ -2160,12 +2640,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "height": result["height"],
                 "originalWidth": result.get("originalWidth"),
                 "originalHeight": result.get("originalHeight"),
+                "sizePreserved": result.get("sizePreserved", False),
                 "totalFrames": result["totalFrames"],
                 "fps": result["fps"],
                 "version": result.get("version", "2.0.0"),
                 "fileSize": result.get("fileSize"),
                 "inputFileSize": result.get("inputFileSize"),
                 "underLimit": result.get("underLimit", True),
+                "framesReduced": result.get("framesReduced", False),
+                "originalFrameCount": result.get("originalFrameCount"),
+                "frameThinStep": result.get("frameThinStep", 1),
+                "frameNote": (
+                    f"为控制在 1MB 内，帧数由 {result.get('originalFrameCount')} 减至 {result.get('totalFrames')}"
+                    if result.get("framesReduced")
+                    else None
+                ),
             })
         except Exception as e:
             print(f"[GIF2SVGA] 转换失败: {e}")

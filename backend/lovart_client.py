@@ -74,6 +74,26 @@ def is_lovart_limit_error(message: str) -> bool:
     return any(marker in lower for marker in markers)
 
 
+def is_lovart_connection_error(message: str) -> bool:
+    """网络不可达、连接超时等不应反复重试。"""
+    if not message:
+        return False
+    markers = (
+        "连接 lovart 失败",
+        "timed out",
+        "timeout",
+        "errno 60",
+        "errno 51",
+        "network is unreachable",
+        "connection refused",
+        "nodename nor servname",
+        "getaddrinfo failed",
+        "certificate verify failed",
+    )
+    lower = message.lower()
+    return any(marker in lower for marker in markers)
+
+
 def mask_access_key(access_key: str) -> str:
     if len(access_key) <= 10:
         return f"{access_key[:4]}…"
@@ -93,6 +113,10 @@ class LovartClient:
         self.access_key = access_key
         self.secret_key = secret_key
         self.timeout = timeout
+        self.connect_timeout = max(
+            5,
+            int(os.environ.get("LOVART_CONNECT_TIMEOUT", "15")),
+        )
         self.poll_interval = poll_interval
         self.prefix = "/v1/openapi"
         self._ssl_ctx = make_ssl_context()
@@ -124,7 +148,9 @@ class LovartClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_ctx) as resp:
+            with urllib.request.urlopen(
+                req, timeout=self.timeout, context=self._ssl_ctx
+            ) as resp:
                 result = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             err = e.read().decode()
@@ -137,7 +163,7 @@ class LovartClient:
                 raise LovartError(msg, e.code)
             except (json.JSONDecodeError, KeyError):
                 raise LovartError(f"HTTP {e.code}: {err}", e.code) from e
-        except (urllib.error.URLError, ssl.SSLError, OSError) as e:
+        except (urllib.error.URLError, ssl.SSLError, TimeoutError, OSError) as e:
             raise LovartError(f"连接 Lovart 失败: {e}") from e
 
         if isinstance(result, dict) and result.get("code", 0) != 0:
@@ -227,10 +253,14 @@ class LovartClient:
             headers=headers,
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_ctx) as resp:
+            with urllib.request.urlopen(
+                req, timeout=self.timeout, context=self._ssl_ctx
+            ) as resp:
                 result = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             raise LovartError(f"上传参考图失败: {e.read().decode()}", e.code) from e
+        except (urllib.error.URLError, ssl.SSLError, TimeoutError, OSError) as e:
+            raise LovartError(f"连接 Lovart 失败: {e}") from e
 
         if result.get("code") != 0:
             raise LovartError(result.get("message", "上传参考图失败"))

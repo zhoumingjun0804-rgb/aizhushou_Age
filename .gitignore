@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 .dev-server.pid
 .dev-server.log
+.DS_Store
+GITHUB_SSH_KEY.txt
+history.json
