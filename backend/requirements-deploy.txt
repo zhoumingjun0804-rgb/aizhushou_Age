@@ -1,0 +1,10 @@
+# 生产/旧 Linux 部署用的基础依赖。
+# rembg / onnxruntime / playwright 由 deploy.sh 按系统兼容性单独安装，
+# 避免 CentOS 7 在基础安装阶段因 greenlet / glibc 问题直接失败。
+beautifulsoup4
+certifi
+lxml
+Pillow
+watchdog
+protobuf
+psd-tools
