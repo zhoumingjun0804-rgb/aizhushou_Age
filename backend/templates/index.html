@@ -115,6 +115,26 @@
             transform: translate(-50%, -50%); background: #a78bfa; color: #1a1a3e; border-radius: 50%;
             width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
         .project-images-grid .select-hint { font-size: 11px; color: rgba(255,255,255,0.4); width: 100%; text-align: center; }
+        .ref-preview-btn { position: absolute; right: 2px; bottom: 2px; width: 22px; height: 22px; padding: 0;
+            border: none; border-radius: 6px; cursor: pointer; font-size: 12px; line-height: 1;
+            background: rgba(15,12,41,0.85); color: #e9d5ff; opacity: 0; transition: opacity 0.2s;
+            display: flex; align-items: center; justify-content: center; }
+        .img-thumb-wrap:hover .ref-preview-btn,
+        .uploaded-thumb-wrap:hover .ref-preview-btn { opacity: 1; }
+        .ref-preview-btn:hover { background: rgba(139,92,246,0.95); }
+        .ref-preview-overlay { display: none; position: fixed; inset: 0; z-index: 10000;
+            background: rgba(0,0,0,0.82); align-items: center; justify-content: center; padding: 24px; }
+        .ref-preview-overlay.active { display: flex; }
+        .ref-preview-dialog { position: relative; max-width: min(92vw, 960px); max-height: 90vh;
+            display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .ref-preview-dialog img { max-width: 100%; max-height: calc(90vh - 48px); object-fit: contain;
+            border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+        .ref-preview-caption { font-size: 13px; color: rgba(255,255,255,0.65); text-align: center; max-width: 100%;
+            word-break: break-all; }
+        .ref-preview-close { position: absolute; top: -12px; right: -12px; width: 36px; height: 36px;
+            border: none; border-radius: 50%; cursor: pointer; font-size: 22px; line-height: 1;
+            background: rgba(255,255,255,0.15); color: #fff; }
+        .ref-preview-close:hover { background: rgba(167,139,250,0.8); }
         
         /* 上传参考图 */
         .upload-ref-section { margin-top: 12px; padding: 14px;
@@ -130,7 +150,10 @@
         .uploaded-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         .uploaded-thumb-wrap { position: relative; }
         .uploaded-thumb { width: 60px; height: 60px; border-radius: 8px;
-            object-fit: cover; border: 2px solid rgba(168,85,247,0.5); }
+            object-fit: cover; border: 2px solid rgba(168,85,247,0.5); cursor: pointer; }
+        .uploaded-thumb-remove { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px;
+            border-radius: 50%; background: #ef4444; color: #fff; font-size: 12px; line-height: 18px;
+            text-align: center; cursor: pointer; }
         
         /* 需求表单 */
         .requirement-form { margin-bottom: 16px; padding: 16px; background: rgba(255,255,255,0.03); border-radius: 14px;
@@ -1451,7 +1474,7 @@ async function loadProjectImages(projectName, designType, grid) {
             return;
         }
 
-        grid.innerHTML = '<span class="select-hint">点击选择参考图（最多10张）：</span>';
+        grid.innerHTML = '<span class="select-hint">点击缩略图选择（最多10张），悬停点 🔍 可预览大图：</span>';
         grid.classList.add('active');
 
         images.forEach(function(imgName) {
@@ -1472,7 +1495,18 @@ async function loadProjectImages(projectName, designType, grid) {
             }
             img.onerror = function() { this.style.display = 'none'; };
 
+            var previewBtn = document.createElement('button');
+            previewBtn.type = 'button';
+            previewBtn.className = 'ref-preview-btn';
+            previewBtn.title = '预览大图';
+            previewBtn.textContent = '🔍';
+            previewBtn.onclick = function(ev) {
+                ev.stopPropagation();
+                openRefImagePreview(img.src, imgName);
+            };
+
             wrap.appendChild(img);
+            wrap.appendChild(previewBtn);
             grid.appendChild(wrap);
         });
     } catch(e) {
@@ -1486,6 +1520,26 @@ function referenceImageKey(projectName, designType, imgName) {
         return projectName + '/types/' + designType + '/' + imgName;
     }
     return projectName + '/' + imgName;
+}
+
+function openRefImagePreview(src, caption) {
+    var modal = document.getElementById('refImagePreviewModal');
+    var imgEl = document.getElementById('refImagePreviewImg');
+    var capEl = document.getElementById('refImagePreviewCaption');
+    if (!modal || !imgEl) return;
+    imgEl.src = src;
+    if (capEl) capEl.textContent = caption || '';
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeRefImagePreview() {
+    var modal = document.getElementById('refImagePreviewModal');
+    var imgEl = document.getElementById('refImagePreviewImg');
+    if (!modal) return;
+    modal.classList.remove('active');
+    if (imgEl) imgEl.src = '';
+    document.body.style.overflow = '';
 }
 
 function toggleProjectImage(el, projectName, designType, imgName) {
@@ -1536,14 +1590,29 @@ function renderUploadedPreviews() {
             var img = document.createElement('img');
             img.className = 'uploaded-thumb';
             img.src = dataUrl;
+            img.title = '预览大图';
+            img.onclick = function() {
+                openRefImagePreview(dataUrl, '上传参考图 ' + (idx + 1));
+            };
+            var previewBtn = document.createElement('button');
+            previewBtn.type = 'button';
+            previewBtn.className = 'ref-preview-btn';
+            previewBtn.title = '预览大图';
+            previewBtn.textContent = '🔍';
+            previewBtn.onclick = function(ev) {
+                ev.stopPropagation();
+                openRefImagePreview(dataUrl, '上传参考图 ' + (idx + 1));
+            };
             var btn = document.createElement('div');
             btn.className = 'uploaded-thumb-remove';
             btn.textContent = '×';
-            btn.onclick = function() {
+            btn.onclick = function(ev) {
+                ev.stopPropagation();
                 uploadedRefImages.splice(idx, 1);
                 renderUploadedPreviews();
             };
             wrap.appendChild(img);
+            wrap.appendChild(previewBtn);
             wrap.appendChild(btn);
             container.appendChild(wrap);
         })(i, uploadedRefImages[i]);
@@ -4249,6 +4318,18 @@ async function generateBreathingGif() {
         updateGifGenBtnState();
     }
 }
+</script>
+<div id="refImagePreviewModal" class="ref-preview-overlay" onclick="if (event.target === this) closeRefImagePreview()">
+    <div class="ref-preview-dialog">
+        <button type="button" class="ref-preview-close" onclick="closeRefImagePreview()" aria-label="关闭">×</button>
+        <img id="refImagePreviewImg" src="" alt="参考图预览">
+        <p id="refImagePreviewCaption" class="ref-preview-caption"></p>
+    </div>
+</div>
+<script>
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeRefImagePreview();
+});
 </script>
 </body>
 </html>
