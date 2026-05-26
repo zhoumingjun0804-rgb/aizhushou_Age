@@ -170,6 +170,7 @@
         .keyword-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .keyword-header span:first-child { font-size: 14px; font-weight: 600; color: #a78bfa; }
         .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); }
+        .keyword-hint.warn { color: #fbbf24; }
         .keyword-textarea { width: 100%; min-height: 80px; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
                             font-size: 14px; line-height: 1.6; resize: vertical; background: rgba(255,255,255,0.04);
                             color: rgba(255,255,255,0.85);
@@ -679,7 +680,7 @@
                 <div class="keyword-section" id="keywordSection" style="display:none">
                     <div class="keyword-header">
                         <span>📝 AI 分析的关键词</span>
-                        <span class="keyword-hint">可修改，或重新分析换一版</span>
+                        <span class="keyword-hint" id="keywordSourceHint">可修改，或重新分析换一版</span>
                     </div>
                     <textarea id="keywordInput" class="keyword-textarea" placeholder="点击上方按钮生成关键词..."></textarea>
                     <div class="keyword-actions">
@@ -1625,6 +1626,8 @@ async function analyzeKeyword() {
     }
 
     var keywordSection = document.getElementById('keywordSection');
+    var isReanalyze = keywordSection.style.display !== 'none';
+    var sourceHint = document.getElementById('keywordSourceHint');
     
     var summary = {
         '设计类型': designType,
@@ -1652,6 +1655,7 @@ async function analyzeKeyword() {
         var formData = new FormData();
         formData.append('summary', JSON.stringify(summary));
         formData.append('project', currentProject ? currentProject.name : '');
+        if (isReanalyze) formData.append('regenerate', '1');
         appendProjectContext(formData);
         
         var res = await fetch('/api/analyze', { method: 'POST', body: formData });
@@ -1664,6 +1668,16 @@ async function analyzeKeyword() {
         
         keywordSection.style.display = 'block';
         document.getElementById('keywordInput').value = data.prompt || '';
+        if (sourceHint) {
+            if (data.source === 'fallback') {
+                sourceHint.textContent = data.warning || '当前为规则拼接，未走大模型';
+                sourceHint.classList.add('warn');
+            } else {
+                var modelLabel = data.model || data.provider || 'llm';
+                sourceHint.textContent = '大模型润色 · ' + modelLabel + (isReanalyze ? ' · 已换一版' : '');
+                sourceHint.classList.remove('warn');
+            }
+        }
         
         if (analyzeBtn) analyzeBtn.style.display = 'none';
         

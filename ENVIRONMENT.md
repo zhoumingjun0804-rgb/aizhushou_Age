@@ -235,6 +235,22 @@ curl -I https://lgw.lovart.ai -x http://proxy.example.com:1080
 
 未配置时仍可使用，但「AI 分析关键词」会走本地规则拼接。
 
+**公司 TokenHub / AgentHub（推荐）**：入口 [https://agenthub.vipthink.cn/](https://agenthub.vipthink.cn/)，扫码登录 → 创建 Key → 写入：
+
+```bash
+DEEPSEEK_API_KEY=sk-user-你的Key
+DEEPSEEK_BASE_URL=https://agenthub.vipthink.cn
+# 模型 ID 须与 AgentHub 列表一致，例如 claude-haiku-4-5-20251001（不是简称 claude-haiku-4-5）
+DEEPSEEK_MODEL=claude-haiku-4-5-20251001
+```
+
+说明：
+
+- 环境变量名 `DEEPSEEK_*` 是历史命名，实际可走 Claude / GPT 等任意 AgentHub 已开通模型。
+- **不要用公网 `https://dtok.ai`**：公司发的 `sk-user-...` 只在 AgentHub 网关有效，填 `dtok.ai` 会 `401 Invalid token` 并降级为本地规则拼接（每次结果一样）。
+- **居家 / 外网**需先连公司 VPN，再访问 AgentHub 与本服务。
+- `DEEPSEEK_BASE_URL` 不要带 `/v1` 后缀（程序会自动拼接 `/v1/chat/completions`）。
+
 ---
 
 ## 目录结构（运行时自动创建）

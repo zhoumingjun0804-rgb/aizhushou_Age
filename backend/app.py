@@ -109,12 +109,46 @@ def _load_env_file(overwrite: bool = False):
 
 def _reload_runtime_env():
     """重新读取 .env，使修改 Key 后无需重启进程（开发模式）。"""
-    global LOVART_CREDENTIALS, LOVART_ACCESS_KEY, LOVART_SECRET_KEY, IMAGE_BACKEND
+    global LOVART_CREDENTIALS, LOVART_ACCESS_KEY, LOVART_SECRET_KEY, LOVART_BASE_URL
+    global LOVART_POLL_TIMEOUT, LOVART_MAX_CONCURRENCY, LOVART_TASK_RETRY
+    global LOVART_TASK_RETRY_WAIT, LOVART_MODE, LOVART_QUALITY_HINT, IMAGE_BACKEND
+    global COMFYUI_API_URL, COMFYUI_CHECKPOINT, SD_API_URL, LOCAL_GENERATION_TIMEOUT
+    global DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    global QIANWEN_API_KEY, QIANWEN_BASE_URL, QIANWEN_MODEL
+    global KIMI_API_KEY, KIMI_BASE_URL, KIMI_MODEL
+    global DOUBAO_API_KEY, DOUBAO_BASE_URL, DOUBAO_MODEL, DOUBAO_VISION_MODEL
     _load_env_file(overwrite=True)
     LOVART_CREDENTIALS = load_lovart_credentials()
     LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
     LOVART_SECRET_KEY = LOVART_CREDENTIALS[0][1] if LOVART_CREDENTIALS else ""
+    LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai").strip()
+    LOVART_POLL_TIMEOUT = int(os.environ.get("LOVART_POLL_TIMEOUT", "300"))
+    LOVART_MAX_CONCURRENCY = max(1, int(os.environ.get("LOVART_MAX_CONCURRENCY", "1")))
+    LOVART_TASK_RETRY = max(1, int(os.environ.get("LOVART_TASK_RETRY", "5")))
+    LOVART_TASK_RETRY_WAIT = max(5, int(os.environ.get("LOVART_TASK_RETRY_WAIT", "15")))
+    LOVART_MODE = os.environ.get("LOVART_MODE", "fast").strip() or "fast"
+    LOVART_QUALITY_HINT = os.environ.get(
+        "LOVART_QUALITY_HINT",
+        "适合手机屏幕与网页展示，宽度约1200到1536像素，细节清晰但不必4K",
+    ).strip()
     IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "lovart").strip().lower()
+    COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
+    COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
+    SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
+    LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
+    DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+    QIANWEN_API_KEY = os.environ.get("QIANWEN_API_KEY", "")
+    QIANWEN_BASE_URL = os.environ.get("QIANWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    QIANWEN_MODEL = os.environ.get("QIANWEN_MODEL", "qwen-plus")
+    KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
+    KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
+    KIMI_MODEL = os.environ.get("KIMI_MODEL", "moonshot-v1-8k")
+    DOUBAO_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
+    DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+    DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
+    DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
 
 
 _load_env_file()
@@ -647,6 +681,106 @@ def expand_prompt_from_summary(summary, project_meta=None):
     return "，".join(deduped)
 
 
+ANALYZE_SYSTEM_PROMPT = """你是专业的视觉设计助手，擅长将设计需求转化为适合AI绘图的提示词。
+
+你的任务：
+1. 理解用户的设计需求（设计类型、标题、画面描述、排版要求等）
+2. 重点结合主标题与副标题的语义进行联想扩写，补充主体、配色、风格、构图、氛围
+3. 当主副标题内容相同或相近时，不要机械重复文案，而是综合两者延展画面与情绪
+4. 必须让主标题和副标题的文字内容出现在成图提示中，确保设计图能展示这些标题
+5. 优化为简洁的提示词，适合 AI 绘图
+6. 必要时补充缺失元素（如未指定配色，则根据标题主题推荐合适的配色方案）
+
+输出格式要求：
+- 直接输出优化后的提示词，不要解释
+- 中英文混合，关键词用逗号分隔
+- 风格标签放在前面，如：扁平插画风格、3D立体风格、中国风插画
+- **主标题内容必须包含在提示词中**，如：标题文字“暑期班火热招生中”
+- **副标题内容如有则包含**，如：副标题“限时优惠 前50名8折”
+- 主体元素放在中间
+- 氛围和细节放在后面
+
+示例输出：
+扁平插画风格,少儿教育海报,标题文字"暑期班火热招生中",副标题"限时优惠",蓝色橙色配色,可爱卡通角色,数学符号元素,简洁排版,活泼有趣氛围
+3D立体风格,产品宣传图,标题"新品首发",紫色渐变背景,科技感光效,现代简约构图,专业商务氛围"""
+
+
+def _primary_llm_provider_label():
+    base = (DEEPSEEK_BASE_URL or "").lower()
+    if "dtok.ai" in base:
+        return "dtok"
+    return "deepseek"
+
+
+def analyze_prompt_from_summary(summary, project_meta=None, regenerate=False):
+    """调用 LLM 润色提示词；全部失败时降级为本地规则拼接。
+
+    返回 (prompt, source, provider, model, warning)
+    source: llm | fallback
+    """
+    user_parts = []
+    if summary.get("设计类型"):
+        user_parts.append(f"设计类型：{summary['设计类型']}")
+    if summary.get("主标题"):
+        user_parts.append(f"主标题：{summary['主标题']}")
+    if summary.get("副标题"):
+        user_parts.append(f"副标题：{summary['副标题']}")
+    if summary.get("风格"):
+        user_parts.append(f"风格：{summary['风格']}")
+    if summary.get("画面描述"):
+        user_parts.append(f"画面描述：{summary['画面描述']}")
+    if summary.get("排版参考"):
+        user_parts.append(f"排版参考：{summary['排版参考']}")
+    if summary.get("补充备注"):
+        user_parts.append(f"补充备注：{summary['补充备注']}")
+    if project_meta and project_meta.get("style_tags"):
+        user_parts.append(f"品牌风格要求：{', '.join(project_meta['style_tags'])}")
+    user_parts.append("请结合主标题与副标题共同扩写画面关键词，避免只重复标题文字。")
+    if regenerate:
+        user_parts.append(
+            "请给出一版与常见模板不同的新表述变体，可调整配色、构图与氛围词，但必须保留主副标题文案。"
+        )
+
+    user_message = "\n".join(user_parts) if user_parts else "请帮我生成通用的设计提示词"
+    messages = [
+        {"role": "system", "content": ANALYZE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
+    temperature = 0.85 if regenerate else 0.7
+    last_error = ""
+
+    ai_prompt, error = call_deepseek(messages, temperature=temperature, max_tokens=500)
+    if not error:
+        print(f"[{_primary_llm_provider_label()}] AI 输出: {ai_prompt}")
+        return (ai_prompt or "").strip(), "llm", _primary_llm_provider_label(), DEEPSEEK_MODEL, None
+    last_error = error
+    print(f"[DeepSeek Error] {error}, 尝试千问...")
+
+    ai_prompt, error2 = call_qianwen(messages, temperature=temperature, max_tokens=500)
+    if not error2:
+        print(f"[千问] AI 输出: {ai_prompt}")
+        return (ai_prompt or "").strip(), "llm", "qianwen", QIANWEN_MODEL, None
+    last_error = error2
+    print(f"[千问 Error] {error2}, 尝试Kimi...")
+
+    ai_prompt, error3 = call_kimi(messages, temperature=temperature, max_tokens=500)
+    if not error3:
+        print(f"[Kimi] AI 输出: {ai_prompt}")
+        return (ai_prompt or "").strip(), "llm", "kimi", KIMI_MODEL, None
+    last_error = error3
+    print(f"[Kimi Error] {error3}, 尝试豆包...")
+
+    ai_prompt, error4 = call_doubao(messages, temperature=temperature, max_tokens=500)
+    if not error4:
+        print(f"[豆包] AI 输出: {ai_prompt}")
+        return (ai_prompt or "").strip(), "llm", "doubao", DOUBAO_MODEL, None
+
+    last_error = error4
+    print(f"[豆包 Error] {error4}, 降级到简单拼接")
+    fallback = expand_prompt_from_summary(summary, project_meta)
+    detail = (last_error or "未知错误")[:160]
+    warning = f"大模型不可用（{detail}），已使用本地规则拼接。请检查 .env 中的 Key 与模型名。"
+    return fallback, "fallback", "local", "", warning
 
 
 def _normalize_lovart_error(message):
@@ -1830,6 +1964,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _handle_analyze(self):
         """分析需求，返回关键词（调用 DeepSeek AI 分析）"""
+        _reload_runtime_env()
         content_type = self.headers.get('Content-Type', '')
 
         if 'multipart/form-data' in content_type:
@@ -1849,90 +1984,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         # 获取项目元数据
         project_meta = get_project_meta(project) if project else None
+        regenerate = str(fields.get("regenerate", "0")).strip().lower() in ("1", "true", "yes")
 
-        # 构建 DeepSeek 提示词
-        system_prompt = """你是专业的视觉设计助手，擅长将设计需求转化为适合AI绘图的提示词。
+        ai_prompt, source, provider, model, warning = analyze_prompt_from_summary(
+            summary,
+            project_meta,
+            regenerate=regenerate,
+        )
 
-你的任务：
-1. 理解用户的设计需求（设计类型、标题、画面描述、排版要求等）
-2. 重点结合主标题与副标题的语义进行联想扩写，补充主体、配色、风格、构图、氛围
-3. 当主副标题内容相同或相近时，不要机械重复文案，而是综合两者延展画面与情绪
-4. 必须让主标题和副标题的文字内容出现在成图提示中，确保设计图能展示这些标题
-5. 优化为简洁的提示词，适合 AI 绘图
-6. 必要时补充缺失元素（如未指定配色，则根据标题主题推荐合适的配色方案）
-
-输出格式要求：
-- 直接输出优化后的提示词，不要解释
-- 中英文混合，关键词用逗号分隔
-- 风格标签放在前面，如：扁平插画风格、3D立体风格、中国风插画
-- **主标题内容必须包含在提示词中**，如：标题文字“暑期班火热招生中”
-- **副标题内容如有则包含**，如：副标题“限时优惠 前50名8折”
-- 主体元素放在中间
-- 氛围和细节放在后面
-
-示例输出：
-扁平插画风格,少儿教育海报,标题文字"暑期班火热招生中",副标题"限时优惠",蓝色橙色配色,可爱卡通角色,数学符号元素,简洁排版,活泼有趣氛围
-3D立体风格,产品宣传图,标题"新品首发",紫色渐变背景,科技感光效,现代简约构图,专业商务氛围"""
-
-        # 构建用户消息
-        user_parts = []
-        if summary.get("设计类型"):
-            user_parts.append(f"设计类型：{summary['设计类型']}")
-        if summary.get("主标题"):
-            user_parts.append(f"主标题：{summary['主标题']}")
-        if summary.get("副标题"):
-            user_parts.append(f"副标题：{summary['副标题']}")
-        if summary.get("风格"):
-            user_parts.append(f"风格：{summary['风格']}")
-        if summary.get("画面描述"):
-            user_parts.append(f"画面描述：{summary['画面描述']}")
-        if summary.get("排版参考"):
-            user_parts.append(f"排版参考：{summary['排版参考']}")
-        if summary.get("补充备注"):
-            user_parts.append(f"补充备注：{summary['补充备注']}")
-        
-        # 添加项目风格标签
-        if project_meta and project_meta.get("style_tags"):
-            user_parts.append(f"品牌风格要求：{', '.join(project_meta['style_tags'])}")
-        
-        user_parts.append("请结合主标题与副标题共同扩写画面关键词，避免只重复标题文字。")
-        user_message = "\n".join(user_parts) if user_parts else "请帮我生成通用的设计提示词"
-        
-        # 调用 DeepSeek API
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ]
-        
-        # 五级 fallback: DeepSeek → 千问 → Kimi → 豆包 → 简单拼接
-        ai_prompt, error = call_deepseek(messages, temperature=0.7, max_tokens=500)
-        
-        if error:
-            print(f"[DeepSeek Error] {error}, 尝试千问...")
-            ai_prompt, error2 = call_qianwen(messages, temperature=0.7, max_tokens=500)
-            
-            if error2:
-                print(f"[千问 Error] {error2}, 尝试Kimi...")
-                ai_prompt, error3 = call_kimi(messages, temperature=0.7, max_tokens=500)
-                
-                if error3:
-                    print(f"[Kimi Error] {error3}, 尝试豆包...")
-                    ai_prompt, error4 = call_doubao(messages, temperature=0.7, max_tokens=500)
-                    
-                    if error4:
-                        print(f"[豆包 Error] {error4}, 降级到简单拼接")
-                        ai_prompt = expand_prompt_from_summary(summary, project_meta)
-                    else:
-                        print(f"[豆包] AI 输出: {ai_prompt}")
-                else:
-                    print(f"[Kimi] AI 输出: {ai_prompt}")
-            else:
-                print(f"[千问] AI 输出: {ai_prompt}")
-        else:
-            print(f"[DeepSeek] AI 输出: {ai_prompt}")
-        
-        print(f"[用户输入] {user_message[:100]}...")
-        self._send_json({"prompt": ai_prompt})
+        payload = {
+            "prompt": ai_prompt,
+            "source": source,
+            "provider": provider,
+        }
+        if model:
+            payload["model"] = model
+        if warning:
+            payload["warning"] = warning
+        self._send_json(payload)
 
     def _handle_generate_with_prompt(self):
         """使用已有的prompt直接生成图片"""

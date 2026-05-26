@@ -1,5 +1,18 @@
 [
   {
+    "id": "0cae8cfa",
+    "timestamp": "2026-05-26T15:50:16",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"今天天气真好\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "project": "小灯塔",
+    "output_images": [
+      "variant_2ab9eb1715c5475abe94013f78fc6ab8.png",
+      "variant_74ec72d6b6d34634926709c7cf670f88.png",
+      "variant_9adb7a315cb240a79c0f320fb7db22bf.png"
+    ],
+    "variants_count": 3
+  },
+  {
     "id": "e3755227",
     "timestamp": "2026-05-22T17:19:41",
     "mode": "img2img",
