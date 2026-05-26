@@ -186,6 +186,15 @@
         .generate-btn:hover { box-shadow: 0 6px 24px rgba(52,211,153,0.5); transform: translateY(-2px); }
         .generate-btn:active { transform: translateY(0); }
         .generate-btn:disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; transform: none; box-shadow: none; }
+        .keyword-actions { display: flex; gap: 10px; margin-top: 12px; }
+        .keyword-actions .generate-btn { flex: 1; margin-top: 0; }
+        .reanalyze-btn { padding: 14px 16px; font-size: 14px; flex-shrink: 0;
+                          border: 1px solid rgba(167,139,250,0.45); border-radius: 12px; cursor: pointer;
+                          background: rgba(139,92,246,0.12); color: #c4b5fd; font-weight: 600;
+                          transition: background 0.2s, border-color 0.2s, transform 0.2s; }
+        .reanalyze-btn:hover { background: rgba(139,92,246,0.22); border-color: rgba(167,139,250,0.65); transform: translateY(-1px); }
+        .reanalyze-btn:active { transform: translateY(0); }
+        .reanalyze-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
         
         /* 加载状态 */
         .loading-card { display: none; text-align: center; padding: 24px; }
@@ -664,16 +673,19 @@
                 </div>
                 
                 <!-- 分析需求按钮 -->
-                <button class="analyze-btn" onclick="analyzeKeyword()">🔍 AI 分析关键词</button>
+                <button class="analyze-btn" id="analyzeBtn" onclick="analyzeKeyword()">🔍 AI 分析关键词</button>
                 
                 <!-- 关键词展示区域（默认隐藏） -->
                 <div class="keyword-section" id="keywordSection" style="display:none">
                     <div class="keyword-header">
                         <span>📝 AI 分析的关键词</span>
-                        <span class="keyword-hint">可手动修改后生成</span>
+                        <span class="keyword-hint">可修改，或重新分析换一版</span>
                     </div>
                     <textarea id="keywordInput" class="keyword-textarea" placeholder="点击上方按钮生成关键词..."></textarea>
-                    <button class="generate-btn" onclick="generateWithKeyword()">✨ 生成魔法图</button>
+                    <div class="keyword-actions">
+                        <button type="button" class="reanalyze-btn" id="reanalyzeBtn" onclick="analyzeKeyword()">🔄 重新分析</button>
+                        <button type="button" class="generate-btn" onclick="generateWithKeyword()">✨ 生成魔法图</button>
+                    </div>
                 </div>
             </div>
             
@@ -1602,7 +1614,7 @@ function updateMatchedRatio() {
 document.getElementById('customWidth').addEventListener('input', updateMatchedRatio);
 document.getElementById('customHeight').addEventListener('input', updateMatchedRatio);
 
-// 分析关键词
+// 分析关键词（首次分析与「重新分析」共用）
 async function analyzeKeyword() {
     var designType = getDesignTypeLabel();
     var mainTitle = document.getElementById('mainTitle').value.trim();
@@ -1611,6 +1623,8 @@ async function analyzeKeyword() {
         alert('请填写主标题');
         return;
     }
+
+    var keywordSection = document.getElementById('keywordSection');
     
     var summary = {
         '设计类型': designType,
@@ -1622,9 +1636,17 @@ async function analyzeKeyword() {
         '补充备注': document.getElementById('extraNotes').value.trim()
     };
     
+    var analyzeBtn = document.getElementById('analyzeBtn');
+    var reanalyzeBtn = document.getElementById('reanalyzeBtn');
+    var reanalyzeLabel = reanalyzeBtn ? reanalyzeBtn.textContent : '';
+
     document.getElementById('loadingCard').style.display = 'block';
     document.querySelector('.loading-text').textContent = 'AI 正在分析关键词...';
-    document.querySelector('.analyze-btn').disabled = true;
+    if (analyzeBtn) analyzeBtn.disabled = true;
+    if (reanalyzeBtn) {
+        reanalyzeBtn.disabled = true;
+        reanalyzeBtn.textContent = '分析中…';
+    }
     
     try {
         var formData = new FormData();
@@ -1640,19 +1662,21 @@ async function analyzeKeyword() {
             return;
         }
         
-        // 显示关键词区域，填充内容
-        document.getElementById('keywordSection').style.display = 'block';
+        keywordSection.style.display = 'block';
         document.getElementById('keywordInput').value = data.prompt || '';
         
-        // 隐藏分析按钮，显示关键词区域
-        document.querySelector('.analyze-btn').style.display = 'none';
+        if (analyzeBtn) analyzeBtn.style.display = 'none';
         
     } catch(e) {
         alert('分析请求失败: ' + e.message);
     }
     
     document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.analyze-btn').disabled = false;
+    if (analyzeBtn) analyzeBtn.disabled = false;
+    if (reanalyzeBtn) {
+        reanalyzeBtn.disabled = false;
+        reanalyzeBtn.textContent = reanalyzeLabel || '🔄 重新分析';
+    }
 }
 
 // 使用关键词生成图片

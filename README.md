@@ -19,7 +19,7 @@ AI 视觉设计助手：根据需求描述生成/变体图片，支持局部修�
 | 项目 | 要求 |
 |------|------|
 | Python | **3.10+**（推荐 3.12；不支持 3.8/3.9） |
-| Node.js | **不需要** |
+| Node.js | 本机 `./start.sh` 不需要；**服务器 PM2 部署**需 Node（`deploy.sh` 可自动安装） |
 | 操作系统 | macOS / Linux（macOS 上部分图片处理能力更完整） |
 
 更详细的版本切换、依赖说明与 FAQ 见 [ENVIRONMENT.md](./ENVIRONMENT.md)。
@@ -44,6 +44,55 @@ chmod +x start.sh dev.sh
 ```
 
 启动成功后，在浏览器打开终端打印的地址（默认 `http://localhost:8000`；端口被占用时会自动尝试 8001、8002…）。
+
+## 服务器部署（推荐 `deploy.sh`）
+
+本机开发仍用 `./start.sh` 或 `./dev.sh`；**Linux 服务器**建议用 `deploy.sh` 一键建 venv、装依赖、PM2 守护进程。
+
+### 本机 PM2 部署
+
+```bash
+cp .env.example .env   # 填写 Lovart Key 等
+chmod +x deploy.sh
+./deploy.sh            # 或 ./deploy.sh deploy
+```
+
+常用命令：`./deploy.sh status` | `logs` | `restart` | `stop` | `update`  
+开机自启（可选）：`pm2 startup && pm2 save`
+
+### 远程一键部署（测试机）
+
+在本机执行，自动 rsync 到测试服务器并在远端 `./deploy.sh`：
+
+```bash
+# .env 中配置：
+# TEST_SERVICE_URL=your-server.example.com
+# TEST_ACCOUNT=deploy_user
+# TEST_PASSWORD=***
+# PORT=<your-port>
+# 若测试机直连 Lovart 失败，配置 HTTP 代理（见下方）
+
+chmod +x deploy.sh
+./deploy.sh remote     # 上传 + 远端部署 + PM2 重载
+./deploy.sh remote sync  # 仅同步文件，不重启
+```
+
+| 项 | 说明 |
+|----|------|
+| 远端目录 | 由 `deploy.sh` 中的 `REMOTE_DIR` 控制（不存在则自动创建） |
+| 本机依赖 | `sshpass`、`rsync`、`ssh`（macOS: `brew install hudochenkov/sshpass/sshpass`） |
+| 同步内容 | 含 `.env`；排除 `.git`、`backend/.venv`、`uploads/`、`outputs/` 等 |
+| CentOS 7 | 自动用 Miniconda Python 3.10 + 精简依赖，并补装 **rembg**；Playwright 浏览器因 glibc 过旧不可用 |
+
+测试机访问 Lovart 若报 `Network is unreachable`，在 `.env` 增加代理后重新 `./deploy.sh remote`：
+
+```bash
+HTTP_PROXY=http://proxy.example.com:1080
+HTTPS_PROXY=http://proxy.example.com:1080
+NO_PROXY=127.0.0.1,localhost
+```
+
+更完整的部署说明、FAQ 与规格见 [ENVIRONMENT.md](./ENVIRONMENT.md)。
 
 ### 项目组与设计类型
 
@@ -71,8 +120,10 @@ cd backend
 
 | 变量 | 说明 |
 |------|------|
-| `PORT` | 服务端口，默认 `8000` |
+| `PORT` | 服务端口，默认 `8000`（远程部署时按你的环境填写） |
 | `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 主 Key；可用 `LOVART_ACCESS_KEY_2` 等配置备用，并发/额度受限时自动切换 |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 测试机出网经代理访问 Lovart 时使用（会随 `.env` 同步到远端） |
+| `TEST_SERVICE_URL` / `TEST_ACCOUNT` / `TEST_PASSWORD` | `./deploy.sh remote` 的 SSH 目标 |
 | `DEEPSEEK_API_KEY` 等 | 至少配置一个，用于 AI 关键词分析 |
 
 完整项与注释见 [.env.example](./.env.example)。**请勿将 `.env` 提交到 Git。**
@@ -81,7 +132,8 @@ cd backend
 
 ```
 ai-design-modifier-delivery/
-├── start.sh              # 推荐启动入口
+├── deploy.sh             # 服务器 / 远程一键部署（PM2）
+├── start.sh              # 本机前台启动
 ├── .env / .env.example   # 环境变量
 ├── dev.sh                # 开发模式（热重载）
 ├── backend/
@@ -135,7 +187,8 @@ rm -rf backend/.venv
 
 ## 相关文档
 
-- [ENVIRONMENT.md](./ENVIRONMENT.md) — 环境、依赖、外部服务与完整 FAQ
+- [ENVIRONMENT.md](./ENVIRONMENT.md) — 环境、依赖、**服务器/远程部署**、外部服务与 FAQ
+- [docs/superpowers/specs/2026-05-25-remote-deploy-design.md](./docs/superpowers/specs/2026-05-25-remote-deploy-design.md) — 远程部署设计规格
 
 ---
 

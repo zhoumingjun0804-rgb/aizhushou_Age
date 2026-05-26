@@ -1,8 +1,8 @@
 # 远程部署（deploy.sh remote）设计规格
 
-**日期：** 2026-05-25  
-**状态：** 待用户审阅  
-**范围：** 在本机执行 `./deploy.sh remote`，通过 SSH 将项目同步到测试服务器并在 `/home/xiaoA` 以 PM2 运行。
+**日期：** 2026-05-25（2026-05-26 更新：代理、CentOS 7 extras）  
+**状态：** 已实现  
+**范围：** 在本机执行 `./deploy.sh remote`，通过 SSH 将项目同步到测试服务器并在远端应用目录以 PM2 运行。
 
 ---
 
@@ -12,18 +12,18 @@
 
 | 变量 | 示例值 | 用途 |
 |------|--------|------|
-| `TEST_SERVICE_URL` | `172.16.32.251` | 目标服务器 IP |
-| `TEST_ACCOUNT` | `root` | SSH 用户名 |
+| `TEST_SERVICE_URL` | `your-server.example.com` | 目标服务器 IP / hostname |
+| `TEST_ACCOUNT` | `deploy_user` | SSH 用户名 |
 | `TEST_PASSWORD` | `***` | SSH 密码 |
-| `PORT` | `8040`（用户手动设置） | 服务端口，原样同步到远端 |
+| `PORT` | `<your-port>`（用户手动设置） | 服务端口，原样同步到远端 |
 
-目标：一条命令完成「上传代码 → 远端安装依赖 → PM2 启动」，远端目录 `/home/xiaoA`（不存在则创建）。
+目标：一条命令完成「上传代码 → 远端安装依赖 → PM2 启动」，远端目录由脚本配置控制（不存在则创建）。
 
 ---
 
 ## 非目标
 
-- 不在本机改 `PORT`（由用户自行在 `.env` 设为 8040）
+- 不在本机改 `PORT`（由用户自行在 `.env` 设置）
 - 不支持多环境 profile（仅 TEST_* 一套）
 - 不实现远端 `remote logs` 子命令（后续可加）
 - 不使用 git pull 作为部署方式
@@ -58,7 +58,7 @@
 - `TEST_PASSWORD` — 必填
 - `PORT` — 随 `.env` 原样上传，不在脚本内改写
 
-远端固定路径：`REMOTE_DIR=/home/xiaoA`
+远端固定路径：`REMOTE_DIR=<remote-app-dir>`
 
 `.env.example` 增加上述 TEST_* 变量注释说明（不含真实密码）。
 
@@ -91,10 +91,10 @@
   │
   ├─ 1. 检查本机依赖：sshpass、rsync、ssh
   ├─ 2. 从 .env 加载 TEST_*，校验非空
-  ├─ 3. SSH：mkdir -p /home/xiaoA
-  ├─ 4. rsync 同步到 root@TEST_SERVICE_URL:/home/xiaoA/
-  ├─ 5. SSH：chmod +x /home/xiaoA/deploy.sh
-  └─ 6. SSH：cd /home/xiaoA && ./deploy.sh
+  ├─ 3. SSH：mkdir -p <REMOTE_DIR>
+  ├─ 4. rsync 同步到 TEST_ACCOUNT@TEST_SERVICE_URL:<REMOTE_DIR>/
+  ├─ 5. SSH：chmod +x <REMOTE_DIR>/deploy.sh
+  └─ 6. SSH：cd <REMOTE_DIR> && ./deploy.sh
          └─ 远端：venv、pip、PM2、健康检查（现有逻辑）
 ```
 
@@ -147,9 +147,9 @@
 
 ## 验收标准
 
-1. 本机执行 `./deploy.sh remote`，远端 `/home/xiaoA` 目录被创建且含最新代码
-2. 远端 PM2 进程 `aizhushou-age` 运行，监听 `.env` 中 `PORT`（8040）
-3. 浏览器访问 `http://172.16.32.251:8040/` 可打开页面
+1. 本机执行 `./deploy.sh remote`，远端应用目录被创建且含最新代码
+2. 远端 PM2 进程 `aizhushou-age` 运行，监听 `.env` 中 `PORT`
+3. 浏览器访问 `http://<server-host>:<port>/` 可打开页面
 4. 二次执行 `./deploy.sh remote` 可增量更新并成功 reload
 5. `./deploy.sh remote sync` 只同步文件，不改变 PM2 运行状态（除非用户随后手动 deploy）
 
@@ -160,4 +160,16 @@
 - [x] 无 TBD / TODO 占位
 - [x] 与 brainstorm 结论一致（A/A/A/B 选项）
 - [x] 范围单一，可在一个 implementation plan 内完成
-- [x] PORT 行为明确：用户手动设 8040，脚本不改写
+- [x] PORT 行为明确：由用户在 `.env` 中设置，脚本不改写
+
+---
+
+## 实现补充（2026-05-26）
+
+| 项 | 说明 |
+|----|------|
+| CentOS 7 Python | Miniconda 3.10 安装于 `/opt/aizhushou-python` |
+| 依赖 | 基础 `requirements-deploy.txt` + 自动 rembg extras |
+| Playwright | CentOS 7 跳过浏览器安装 |
+| Lovart 出网 | `.env` 中 `HTTP_PROXY` / `HTTPS_PROXY`，随 remote 同步 |
+| 用户文档 | `README.md`、`ENVIRONMENT.md` 部署章节 |

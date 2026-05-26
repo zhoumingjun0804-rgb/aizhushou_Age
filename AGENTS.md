@@ -1,13 +1,15 @@
 # AI 视觉设计助手（交付版）
 
-与 `xiao-a-dengta` 同源分支：本仓库保留 **Lovart 多 Key 自动切换**、`ssl_utils` 等企业网络适配，并同步小A灯塔的辅助工具与多生图后端。
+本仓库保留 **Lovart 多 Key 自动切换**、`ssl_utils` 等企业网络适配，并同步辅助工具与多生图后端。
 
 ## 快速启动
 
 ```bash
 cp .env.example .env
 ./dev.sh          # 开发（推荐）
-./start.sh        # 生产
+./start.sh        # 本机前台
+./deploy.sh       # 服务器 PM2 部署
+./deploy.sh remote  # 本机一键推到测试机
 ```
 
 | 修改 | 操作 |

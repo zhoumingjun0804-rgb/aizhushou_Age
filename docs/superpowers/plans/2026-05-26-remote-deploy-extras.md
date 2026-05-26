@@ -74,7 +74,7 @@ Ensure deploy does not fail just because Playwright browser install is unavailab
 Run:
 
 ```bash
-bash -n /Users/jenson/eva/aizhushou_Age/deploy.sh
+bash -n ./deploy.sh
 ```
 
 Expected: no output, exit code `0`.
@@ -84,14 +84,14 @@ Expected: no output, exit code `0`.
 Run:
 
 ```bash
-cd /Users/jenson/eva/aizhushou_Age
+cd /path/to/project
 ./deploy.sh remote
 ```
 
 Expected:
 - remote sync succeeds
 - remote PM2 app becomes `online`
-- remote health check passes on `8040`
+- remote health check passes on the configured `PORT`
 - rembg install/import succeeds
 - Playwright prints a CentOS 7 incompatibility warning instead of aborting deploy
 
@@ -100,7 +100,7 @@ Expected:
 Run:
 
 ```bash
-ssh root@172.16.32.251 '/home/xiaoA/backend/.venv/bin/python3 -c "from rembg import remove; print(\"rembg OK\")" && pm2 describe aizhushou-age | head -15'
+ssh deploy_user@your-server.example.com '<remote-app-dir>/backend/.venv/bin/python3 -c "from rembg import remove; print(\"rembg OK\")" && pm2 describe aizhushou-age | head -15'
 ```
 
 Expected:

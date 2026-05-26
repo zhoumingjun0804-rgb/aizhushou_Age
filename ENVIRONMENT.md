@@ -7,7 +7,7 @@
 | 运行时 | 是否必需 | 说明 |
 |--------|----------|------|
 | **Python 3** | **必需** | 主服务由 `backend/app.py` 提供，通过 `./start.sh` 启动 |
-| **Node.js** | **不必** | 当前入口不依赖 Node；前端页面内嵌在 Python 中 |
+| **Node.js** | **本机不必** | `./start.sh` / `./dev.sh` 不依赖 Node；**`./deploy.sh` 服务器部署**需 PM2（脚本可自动装 Node + PM2） |
 | **即梦 CLI / Lovart / ComfyUI / SD** | 按需 | 生图、修图能力取决于 `.env` 配置 |
 
 ---
@@ -95,15 +95,122 @@ cd backend
 
 ## 启动方式
 
+### 本机开发 / 前台运行
+
 ```bash
 # 项目根目录
 cp .env.example .env   # 首次：按需填写 Key
-./start.sh
+./start.sh             # 生产前台
+# ./dev.sh             # 开发热重载
 ```
 
 - 默认端口：**8000**（可在 `.env` 中设置 `PORT`）
 - 若 8000 被占用，服务会自动尝试 8001、8002…，**请以终端打印的地址为准**
 - 浏览器访问：`http://localhost:<端口>`
+
+### 服务器部署（`deploy.sh`）
+
+适用于 Linux 服务器长期运行，由 **PM2** 守护 `backend/app.py`。
+
+```bash
+chmod +x deploy.sh
+./deploy.sh              # 默认：检查 Python → venv → 依赖 → PM2 启动/重载
+./deploy.sh setup        # 仅装依赖并生成 ecosystem.config.cjs，不启动
+./deploy.sh status       # 状态 + 健康检查
+./deploy.sh logs         # PM2 日志
+./deploy.sh restart      # 重启
+./deploy.sh stop         # 停止
+./deploy.sh update       # git pull + 依赖更新 + PM2 重载
+```
+
+**脚本会自动：**
+
+- 检查 Python **3.10+**（CentOS 7 等旧系统可自动装 Miniconda Python 3.10）
+- 创建 `backend/.venv` 并安装依赖
+- 安装 **Node.js + PM2**（可用 `SKIP_NODE_INSTALL=1` 跳过）
+- 生成 `ecosystem.config.cjs`（PM2 进程名默认 `aizhushou-age`）
+- 创建 `uploads/`、`outputs/`、`logs/`
+
+**环境变量（可选）：**
+
+| 变量 | 说明 |
+|------|------|
+| `PM2_APP_NAME` | PM2 进程名，默认 `aizhushou-age` |
+| `SKIP_NODE_INSTALL=1` | 不自动安装 Node/PM2 |
+| `GIT_BRANCH` | `./deploy.sh update` 拉取分支，默认 `main` |
+
+开机自启（服务器上执行一次）：
+
+```bash
+pm2 startup
+pm2 save
+```
+
+### 远程一键部署（`./deploy.sh remote`）
+
+在本机执行，通过 **sshpass + rsync + SSH** 将项目同步到测试机并远端运行 `./deploy.sh`。
+
+**`.env` 必填：**
+
+| 变量 | 示例 | 说明 |
+|------|------|------|
+| `TEST_SERVICE_URL` | `your-server.example.com` | 目标 IP 或 hostname |
+| `TEST_ACCOUNT` | `deploy_user` | SSH 用户 |
+| `TEST_PASSWORD` | `***` | SSH 密码 |
+| `PORT` | `<your-port>` | 原样同步到远端，脚本不改写 |
+
+**本机需安装：** `ssh`、`rsync`、`sshpass`
+
+```bash
+# macOS
+brew install hudochenkov/sshpass/sshpass
+
+# Debian/Ubuntu
+apt install sshpass rsync
+```
+
+**命令：**
+
+```bash
+./deploy.sh remote         # 同步 + 远端 deploy + PM2
+./deploy.sh remote sync    # 仅 rsync，不重启服务
+```
+
+**远端路径：** 由 `deploy.sh` 中的 `REMOTE_DIR` 控制（自动 `mkdir -p`）
+
+**同步规则：**
+
+- **包含：** 项目代码、`.env`、`projects/`、`deploy.sh` 等
+- **排除：** `backend/.venv/`、`.git/`、`uploads/`、`outputs/`、`logs/`、`ecosystem.config.cjs` 等
+
+**CentOS 7 测试机额外行为：**
+
+1. 基础依赖使用 `backend/requirements-deploy.txt`（避免 playwright/greenlet 编译失败）
+2. 部署时自动安装 **rembg** 相关包（`numpy<2` + onnxruntime + rembg）
+3. **Playwright 浏览器**因 glibc 2.17 无法安装，网页参考抓取仅支持静态 HTTP；JS 渲染页不可用
+
+**测试机访问 Lovart：**
+
+若生图报错 `Network is unreachable`，说明测试机无法直连 `lgw.lovart.ai`。在 `.env` 配置 HTTP 代理后重新 `./deploy.sh remote`：
+
+```bash
+HTTP_PROXY=http://proxy.example.com:1080
+HTTPS_PROXY=http://proxy.example.com:1080
+http_proxy=http://proxy.example.com:1080
+https_proxy=http://proxy.example.com:1080
+NO_PROXY=127.0.0.1,localhost
+no_proxy=127.0.0.1,localhost
+```
+
+应用启动时会读取 `.env` 写入 `os.environ`，`urllib` 请求 Lovart 会自动走代理。可用 curl 对比：
+
+```bash
+curl -I https://lgw.lovart.ai -x http://proxy.example.com:1080
+```
+
+连通后根路径可能返回 **404**，属正常（API 在 `/v1/openapi/...`）。
+
+设计规格详见 [docs/superpowers/specs/2026-05-25-remote-deploy-design.md](./docs/superpowers/specs/2026-05-25-remote-deploy-design.md)。
 
 ---
 
@@ -135,7 +242,9 @@ cp .env.example .env   # 首次：按需填写 Key
 ```
 ai-design-modifier-delivery/
 ├── .env                 # 环境变量（勿提交密钥）
-├── start.sh             # 启动脚本
+├── deploy.sh            # 服务器 / 远程 PM2 部署
+├── start.sh             # 本机前台启动
+├── dev.sh               # 开发热重载
 ├── backend/
 │   ├── app.py           # 主服务（当前使用）
 │   ├── main.py          # 旧版 FastAPI 演示（非 start.sh 入口）
@@ -173,6 +282,19 @@ rm -rf backend/.venv
 ./start.sh
 ```
 
+### 远程部署 `sshpass: command not found`
+
+本机安装 sshpass 后重试 `./deploy.sh remote`（见上文「远程一键部署」）。
+
+### 测试机 Lovart `Network is unreachable`
+
+在 `.env` 配置 `HTTP_PROXY` / `HTTPS_PROXY`，执行 `./deploy.sh remote` 同步并重载 PM2。
+
+### CentOS 7 上 rembg / Playwright
+
+- **rembg**：`deploy.sh` 会自动安装；若重建 venv 后丢失，再执行一次 `./deploy.sh remote`
+- **Playwright**：CentOS 7 不支持 Chromium 运行时，仅静态网页抓取可用
+
 ### `pip` 安装 `lxml` 时报 `TomlError` / `pyproject.toml`
 
 多见于 **Python 3.8 + 旧 pip（如 19.x）**。`start.sh` 会先升级 pip；若仍失败，请改用 **Python 3.10+** 并重建虚拟环境：
@@ -197,4 +319,4 @@ backend/.venv/bin/python3 -c "from PIL import Image; print('OK')"
 
 ---
 
-*文档根据仓库 `start.sh`、`backend/app.py`、`backend/requirements.txt`、`.env.example` 整理。*
+*文档根据仓库 `deploy.sh`、`start.sh`、`backend/app.py`、`backend/requirements.txt`、`.env.example` 整理。*
