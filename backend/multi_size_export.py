@@ -1,11 +1,12 @@
-"""单图按预设尺寸批量导出（等比缩放 + 居中铺底，不裁切画面内容）。"""
+"""单图按预设尺寸批量导出（本地模糊延展或 Lovart AI 阔图）。"""
 import json
 import re
 import zipfile
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 BACKEND_DIR = Path(__file__).resolve().parent
 DEFAULT_PRODUCT_TYPE = "xdt"
@@ -64,21 +65,46 @@ def load_output_sizes(config_path: Path | None = None, *, product_type: str | No
     return sizes
 
 
-def fit_image_to_canvas(
+def _background_cover_blur(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    """等比放大裁切铺满画布后高斯模糊，用作延展背景。"""
+    img = src.convert("RGBA")
+    sw, sh = img.size
+    scale = max(target_w / sw, target_h / sh)
+    nw = max(1, int(round(sw * scale)))
+    nh = max(1, int(round(sh * scale)))
+    big = img.resize((nw, nh), Image.Resampling.LANCZOS)
+    x = max(0, (nw - target_w) // 2)
+    y = max(0, (nh - target_h) // 2)
+    bg = big.crop((x, y, x + target_w, y + target_h))
+    radius = max(12, min(target_w, target_h) // 25)
+    return bg.filter(ImageFilter.GaussianBlur(radius=radius))
+
+
+def render_splash_canvas(
     src: Image.Image,
     target_w: int,
     target_h: int,
     *,
-    bg_rgba: tuple[int, int, int, int] = (255, 255, 255, 0),
+    ai_canvas_fn: Callable[[Image.Image, int, int], Image.Image] | None = None,
 ) -> Image.Image:
-    """等比缩放至目标画布内完整显示，居中放置，不拉伸变形。"""
+    """优先 AI 阔图；失败时回退本地模糊延展。"""
+    if ai_canvas_fn:
+        try:
+            return ai_canvas_fn(src, target_w, target_h)
+        except Exception as e:
+            print(f"[MULTI-SIZE] AI 阔图 {target_w}x{target_h} 失败，回退本地延展: {e}")
+    return fit_image_to_canvas(src, target_w, target_h)
+
+
+def fit_image_to_canvas(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    """等比缩放至目标画布内完整显示，空白区用同源图模糊延展（非白底）。"""
     img = src.convert("RGBA")
     src_w, src_h = img.size
+    canvas = _background_cover_blur(img, target_w, target_h)
     scale = min(target_w / src_w, target_h / src_h)
     new_w = max(1, int(round(src_w * scale)))
     new_h = max(1, int(round(src_h * scale)))
     resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    canvas = Image.new("RGBA", (target_w, target_h), bg_rgba)
     x = (target_w - new_w) // 2
     y = (target_h - new_h) // 2
     canvas.paste(resized, (x, y), resized)
@@ -86,9 +112,9 @@ def fit_image_to_canvas(
 
 
 def save_canvas_compressed(canvas: Image.Image, out_path: Path, *, quality: int = JPEG_QUALITY) -> None:
-    """保存为 JPEG（白底），下载体积更小。"""
+    """保存为 JPEG，下载体积更小。"""
     rgba = canvas.convert("RGBA")
-    bg = Image.new("RGB", rgba.size, (255, 255, 255))
+    bg = Image.new("RGB", rgba.size)
     bg.paste(rgba, mask=rgba.split()[3])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     bg.save(out_path, format="JPEG", quality=quality, optimize=True, progressive=True)
@@ -103,6 +129,8 @@ def export_multi_sizes(
     make_zip: bool = True,
     jpeg_quality: int = JPEG_QUALITY,
     source_basename: str = "开屏",
+    use_ai: bool = False,
+    ai_canvas_fn: Callable[[Image.Image, int, int], Image.Image] | None = None,
 ) -> dict:
     sizes = load_output_sizes(config_path)
     base = safe_download_stem(source_basename)
@@ -114,11 +142,12 @@ def export_multi_sizes(
 
     outputs: list[dict] = []
     zip_buffer = BytesIO()
+    ai_fn = ai_canvas_fn if use_ai and ai_canvas_fn else None
 
     with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for spec in sizes:
             tw, th = spec["width"], spec["height"]
-            canvas = fit_image_to_canvas(src_img, tw, th)
+            canvas = render_splash_canvas(src_img, tw, th, ai_canvas_fn=ai_fn)
             filename = f"multi_{job_id}_{spec['id']}.jpg"
             out_path = output_dir / filename
             save_canvas_compressed(canvas, out_path, quality=jpeg_quality)
@@ -154,4 +183,5 @@ def export_multi_sizes(
         "zip_filename": zip_filename,
         "zip_download_name": zip_download_name if make_zip else None,
         "zip_url": zip_url,
+        "backgroundMode": "ai" if ai_fn else "local",
     }

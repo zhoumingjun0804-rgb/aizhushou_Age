@@ -40,6 +40,11 @@ from gif_to_svga.converter import (
     gif_to_svga as convert_gif_to_svga,
     VALID_FPS as SVGA_VALID_FPS,
 )
+from ai_outpaint import (
+    layout_background_extend_prompt,
+    run_ai_extend_to_size,
+    splash_extend_prompt,
+)
 from multi_size_export import (
     export_multi_sizes,
     load_output_sizes,
@@ -837,6 +842,10 @@ def call_lovart(
     poll_timeout=90,
     local_project=None,
     lovart_project_id=None,
+    output_width=None,
+    output_height=None,
+    size_mode="online",
+    dpi=None,
 ):
     """调用 Lovart OpenAPI 生图；多 Key 时在并发/额度受限时自动切换。"""
     if not LOVART_CREDENTIALS:
@@ -862,6 +871,15 @@ def call_lovart(
 
         switch_to_next_key = False
 
+        ratio, gen_w, gen_h = resolve_output_dimensions(ratio, output_width, output_height)
+        quality_hint = LOVART_QUALITY_HINT
+        if output_width and output_height:
+            quality_hint = (
+                f"{quality_hint}，目标输出约 {gen_w}×{gen_h} 像素"
+            )
+        if size_mode == "print" and dpi:
+            quality_hint = f"{quality_hint}，用于 {dpi}dpi 印刷物料"
+
         for attempt in range(LOVART_TASK_RETRY):
             try:
                 image_url, error = client.generate_image(
@@ -870,7 +888,7 @@ def call_lovart(
                     ratio=ratio,
                     timeout=timeout,
                     mode=LOVART_MODE,
-                    quality_hint=LOVART_QUALITY_HINT,
+                    quality_hint=quality_hint,
                     project_id=resolved_project_id,
                     project_title=project_title,
                 )
@@ -1009,18 +1027,57 @@ def normalize_image_backend(value=None):
     return _resolve_image_backend()
 
 
+ONLINE_RATIO_TO_SIZE = {
+    "1:1": (1024, 1024),
+    "16:9": (1920, 1080),
+    "9:16": (1080, 1920),
+    "4:3": (1024, 768),
+    "3:4": (768, 1024),
+}
+
+
 def ratio_to_size(ratio: str):
-    mapping = {
-        "1:1": (1024, 1024),
-        "16:9": (1344, 768),
-        "9:16": (768, 1344),
-        "4:3": (1152, 864),
-        "3:4": (864, 1152),
-        "4:5": (896, 1120),
-        "2:3": (832, 1248),
-        "21:9": (1536, 640),
+    return ONLINE_RATIO_TO_SIZE.get(ratio, (1024, 1024))
+
+
+def _parse_positive_int(value) -> Optional[int]:
+    try:
+        n = int(str(value).strip())
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def resolve_output_dimensions(
+    ratio: str,
+    output_width=None,
+    output_height=None,
+) -> tuple[str, int, int]:
+    w = _parse_positive_int(output_width)
+    h = _parse_positive_int(output_height)
+    if w and h:
+        return ratio or bbox_to_ratio(w, h), w, h
+    rw, rh = ratio_to_size(ratio or "1:1")
+    return ratio or "1:1", rw, rh
+
+
+def parse_size_fields(fields: dict) -> dict:
+    ratio = str(fields.get("ratio", "1:1") or "1:1")
+    ow = fields.get("output_width")
+    oh = fields.get("output_height")
+    ratio, width, height = resolve_output_dimensions(ratio, ow, oh)
+    size_mode = str(fields.get("size_mode", "online") or "online").strip() or "online"
+    dpi = _parse_positive_int(fields.get("dpi"))
+    return {
+        "ratio": ratio,
+        "output_width": width,
+        "output_height": height,
+        "size_mode": size_mode,
+        "dpi": dpi,
+        "size_label": str(fields.get("size_label", "") or "").strip(),
+        "width_mm": fields.get("width_mm"),
+        "height_mm": fields.get("height_mm"),
     }
-    return mapping.get(ratio, (1024, 1024))
 
 
 def variant_entry_from_path(output_filename: str, output_path: pathlib.Path) -> dict:
@@ -1032,13 +1089,21 @@ def variant_entry_from_path(output_filename: str, output_path: pathlib.Path) -> 
     return {"filename": output_filename, "width": w, "height": h, "error": None}
 
 
-def call_comfyui(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
+def call_comfyui(
+    mode,
+    prompt,
+    image_paths=None,
+    ratio="1:1",
+    poll_timeout=90,
+    output_width=None,
+    output_height=None,
+):
     if mode == "img2img" and image_paths:
         return None, "ComfyUI 当前仅支持文生图，请先去掉参考图或改用 Lovart / Stable Diffusion"
     if not COMFYUI_CHECKPOINT:
         return None, "未配置 COMFYUI_CHECKPOINT（ComfyUI 模型文件名）"
 
-    width, height = ratio_to_size(ratio)
+    _, width, height = resolve_output_dimensions(ratio, output_width, output_height)
     client = ComfyUIClient(
         base_url=COMFYUI_API_URL,
         timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
@@ -1049,8 +1114,16 @@ def call_comfyui(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
         return None, e.message
 
 
-def call_stable_diffusion(mode, prompt, image_paths=None, ratio="1:1", poll_timeout=90):
-    width, height = ratio_to_size(ratio)
+def call_stable_diffusion(
+    mode,
+    prompt,
+    image_paths=None,
+    ratio="1:1",
+    poll_timeout=90,
+    output_width=None,
+    output_height=None,
+):
+    _, width, height = resolve_output_dimensions(ratio, output_width, output_height)
     client = StableDiffusionClient(
         base_url=SD_API_URL,
         timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
@@ -1072,6 +1145,10 @@ def call_image_generator(
     local_project=None,
     lovart_project_id=None,
     image_backend=None,
+    output_width=None,
+    output_height=None,
+    size_mode="online",
+    dpi=None,
 ):
     backend = normalize_image_backend(image_backend)
     if backend == "lovart":
@@ -1083,11 +1160,31 @@ def call_image_generator(
             poll_timeout=poll_timeout,
             local_project=local_project,
             lovart_project_id=lovart_project_id,
+            output_width=output_width,
+            output_height=output_height,
+            size_mode=size_mode,
+            dpi=dpi,
         )
     if backend == "comfyui":
-        return call_comfyui(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
+        return call_comfyui(
+            mode,
+            prompt,
+            image_paths=image_paths,
+            ratio=ratio,
+            poll_timeout=poll_timeout,
+            output_width=output_width,
+            output_height=output_height,
+        )
     if backend == "stable_diffusion":
-        return call_stable_diffusion(mode, prompt, image_paths=image_paths, ratio=ratio, poll_timeout=poll_timeout)
+        return call_stable_diffusion(
+            mode,
+            prompt,
+            image_paths=image_paths,
+            ratio=ratio,
+            poll_timeout=poll_timeout,
+            output_width=output_width,
+            output_height=output_height,
+        )
     return call_dreamina(
         mode,
         prompt,
@@ -1167,16 +1264,23 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
     """从 multipart 字段构建生图任务 payload。"""
     project = str(fields.get("project", "") or "").strip()
     count = int(str(fields.get("count", "3")).strip() or "3")
-    ratio = str(fields.get("ratio", "1:1") or "1:1")
     client_id = str(fields.get("client_id", "") or "").strip()
     image_backend = normalize_image_backend(fields.get("image_backend"))
+    size_info = parse_size_fields(fields)
 
     payload = {
         "kind": kind,
         "client_id": client_id,
         "project": project,
         "count": count,
-        "ratio": ratio,
+        "ratio": size_info["ratio"],
+        "output_width": size_info["output_width"],
+        "output_height": size_info["output_height"],
+        "size_mode": size_info["size_mode"],
+        "dpi": size_info["dpi"],
+        "size_label": size_info["size_label"],
+        "width_mm": size_info["width_mm"],
+        "height_mm": size_info["height_mm"],
         "image_backend": image_backend,
     }
 
@@ -1225,6 +1329,10 @@ def execute_generation_job(job: dict) -> None:
     prompt = payload.get("prompt", "")
     count = int(payload.get("count") or 3)
     ratio = payload.get("ratio", "1:1")
+    output_width = payload.get("output_width")
+    output_height = payload.get("output_height")
+    size_mode = payload.get("size_mode", "online")
+    dpi = payload.get("dpi")
     mode = payload.get("mode", "text2img")
     image_paths = [pathlib.Path(p) for p in payload.get("image_paths") or []]
     backend = normalize_image_backend(payload.get("image_backend"))
@@ -1249,6 +1357,10 @@ def execute_generation_job(job: dict) -> None:
             poll_timeout=LOVART_POLL_TIMEOUT if backend == "lovart" else LOCAL_GENERATION_TIMEOUT,
             local_project=project,
             image_backend=backend,
+            output_width=output_width,
+            output_height=output_height,
+            size_mode=size_mode,
+            dpi=dpi,
         )
         if image_url:
             output_filename = f"variant_{uuid.uuid4().hex}.png"
@@ -1421,8 +1533,41 @@ def composite_image(base_path, overlay_path, output_path, x, y):
         print(f"[COMPOSITE] Pasted overlay at ({x},{y}) -> {output_path}")
 
 
-def build_edit_prompt(description, edit_type="", keep_elements="", region_only=False):
+def _save_edit_reference_images_from_payload(data: dict, max_count: int = 3) -> list[pathlib.Path]:
+    """解析修图请求中的参考图（base64 data URL），保存到 uploads/。"""
+    import base64
+
+    refs = data.get("reference_images") or data.get("referenceImages") or []
+    if isinstance(refs, str):
+        refs = [refs] if refs else []
+    paths: list[pathlib.Path] = []
+    for i, ref in enumerate(refs[:max_count]):
+        if not ref or not isinstance(ref, str):
+            continue
+        try:
+            if "," in ref:
+                _, data_part = ref.split(",", 1)
+                raw = base64.b64decode(data_part)
+            else:
+                raw = base64.b64decode(ref)
+        except Exception:
+            continue
+        ref_path = UPLOAD_DIR / f"edit_ref_{uuid.uuid4().hex[:10]}.png"
+        ref_path.write_bytes(raw)
+        paths.append(ref_path)
+    return paths
+
+
+def build_edit_prompt(
+    description,
+    edit_type="",
+    keep_elements="",
+    region_only=False,
+    has_reference=False,
+):
     prompt = description or ""
+    if has_reference:
+        prompt = f"{prompt} 请参考上传的参考图风格、配色与构图进行修改。".strip()
     if region_only:
         prompt = (
             f"{prompt}。"
@@ -1508,17 +1653,20 @@ def call_img2img_with_retry(
     local_project=None,
     image_backend=None,
     queue_priority=PRIORITY_LOW,
+    reference_paths=None,
 ):
     backend = normalize_image_backend(image_backend)
+    ref_list = [str(p) for p in (reference_paths or [])]
 
     def _once():
         last_error = None
+        image_paths = [str(input_path)] + ref_list
         for attempt in range(max_retries):
             try:
                 image_url, error = call_image_generator(
                     mode="img2img",
                     prompt=prompt,
-                    image_paths=[str(input_path)],
+                    image_paths=image_paths,
                     ratio=ratio,
                     local_project=local_project,
                     image_backend=backend,
@@ -1688,7 +1836,15 @@ def _run_smart_cutout_job(
             pass
 
 
-def edit_image_regions(base_path, regions, edit_type, keep_elements, ratio, local_project=None):
+def edit_image_regions(
+    base_path,
+    regions,
+    edit_type,
+    keep_elements,
+    ratio,
+    local_project=None,
+    reference_paths=None,
+):
     """对多个选区依次裁剪、修图、仅将结果融合回选区，保持原图尺寸与选区外样式"""
     from PIL import Image
 
@@ -1714,9 +1870,19 @@ def edit_image_regions(base_path, regions, edit_type, keep_elements, ratio, loca
             cw, ch = cropped.size
 
         crop_ratio = bbox_to_ratio(cw, ch)
-        region_prompt = build_edit_prompt(desc, edit_type, keep_elements, region_only=True)
+        region_prompt = build_edit_prompt(
+            desc,
+            edit_type,
+            keep_elements,
+            region_only=True,
+            has_reference=bool(reference_paths),
+        )
         image_url, error = call_img2img_with_retry(
-            crop_path, region_prompt, ratio=crop_ratio, local_project=local_project
+            crop_path,
+            region_prompt,
+            ratio=crop_ratio,
+            local_project=local_project,
+            reference_paths=reference_paths,
         )
         if not image_url:
             return None, f"选区 {idx + 1} 修图失败: {error or '未知错误'}"
@@ -2802,41 +2968,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if use_ai:
                 _reload_runtime_env()
                 if LOVART_CREDENTIALS:
-                    local_project = str(fields.get("local_project", "") or "").strip() or None
+                    local_project = (
+                        str(fields.get("local_project", "") or fields.get("project", "")).strip() or None
+                    )
 
                     def ai_background_fn(src_img, meta):
-                        from PIL import Image
-
                         tw, th = int(meta["width"]), int(meta["height"])
-                        tmp = UPLOAD_DIR / f"layout_ai_src_{uuid.uuid4().hex[:10]}.png"
-                        src_img.convert("RGBA").save(tmp, format="PNG")
-                        prompt = (
-                            f"将参考图延展为 {tw}x{th} 像素横竖比的设计背景，"
-                            "保持原图背景风格与色调一致，自然补边，不要新增文字或 Logo。"
+                        return run_ai_extend_to_size(
+                            src_img,
+                            tw,
+                            th,
+                            prompt=layout_background_extend_prompt(tw, th),
+                            ratio=bbox_to_ratio(tw, th),
+                            upload_dir=UPLOAD_DIR,
+                            img2img=lambda p, pr, r: call_img2img_with_retry(
+                                p, pr, ratio=r, max_retries=1, local_project=local_project
+                            ),
+                            download_image=download_image,
                         )
-                        ratio = bbox_to_ratio(tw, th)
-                        url, err = call_img2img_with_retry(
-                            tmp,
-                            prompt,
-                            ratio=ratio,
-                            max_retries=1,
-                            local_project=local_project,
-                        )
-                        try:
-                            tmp.unlink()
-                        except OSError:
-                            pass
-                        if not url:
-                            raise ValueError(err or "AI 阔图失败")
-                        raw = UPLOAD_DIR / f"layout_ai_out_{uuid.uuid4().hex[:10]}.png"
-                        download_image(url, raw)
-                        with Image.open(raw) as out:
-                            bg = out.convert("RGBA").resize((tw, th), Image.Resampling.LANCZOS)
-                        try:
-                            raw.unlink()
-                        except OSError:
-                            pass
-                        return bg
 
                     ai_fn = ai_background_fn
                 else:
@@ -2900,11 +3049,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             input_path = UPLOAD_DIR / f"multi_src_{job_id}{ext}"
             input_path.write_bytes(img_field["data"])
             source_raw = fields.get("source_name", "") or img_field.get("filename", "")
+            use_ai = str(fields.get("use_ai", "1")).strip().lower() in ("1", "true", "yes")
+            ai_canvas_fn = None
+            if use_ai:
+                _reload_runtime_env()
+                if LOVART_CREDENTIALS:
+                    local_project = project_name or None
+
+                    def ai_canvas_fn(src_img, tw, th):
+                        return run_ai_extend_to_size(
+                            src_img,
+                            tw,
+                            th,
+                            prompt=splash_extend_prompt(tw, th),
+                            ratio=bbox_to_ratio(tw, th),
+                            upload_dir=UPLOAD_DIR,
+                            img2img=lambda p, pr, r: call_img2img_with_retry(
+                                p, pr, ratio=r, max_retries=1, local_project=local_project
+                            ),
+                            download_image=download_image,
+                        )
+                else:
+                    print("[MULTI-SIZE] 未配置 Lovart，AI 阔图回退为本地延展")
+
             result = export_multi_sizes(
-                input_path, OUTPUT_DIR, job_id,
+                input_path,
+                OUTPUT_DIR,
+                job_id,
                 config_path=sizes_config_path(ptype),
                 source_basename=str(source_raw),
+                use_ai=bool(ai_canvas_fn),
+                ai_canvas_fn=ai_canvas_fn,
             )
+            try:
+                input_path.unlink()
+            except OSError:
+                pass
             self._send_json({"ok": True, "type": ptype, **result})
         except Exception as e:
             print(f"[MULTI-SIZE] 导出失败: {e}")
@@ -3050,6 +3230,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         keep_elements = data.get('keepElements', '')
         local_project = (data.get('project') or '').strip() or None
         regions = data.get('regions') or []
+        reference_paths = _save_edit_reference_images_from_payload(data)
 
         if not image_data:
             self._send_json({"error": "未上传图片"})
@@ -3088,7 +3269,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         g = math.gcd(orig_w, orig_h)
         ratio = f"{orig_w//g}:{orig_h//g}"
 
-        prompt = build_edit_prompt(description, edit_type, keep_elements)
+        prompt = build_edit_prompt(
+            description,
+            edit_type,
+            keep_elements,
+            has_reference=bool(reference_paths),
+        )
 
         output_filename = f"edit_output_{uuid.uuid4().hex}.png"
         output_path = OUTPUT_DIR / output_filename
@@ -3101,6 +3287,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 keep_elements,
                 ratio,
                 local_project=local_project,
+                reference_paths=reference_paths,
             )
             if region_error:
                 self._send_json({"error": region_error})
@@ -3121,6 +3308,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ratio=ratio,
                 local_project=local_project,
                 queue_priority=PRIORITY_HIGH,
+                reference_paths=reference_paths,
             )
             if not image_url:
                 self._send_json({"error": error or "修图失败，请重试"})

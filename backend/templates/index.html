@@ -175,6 +175,8 @@
         .size-inputs input[type="number"]:focus { outline: none; border-color: rgba(167,139,250,0.5); }
         .size-inputs span { color: rgba(255,255,255,0.3); }
         .ratio-hint { font-size: 11px; color: #a78bfa; font-weight: 500; }
+        .size-mode-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin: 4px 0 12px; line-height: 1.5; }
+        .size-mode-hint strong { color: #fcd34d; font-weight: 600; }
         
         /* 分析按钮 */
         .analyze-btn { width: 100%; padding: 14px; font-size: 15px;
@@ -656,27 +658,59 @@
                 </div>
                 
                 <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>尺寸类型</label>
+                        <select id="sizeCategorySelect" onchange="onSizeCategoryChange()">
+                            <option value="online" selected>线上物料尺寸</option>
+                            <option value="print">实物尺寸（打印）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row" id="onlineSizePanel">
+                    <div class="form-item full-width">
+                        <label>线上尺寸</label>
+                        <select id="onlineSizeSelect">
+                            <option value="1:1" data-width="1024" data-height="1024">1:1 · 1024×1024</option>
+                            <option value="16:9" data-width="1920" data-height="1080">16:9 · 1920×1080</option>
+                            <option value="9:16" data-width="1080" data-height="1920">9:16 · 1080×1920</option>
+                            <option value="4:3" data-width="1024" data-height="768">4:3 · 1024×768</option>
+                            <option value="3:4" data-width="768" data-height="1024">3:4 · 768×1024</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row" id="printSizePanel" style="display:none;">
                     <div class="form-item">
-                        <label>输出尺寸</label>
-                        <select id="ratioSelect" onchange="toggleCustomSize()">
-                            <option value="1:1">1:1 (方形)</option>
-                            <option value="16:9">16:9 (宽屏)</option>
-                            <option value="9:16">9:16 (竖版)</option>
-                            <option value="4:3">4:3 (横版)</option>
-                            <option value="3:4">3:4 (竖版)</option>
+                        <label>分辨率</label>
+                        <select id="printDpiSelect">
+                            <option value="150">150 dpi</option>
+                            <option value="300" selected>300 dpi</option>
+                        </select>
+                    </div>
+                    <div class="form-item">
+                        <label>纸张尺寸</label>
+                        <select id="printSizeSelect" onchange="onPrintSizeChange()">
+                            <option value="A4" data-wmm="210" data-hmm="297">A4 · 210×297 mm</option>
+                            <option value="A5" data-wmm="148" data-hmm="210">A5 · 148×210 mm</option>
+                            <option value="A6" data-wmm="104" data-hmm="148">A6 · 104×148 mm</option>
+                            <option value="A3" data-wmm="297" data-hmm="420">A3 · 297×420 mm</option>
                             <option value="custom">自定义</option>
                         </select>
                     </div>
-                    <div class="form-item" id="customSizeInputs" style="display:none;">
-                        <label>宽 × 高 (px)</label>
+                </div>
+                <div class="form-row" id="printCustomSizeRow" style="display:none;">
+                    <div class="form-item" id="printCustomSizeInputs">
+                        <label>自定义（mm）</label>
                         <div class="size-inputs">
-                            <input type="number" id="customWidth" placeholder="宽" min="100" max="4096">
+                            <input type="number" id="printCustomWidthMm" placeholder="宽 mm" min="10" max="420" step="1">
                             <span>×</span>
-                            <input type="number" id="customHeight" placeholder="高" min="100" max="4096">
-                            <span id="matchedRatio" class="ratio-hint"></span>
+                            <input type="number" id="printCustomHeightMm" placeholder="高 mm" min="10" max="420" step="1">
                         </div>
                     </div>
+                    <div class="form-item full-width">
+                        <p class="size-mode-hint" id="printSizeHint">实物打印尺寸，<strong>仅限于 A3 以内</strong>（最长边不超过 420mm）</p>
+                    </div>
                 </div>
+                <p class="size-mode-hint" id="onlineSizeHint">按常用线上物料比例输出固定像素尺寸</p>
 
                 <div class="form-row">
                     <div class="form-item">
@@ -793,6 +827,15 @@
                            style="width: 100%; padding: 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
                            border-radius: 8px; color: white; font-size: 14px;">
                 </div>
+
+                <div class="upload-ref-section" style="margin-top: 16px;">
+                    <div class="upload-ref-label">
+                        <span>🖼️ 上传参考图（可选）</span>
+                        <span style="opacity:0.6;font-size:12px;">最多3张，供 AI 参考风格与配色</span>
+                    </div>
+                    <input type="file" id="editRefImagesInput" class="upload-ref-input" accept="image/*" multiple>
+                    <div class="uploaded-previews" id="editUploadedPreviews"></div>
+                </div>
                 
                 <!-- 开始修图按钮 -->
                 <button class="generate-btn" onclick="startEditImage()" style="margin-top: 20px;">✨ AI 智能修图</button>
@@ -829,7 +872,7 @@
         <div class="card tab-content" id="multiTab">
             <div class="multi-section">
                 <h3>📐 开屏导出</h3>
-                <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。</p>
+                <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸输出。默认勾选 <strong>AI 阔图</strong>（Lovart）向四周自然补边；未勾选或 AI 不可用时使用本地模糊延展。导出 JPEG。</p>
                 <div class="multi-sizes-list" id="multiSizesList"></div>
                 <div class="multi-upload-zone" id="multiUploadZone" onclick="onMultiUploadZoneClick(event)">
                     <div class="multi-upload-placeholder" id="multiUploadPlaceholder">
@@ -843,10 +886,13 @@
                     </div>
                 </div>
                 <input type="file" id="multiImageInput" accept="image/png,image/jpeg,image/webp" style="display: none;" onchange="onMultiImageSelected(event)">
+                <div class="layout-opt-row" style="margin: 12px 0;">
+                    <label><input type="checkbox" id="multiUseAi" checked> AI 阔图（Lovart，每个尺寸约 1–2 分钟）</label>
+                </div>
                 <button type="button" class="multi-export-btn" id="multiExportBtn" onclick="exportMultiSizes()" disabled>⚡ 生成开屏图</button>
                 <div class="loading-card" id="multiLoadingCard" style="display: none;">
                     <div class="spinner"></div>
-                    <p class="loading-text">正在生成开屏尺寸图...</p>
+                    <p class="loading-text" id="multiLoadingText">正在生成开屏尺寸图...</p>
                 </div>
                 <p id="multiErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:16px;"></p>
                 <div id="multiResultsWrap" style="display: none;">
@@ -1168,7 +1214,7 @@ function updateMultiHint(count) {
         ? '<code>backend/output_sizes_hll.json</code>'
         : '<code>backend/output_sizes.json</code>';
     hint.innerHTML = '上传一张图片，按 <strong>' + name + '</strong> 预设的 <strong>' +
-        n + ' 种开屏尺寸</strong> 等比缩放并居中铺底，<strong>不裁切、不拉伸</strong> 画面内容；导出为 <strong>JPEG（白底压缩）</strong> 便于下载。尺寸配置见 ' + cfg + '。';
+        n + ' 种开屏尺寸</strong>；默认 <strong>AI 阔图</strong>（Lovart）自然补边，亦可取消勾选改用本地模糊延展。尺寸配置见 ' + cfg + '。';
 }
 
 function defaultProjectFromUrl() {
@@ -1198,6 +1244,9 @@ window.onload = function() {
     });
     loadHistory();
     refreshGenerationJobs();
+    onSizeCategoryChange();
+    var printDpiSel = document.getElementById('printDpiSelect');
+    if (printDpiSel) printDpiSel.addEventListener('change', onPrintSizeChange);
     initMultiUploadZone();
     loadMultiSizePresets();
     initLayoutExtend();
@@ -1494,6 +1543,152 @@ function resumeGenerationJob(jobId) {
 
 var DESIGN_TYPE_RATIO_DEFAULTS = {};
 
+var ONLINE_SIZE_PRESETS = {
+    '1:1': { ratio: '1:1', width: 1024, height: 1024 },
+    '16:9': { ratio: '16:9', width: 1920, height: 1080 },
+    '9:16': { ratio: '9:16', width: 1080, height: 1920 },
+    '4:3': { ratio: '4:3', width: 1024, height: 768 },
+    '3:4': { ratio: '3:4', width: 768, height: 1024 }
+};
+
+var PRINT_PAPER_PRESETS = {
+    A4: { wmm: 210, hmm: 297 },
+    A5: { wmm: 148, hmm: 210 },
+    A6: { wmm: 104, hmm: 148 },
+    A3: { wmm: 297, hmm: 420 }
+};
+
+var PRINT_MAX_MM = 420;
+
+function onSizeCategoryChange() {
+    var cat = document.getElementById('sizeCategorySelect').value;
+    var onlinePanel = document.getElementById('onlineSizePanel');
+    var printPanel = document.getElementById('printSizePanel');
+    var printCustomRow = document.getElementById('printCustomSizeRow');
+    var onlineHint = document.getElementById('onlineSizeHint');
+    var isOnline = cat === 'online';
+    if (onlinePanel) onlinePanel.style.display = isOnline ? '' : 'none';
+    if (printPanel) printPanel.style.display = isOnline ? 'none' : '';
+    if (printCustomRow) printCustomRow.style.display = isOnline ? 'none' : '';
+    if (onlineHint) onlineHint.style.display = isOnline ? 'block' : 'none';
+    if (!isOnline) onPrintSizeChange();
+}
+
+function onPrintSizeChange() {
+    var sel = document.getElementById('printSizeSelect');
+    var customInputs = document.getElementById('printCustomSizeInputs');
+    if (!sel) return;
+    var isCustom = sel.value === 'custom';
+    if (customInputs) customInputs.style.display = isCustom ? 'block' : 'none';
+    if (!isCustom) {
+        var opt = sel.options[sel.selectedIndex];
+        var pxHint = computePrintPixels(
+            parseFloat(opt.dataset.wmm),
+            parseFloat(opt.dataset.hmm),
+            parseInt(document.getElementById('printDpiSelect').value, 10) || 300
+        );
+        var hint = document.getElementById('printSizeHint');
+        if (hint && pxHint) {
+            hint.innerHTML = '实物打印尺寸，<strong>仅限于 A3 以内</strong> · 约 ' +
+                pxHint.width + '×' + pxHint.height + ' px';
+        }
+    }
+}
+
+function computePrintPixels(wmm, hmm, dpi) {
+    if (!wmm || !hmm || !dpi) return null;
+    return {
+        width: Math.max(1, Math.round(wmm / 25.4 * dpi)),
+        height: Math.max(1, Math.round(hmm / 25.4 * dpi))
+    };
+}
+
+function ratioFromPixels(width, height) {
+    var mapping = [
+        { ratio: '1:1', value: 1 },
+        { ratio: '16:9', value: 16 / 9 },
+        { ratio: '9:16', value: 9 / 16 },
+        { ratio: '4:3', value: 4 / 3 },
+        { ratio: '3:4', value: 3 / 4 }
+    ];
+    var r = width / height;
+    var closest = mapping[0];
+    var best = Math.abs(mapping[0].value - r);
+    for (var i = 1; i < mapping.length; i++) {
+        var diff = Math.abs(mapping[i].value - r);
+        if (diff < best) {
+            best = diff;
+            closest = mapping[i];
+        }
+    }
+    return closest.ratio;
+}
+
+function getGenerationSizeParams() {
+    var cat = document.getElementById('sizeCategorySelect').value;
+    if (cat === 'online') {
+        var sel = document.getElementById('onlineSizeSelect');
+        var opt = sel.options[sel.selectedIndex];
+        return {
+            size_mode: 'online',
+            ratio: opt.value,
+            output_width: parseInt(opt.dataset.width, 10),
+            output_height: parseInt(opt.dataset.height, 10)
+        };
+    }
+    var dpi = parseInt(document.getElementById('printDpiSelect').value, 10) || 300;
+    var paperSel = document.getElementById('printSizeSelect');
+    var paper = paperSel.value;
+    var wmm;
+    var hmm;
+    if (paper === 'custom') {
+        wmm = parseFloat(document.getElementById('printCustomWidthMm').value) || 0;
+        hmm = parseFloat(document.getElementById('printCustomHeightMm').value) || 0;
+        if (wmm < 10 || hmm < 10) {
+            alert('请填写自定义打印尺寸（宽、高，单位 mm）');
+            return null;
+        }
+    } else {
+        var preset = PRINT_PAPER_PRESETS[paper];
+        if (!preset) {
+            alert('请选择纸张尺寸');
+            return null;
+        }
+        wmm = preset.wmm;
+        hmm = preset.hmm;
+    }
+    if (Math.max(wmm, hmm) > PRINT_MAX_MM) {
+        alert('实物打印尺寸仅限于 A3 以内（最长边不超过 420mm）');
+        return null;
+    }
+    var px = computePrintPixels(wmm, hmm, dpi);
+    return {
+        size_mode: 'print',
+        ratio: ratioFromPixels(px.width, px.height),
+        output_width: px.width,
+        output_height: px.height,
+        dpi: dpi,
+        size_label: paper,
+        width_mm: wmm,
+        height_mm: hmm
+    };
+}
+
+function appendGenerationSize(formData) {
+    var params = getGenerationSizeParams();
+    if (!params) {
+        throw new Error('size_cancelled');
+    }
+    formData.append('ratio', params.ratio);
+    formData.append('output_width', String(params.output_width));
+    formData.append('output_height', String(params.output_height));
+    formData.append('size_mode', params.size_mode);
+    if (params.dpi) formData.append('dpi', String(params.dpi));
+    if (params.size_label) formData.append('size_label', params.size_label);
+    if (params.width_mm) formData.append('width_mm', String(params.width_mm));
+    if (params.height_mm) formData.append('height_mm', String(params.height_mm));
+}
+
 function shouldShowProjectRefs() {
     var project = getSelectedProjectName();
     var designType = document.getElementById('designType').value;
@@ -1589,13 +1784,16 @@ function applyDefaultRatioForDesignType() {
     if (!designType) return;
     var ratio = DESIGN_TYPE_RATIO_DEFAULTS[designType];
     if (!ratio) return;
-    var ratioSel = document.getElementById('ratioSelect');
-    var hasOption = Array.prototype.some.call(ratioSel.options, function(opt) {
+    var catSel = document.getElementById('sizeCategorySelect');
+    var onlineSel = document.getElementById('onlineSizeSelect');
+    if (!catSel || !onlineSel) return;
+    var hasOption = Array.prototype.some.call(onlineSel.options, function(opt) {
         return opt.value === ratio;
     });
     if (!hasOption) return;
-    ratioSel.value = ratio;
-    toggleCustomSize();
+    catSel.value = 'online';
+    onSizeCategoryChange();
+    onlineSel.value = ratio;
 }
 
 // 加载项目列表
@@ -1764,6 +1962,71 @@ function toggleProjectImage(el, projectName, designType, imgName) {
     }
 }
 
+// 修图参考图
+var editUploadedRefImages = [];
+var editRefImagesInput = document.getElementById('editRefImagesInput');
+if (editRefImagesInput) {
+    editRefImagesInput.addEventListener('change', function(e) {
+        var files = e.target.files;
+        var maxFiles = 3;
+        var remaining = maxFiles - editUploadedRefImages.length;
+        if (files.length > remaining) {
+            alert('最多上传' + maxFiles + '张参考图，已选择' + files.length + '张，剩余' + remaining + '张名额');
+        }
+        for (var i = 0; i < Math.min(files.length, remaining); i++) {
+            (function(file) {
+                var reader = new FileReader();
+                reader.onload = function(evt) {
+                    editUploadedRefImages.push(evt.target.result);
+                    renderEditUploadedPreviews();
+                };
+                reader.readAsDataURL(file);
+            })(files[i]);
+        }
+        e.target.value = '';
+    });
+}
+
+function renderEditUploadedPreviews() {
+    var container = document.getElementById('editUploadedPreviews');
+    if (!container) return;
+    container.innerHTML = '';
+    for (var i = 0; i < editUploadedRefImages.length; i++) {
+        (function(idx, dataUrl) {
+            var wrap = document.createElement('div');
+            wrap.className = 'uploaded-thumb-wrap';
+            var img = document.createElement('img');
+            img.className = 'uploaded-thumb';
+            img.src = dataUrl;
+            img.title = '预览大图';
+            img.onclick = function() {
+                openRefImagePreview(dataUrl, '修图参考图 ' + (idx + 1));
+            };
+            var previewBtn = document.createElement('button');
+            previewBtn.type = 'button';
+            previewBtn.className = 'ref-preview-btn';
+            previewBtn.title = '预览大图';
+            previewBtn.textContent = '🔍';
+            previewBtn.onclick = function(ev) {
+                ev.stopPropagation();
+                openRefImagePreview(dataUrl, '修图参考图 ' + (idx + 1));
+            };
+            var btn = document.createElement('div');
+            btn.className = 'uploaded-thumb-remove';
+            btn.textContent = '×';
+            btn.onclick = function(ev) {
+                ev.stopPropagation();
+                editUploadedRefImages.splice(idx, 1);
+                renderEditUploadedPreviews();
+            };
+            wrap.appendChild(img);
+            wrap.appendChild(previewBtn);
+            wrap.appendChild(btn);
+            container.appendChild(wrap);
+        })(i, editUploadedRefImages[i]);
+    }
+}
+
 // 上传参考图处理
 var uploadedRefImages = [];
 document.getElementById('refImagesInput').addEventListener('change', function(e) {
@@ -1825,17 +2088,6 @@ function renderUploadedPreviews() {
     }
 }
 
-// 自定义尺寸切换
-function toggleCustomSize() {
-    var sel = document.getElementById('ratioSelect');
-    var customInputs = document.getElementById('customSizeInputs');
-    if (sel.value === 'custom') {
-        customInputs.style.display = 'block';
-    } else {
-        customInputs.style.display = 'none';
-    }
-}
-
 // 自定义风格切换
 function toggleCustomStyle() {
     var sel = document.getElementById('styleSelect');
@@ -1855,40 +2107,6 @@ function getStyleValue() {
     }
     return sel.value;
 }
-
-// 匹配最接近的预设比例
-var RATIO_MAP = [
-    {ratio: '21:9', value: 21/9},
-    {ratio: '16:9', value: 16/9},
-    {ratio: '4:3', value: 4/3},
-    {ratio: '3:2', value: 3/2},
-    {ratio: '1:1', value: 1},
-    {ratio: '4:5', value: 4/5},
-    {ratio: '3:4', value: 3/4},
-    {ratio: '2:3', value: 2/3},
-    {ratio: '9:16', value: 9/16}
-];
-
-function updateMatchedRatio() {
-    var w = parseInt(document.getElementById('customWidth').value) || 0;
-    var h = parseInt(document.getElementById('customHeight').value) || 0;
-    var hint = document.getElementById('matchedRatio');
-    
-    if (w > 0 && h > 0) {
-        var inputRatio = w / h;
-        var closest = RATIO_MAP.reduce(function(prev, curr) {
-            return Math.abs(curr.value - inputRatio) < Math.abs(prev.value - inputRatio) ? curr : prev;
-        });
-        hint.textContent = '→ 匹配 ' + closest.ratio;
-        hint.dataset.ratio = closest.ratio;
-    } else {
-        hint.textContent = '';
-        hint.dataset.ratio = '';
-    }
-}
-
-document.getElementById('customWidth').addEventListener('input', updateMatchedRatio);
-document.getElementById('customHeight').addEventListener('input', updateMatchedRatio);
 
 // 分析关键词（首次分析与「重新分析」共用）
 async function analyzeKeyword() {
@@ -1977,23 +2195,20 @@ async function generateWithKeyword() {
         return;
     }
     
-    // 处理尺寸
-    var ratioSel = document.getElementById('ratioSelect');
-    var ratio = ratioSel.value;
-    if (ratio === 'custom') {
-        var hint = document.getElementById('matchedRatio');
-        ratio = hint.dataset.ratio || '1:1';
-    }
-    
     var formData = new FormData();
     formData.append('prompt', prompt);
     formData.append('project', currentProject ? currentProject.name : '');
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
     var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '3';
     formData.append('count', String(count));
-    formData.append('ratio', ratio);
     formData.append('image_backend', getSelectedImageBackend());
     appendProjectContext(formData);
+    try {
+        appendGenerationSize(formData);
+    } catch (e) {
+        if (e.message !== 'size_cancelled') alert(e.message);
+        return;
+    }
     for (var i = 0; i < uploadedRefImages.length; i++) {
         formData.append('ref_image_' + i, uploadedRefImages[i]);
     }
@@ -2026,23 +2241,20 @@ async function generateVariants() {
         '补充备注': document.getElementById('extraNotes').value.trim()
     };
     
-    // 处理尺寸
-    var ratioSel = document.getElementById('ratioSelect');
-    var ratio = ratioSel.value;
-    if (ratio === 'custom') {
-        var hint = document.getElementById('matchedRatio');
-        ratio = hint.dataset.ratio || '1:1';
-    }
-    
     var formData = new FormData();
     formData.append('summary', JSON.stringify(summary));
     formData.append('project', currentProject ? currentProject.name : '');
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
     var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '3';
     formData.append('count', String(count));
-    formData.append('ratio', ratio);
     formData.append('image_backend', getSelectedImageBackend());
     appendProjectContext(formData);
+    try {
+        appendGenerationSize(formData);
+    } catch (e) {
+        if (e.message !== 'size_cancelled') alert(e.message);
+        return;
+    }
     
     try {
         await runGenerationFlow(formData, 'variants');
@@ -2406,6 +2618,9 @@ async function startEditImage() {
         if (regions.length > 0) {
             payload.regions = regions;
         }
+        if (editUploadedRefImages.length > 0) {
+            payload.reference_images = editUploadedRefImages.slice(0, 3);
+        }
         const response = await fetch('/api/edit-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2450,6 +2665,8 @@ function resetEdit() {
     removeEditImage();
     document.getElementById('editDescription').value = '';
     document.getElementById('keepElements').value = '';
+    editUploadedRefImages = [];
+    renderEditUploadedPreviews();
     currentEditResult = null;
 }
 
@@ -2726,10 +2943,19 @@ async function exportMultiSizes() {
     btn.disabled = true;
     loading.style.display = 'block';
     errEl.style.display = 'none';
+    errEl.style.color = '#f87171';
     wrap.style.display = 'none';
     var form = new FormData();
     form.append('image', multiImageFile);
     form.append('source_name', multiImageFile.name || '开屏');
+    var multiUseAi = document.getElementById('multiUseAi');
+    form.append('use_ai', multiUseAi && multiUseAi.checked ? '1' : '0');
+    var loadingText = document.getElementById('multiLoadingText');
+    if (loadingText) {
+        loadingText.textContent = multiUseAi && multiUseAi.checked
+            ? 'AI 阔图生成中，每个尺寸约 1–2 分钟，请耐心等待…'
+            : '正在生成开屏尺寸图…';
+    }
     appendProjectContext(form);
     try {
         var q = apiProjectQuery();
@@ -2753,6 +2979,11 @@ async function exportMultiSizes() {
                 (sanitizeDownloadNamePart(data.sourceBaseName || getMultiSourceBaseName()) + '_全部尺寸.zip');
         }
         if (data.sourceBaseName) multiSourceBaseName = data.sourceBaseName;
+        if (multiUseAi && multiUseAi.checked && data.backgroundMode === 'local') {
+            errEl.textContent = '未启用 Lovart 或 AI 阔图失败，已使用本地模糊延展。';
+            errEl.style.color = 'rgba(252, 211, 77, 0.95)';
+            errEl.style.display = 'block';
+        }
         window._multiResults = data.images || [];
         var grid = document.getElementById('multiResultsGrid');
         grid.innerHTML = window._multiResults.map(function(img, i) {
