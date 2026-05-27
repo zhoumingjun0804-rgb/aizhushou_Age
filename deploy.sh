@@ -165,6 +165,7 @@ remote_rsync() {
     --exclude '.git/' \
     --exclude 'uploads/' \
     --exclude 'outputs/' \
+    --exclude 'history.json' \
     --exclude 'logs/' \
     --exclude '__pycache__/' \
     --exclude '*.pyc' \
