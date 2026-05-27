@@ -26,6 +26,13 @@ from lovart_client import (
     load_lovart_credentials,
     mask_access_key,
 )
+from lovart_queue import (
+    DuplicateHighJobError,
+    LovartQueue,
+    PRIORITY_HIGH,
+    PRIORITY_LOW,
+    QueueFullError,
+)
 from comfyui_client import ComfyUIClient, ComfyUIClientError
 from sd_client import StableDiffusionClient, SDClientError
 from gif_to_svga.converter import (
@@ -112,6 +119,8 @@ def _reload_runtime_env():
     global LOVART_CREDENTIALS, LOVART_ACCESS_KEY, LOVART_SECRET_KEY, LOVART_BASE_URL
     global LOVART_POLL_TIMEOUT, LOVART_MAX_CONCURRENCY, LOVART_TASK_RETRY
     global LOVART_TASK_RETRY_WAIT, LOVART_MODE, LOVART_QUALITY_HINT, IMAGE_BACKEND
+    global LOVART_QUEUE_MAX, LOVART_JOB_TTL, LOVART_JOB_MAX_SECONDS, LOVART_ETA_AVG_SECONDS
+    global lovart_queue
     global COMFYUI_API_URL, COMFYUI_CHECKPOINT, SD_API_URL, LOCAL_GENERATION_TIMEOUT
     global DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
     global QIANWEN_API_KEY, QIANWEN_BASE_URL, QIANWEN_MODEL
@@ -149,6 +158,11 @@ def _reload_runtime_env():
     DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
     DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
     DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
+    LOVART_QUEUE_MAX = max(1, int(os.environ.get("LOVART_QUEUE_MAX", "20")))
+    LOVART_JOB_TTL = max(60, int(os.environ.get("LOVART_JOB_TTL", "3600")))
+    LOVART_JOB_MAX_SECONDS = max(60, int(os.environ.get("LOVART_JOB_MAX_SECONDS", "1800")))
+    LOVART_ETA_AVG_SECONDS = max(10, int(os.environ.get("LOVART_ETA_AVG_SECONDS", "90")))
+    lovart_queue = _make_lovart_queue()
 
 
 _load_env_file()
@@ -167,7 +181,10 @@ LOVART_QUALITY_HINT = os.environ.get(
     "LOVART_QUALITY_HINT",
     "适合手机屏幕与网页展示，宽度约1200到1536像素，细节清晰但不必4K",
 ).strip()
-LOVART_GENERATION_LOCK = threading.Lock()
+LOVART_QUEUE_MAX = max(1, int(os.environ.get("LOVART_QUEUE_MAX", "20")))
+LOVART_JOB_TTL = max(60, int(os.environ.get("LOVART_JOB_TTL", "3600")))
+LOVART_JOB_MAX_SECONDS = max(60, int(os.environ.get("LOVART_JOB_MAX_SECONDS", "1800")))
+LOVART_ETA_AVG_SECONDS = max(10, int(os.environ.get("LOVART_ETA_AVG_SECONDS", "90")))
 SMART_CUTOUT_JOB_DIR = UPLOAD_DIR / "smart_cutout_jobs"
 COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
 COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
@@ -178,6 +195,19 @@ IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "lovart").strip().lower()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _make_lovart_queue() -> LovartQueue:
+    return LovartQueue(
+        max_workers=LOVART_MAX_CONCURRENCY,
+        queue_max=LOVART_QUEUE_MAX,
+        job_ttl=LOVART_JOB_TTL,
+        job_max_seconds=LOVART_JOB_MAX_SECONDS,
+        eta_avg_seconds=LOVART_ETA_AVG_SECONDS,
+    )
+
+
+lovart_queue = _make_lovart_queue()
 
 from ssl_utils import make_ssl_context
 
@@ -833,20 +863,19 @@ def call_lovart(
         switch_to_next_key = False
 
         for attempt in range(LOVART_TASK_RETRY):
-            with LOVART_GENERATION_LOCK:
-                try:
-                    image_url, error = client.generate_image(
-                        prompt=prompt,
-                        image_paths=image_paths,
-                        ratio=ratio,
-                        timeout=timeout,
-                        mode=LOVART_MODE,
-                        quality_hint=LOVART_QUALITY_HINT,
-                        project_id=resolved_project_id,
-                        project_title=project_title,
-                    )
-                except LovartError as e:
-                    image_url, error = None, e.message
+            try:
+                image_url, error = client.generate_image(
+                    prompt=prompt,
+                    image_paths=image_paths,
+                    ratio=ratio,
+                    timeout=timeout,
+                    mode=LOVART_MODE,
+                    quality_hint=LOVART_QUALITY_HINT,
+                    project_id=resolved_project_id,
+                    project_title=project_title,
+                )
+            except LovartError as e:
+                image_url, error = None, e.message
 
             if image_url:
                 if cred_index > 0:
@@ -1120,7 +1149,139 @@ def generate_variants(
     return results
 
 
+def _save_ref_images_from_fields(fields: dict) -> list:
+    paths = []
+    for i in range(3):
+        ref_key = f"ref_image_{i}"
+        ref_data = fields.get(ref_key)
+        if ref_data and isinstance(ref_data, dict):
+            file_ext = pathlib.Path(ref_data.get("filename", ".png")).suffix or ".png"
+            ref_filename = f"ref_{uuid.uuid4().hex}{file_ext}"
+            ref_path = UPLOAD_DIR / ref_filename
+            ref_path.write_bytes(ref_data["data"])
+            paths.append(ref_path)
+    return paths
 
+
+def build_generation_payload(fields: dict, kind: str) -> dict:
+    """从 multipart 字段构建生图任务 payload。"""
+    project = str(fields.get("project", "") or "").strip()
+    count = int(str(fields.get("count", "3")).strip() or "3")
+    ratio = str(fields.get("ratio", "1:1") or "1:1")
+    client_id = str(fields.get("client_id", "") or "").strip()
+    image_backend = normalize_image_backend(fields.get("image_backend"))
+
+    payload = {
+        "kind": kind,
+        "client_id": client_id,
+        "project": project,
+        "count": count,
+        "ratio": ratio,
+        "image_backend": image_backend,
+    }
+
+    if kind == "with_prompt":
+        payload["prompt"] = str(fields.get("prompt", "") or "").strip()
+    else:
+        summary_json = fields.get("summary", "{}")
+        try:
+            summary = json.loads(summary_json) if isinstance(summary_json, str) else summary_json
+        except json.JSONDecodeError:
+            summary = {}
+        project_meta = get_project_meta(project) if project else None
+        payload["summary"] = summary
+        payload["prompt"] = expand_prompt_from_summary(summary, project_meta)
+
+    image_paths = []
+    input_filename = None
+    uploaded_file = fields.get("file")
+    if uploaded_file and isinstance(uploaded_file, dict):
+        file_ext = pathlib.Path(uploaded_file.get("filename", ".png")).suffix or ".png"
+        input_filename = f"input_{uuid.uuid4().hex}{file_ext}"
+        input_path = UPLOAD_DIR / input_filename
+        input_path.write_bytes(uploaded_file["data"])
+        image_paths.append(str(input_path))
+
+    image_paths.extend(str(p) for p in _build_image_paths_from_selection(fields, project))
+    image_paths.extend(str(p) for p in _save_ref_images_from_fields(fields))
+    payload["image_paths"] = image_paths
+    payload["input_filename"] = input_filename
+    payload["mode"] = "img2img" if image_paths else "text2img"
+    return payload
+
+
+def execute_generation_job(job: dict) -> None:
+    """队列 worker 执行生图任务。"""
+    payload = job["payload"]
+    job_id = job["job_id"]
+    started = time.time()
+
+    project = payload.get("project") or None
+    lovart_err = lovart_project_required_error(project or "")
+    if lovart_err:
+        lovart_queue.fail_job(job_id, lovart_err)
+        return
+
+    prompt = payload.get("prompt", "")
+    count = int(payload.get("count") or 3)
+    ratio = payload.get("ratio", "1:1")
+    mode = payload.get("mode", "text2img")
+    image_paths = [pathlib.Path(p) for p in payload.get("image_paths") or []]
+    backend = normalize_image_backend(payload.get("image_backend"))
+    input_filename = payload.get("input_filename")
+
+    lovart_queue.set_progress(job_id, 0, count)
+    variants = []
+
+    for idx in range(count):
+        if lovart_queue.check_job_timeout(job_id):
+            return
+        if time.time() - started > LOVART_JOB_MAX_SECONDS:
+            lovart_queue.fail_job(job_id, f"任务超时（超过 {LOVART_JOB_MAX_SECONDS} 秒）")
+            return
+
+        image_url, error = call_image_generator(
+            mode,
+            prompt,
+            image_paths if mode == "img2img" else None,
+            model_version="4.6",
+            ratio=ratio,
+            poll_timeout=LOVART_POLL_TIMEOUT if backend == "lovart" else LOCAL_GENERATION_TIMEOUT,
+            local_project=project,
+            image_backend=backend,
+        )
+        if image_url:
+            output_filename = f"variant_{uuid.uuid4().hex}.png"
+            output_path = OUTPUT_DIR / output_filename
+            try:
+                download_image(image_url, output_path)
+                variants.append({"filename": output_filename, "error": None})
+            except Exception as e:
+                variants.append({"filename": None, "error": format_url_error(e)})
+        else:
+            variants.append({"filename": None, "error": error or "生成失败"})
+        lovart_queue.set_progress(job_id, idx + 1, count)
+
+    lovart_queue.set_variants(job_id, variants)
+    with lovart_queue._jobs_lock:
+        stored = lovart_queue._jobs.get(job_id)
+        if stored and stored.get("status") == "running":
+            stored["status"] = "done"
+            stored["finished_at"] = time.time()
+
+    if variants and variants[0].get("filename"):
+        output_images = [v["filename"] for v in variants if v.get("filename")]
+        entry = {
+            "id": uuid.uuid4().hex[:8],
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "mode": mode,
+            "prompt": prompt,
+            "project": project or "",
+            "input_image": input_filename,
+            "output_images": output_images,
+            "variants_count": len(output_images),
+        }
+        add_history(entry)
 
 
 def format_url_error(exc: Exception, context: str = "") -> str:
@@ -1346,27 +1507,38 @@ def call_img2img_with_retry(
     max_retries=3,
     local_project=None,
     image_backend=None,
+    queue_priority=PRIORITY_LOW,
 ):
     backend = normalize_image_backend(image_backend)
-    last_error = None
-    for attempt in range(max_retries):
-        try:
-            image_url, error = call_image_generator(
-                mode="img2img",
-                prompt=prompt,
-                image_paths=[str(input_path)],
-                ratio=ratio,
-                local_project=local_project,
-                image_backend=backend,
-            )
-            if image_url:
-                return image_url, None
-            last_error = error
-            print(f"[EDIT] 第{attempt + 1}次尝试失败: {error}")
-        except Exception as e:
-            last_error = str(e)
-            print(f"[EDIT] 第{attempt + 1}次尝试异常: {last_error}")
-    return None, last_error
+
+    def _once():
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                image_url, error = call_image_generator(
+                    mode="img2img",
+                    prompt=prompt,
+                    image_paths=[str(input_path)],
+                    ratio=ratio,
+                    local_project=local_project,
+                    image_backend=backend,
+                )
+                if image_url:
+                    return image_url, None
+                last_error = error
+                print(f"[EDIT] 第{attempt + 1}次尝试失败: {error}")
+            except Exception as e:
+                last_error = str(e)
+                print(f"[EDIT] 第{attempt + 1}次尝试异常: {last_error}")
+        return None, last_error
+
+    if backend == "lovart":
+        return lovart_queue.run_sync(
+            queue_priority,
+            _once,
+            label="img2img",
+        )
+    return _once()
 
 
 def run_ai_extract_subject(
@@ -1646,14 +1818,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _send_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id')
 
     def do_OPTIONS(self):
         path = self._normalized_path()
         if path in ('/api/edit-image', '/edit-image', '/parse', '/api/analyze',
                     '/generate-variants', '/generate-with-prompt', '/upscale', '/api/gif-to-svga',
                     '/api/multi-size-export', '/api/crop-image', '/api/magic-cutout',
-                    '/api/smart-cutout', '/api/make-breathing-gif', '/api/layout-extend'):
+                    '/api/smart-cutout', '/api/make-breathing-gif', '/api/layout-extend',
+                    '/api/generation/jobs'):
             self.send_response(204)
             self._send_cors_headers()
             self.end_headers()
@@ -1722,6 +1895,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
         elif path == '/api/system-info':
             self._handle_system_info()
+        elif path.startswith('/api/generation/jobs/'):
+            job_id = path[len('/api/generation/jobs/'):].strip('/')
+            self._handle_generation_job_get(job_id)
+        elif path == '/api/generation/jobs':
+            params = self._query_params()
+            client_id = (params.get("client_id", [""])[0] or "").strip()
+            if not client_id:
+                self._send_json({"error": "缺少 client_id"}, status=400)
+                return
+            self._send_json({"jobs": lovart_queue.list_jobs(client_id)})
         elif path == '/api/smart-cutout/status':
             self._handle_smart_cutout_status()
         elif path == '/api/layout-extend/presets':
@@ -1759,6 +1942,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/smart-cutout': self._handle_smart_cutout,
             '/api/make-breathing-gif': self._handle_make_breathing_gif,
             '/api/layout-extend': self._handle_layout_extend,
+            '/api/generation/jobs': self._handle_generation_jobs_post,
         }
         handler = post_routes.get(path)
         if handler:
@@ -2003,6 +2187,97 @@ class Handler(http.server.BaseHTTPRequestHandler):
             payload["warning"] = warning
         self._send_json(payload)
 
+    def _handle_generation_jobs_post(self):
+        """异步生图：创建队列任务。"""
+        try:
+            _reload_runtime_env()
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传"}, status=400)
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+            kind = str(fields.get("kind", "variants") or "variants").strip()
+            client_id = str(fields.get("client_id", "") or "").strip()
+            if not client_id:
+                hdr = self.headers.get("X-Client-Id", "").strip()
+                client_id = hdr
+            if not client_id:
+                self._send_json({"error": "缺少 client_id"}, status=400)
+                return
+
+            payload = build_generation_payload(fields, kind)
+            payload["client_id"] = client_id
+            backend = normalize_image_backend(payload.get("image_backend"))
+
+            if backend != "lovart":
+                job_id = uuid.uuid4().hex[:12]
+                job = {
+                    "job_id": job_id,
+                    "client_id": client_id,
+                    "kind": kind,
+                    "status": "running",
+                    "priority": PRIORITY_HIGH,
+                    "payload": payload,
+                    "progress": {"current": 0, "total": int(payload.get("count") or 3)},
+                }
+                with lovart_queue._jobs_lock:
+                    lovart_queue._jobs[job_id] = job
+                execute_generation_job(job)
+                with lovart_queue._jobs_lock:
+                    stored = lovart_queue._jobs.get(job_id, {})
+                variants = stored.get("variants")
+                if stored.get("status") == "failed":
+                    self._send_json({"error": stored.get("error") or "生成失败"}, status=500)
+                    return
+                self._send_json(
+                    {
+                        "ok": True,
+                        "sync": True,
+                        "variants": variants or [],
+                        "prompt": payload.get("prompt"),
+                    }
+                )
+                return
+
+            job_id = lovart_queue.submit_generation(payload, execute_generation_job)
+            view = lovart_queue.get_job(job_id)
+            self._send_json(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "status": view.get("status", "queued") if view else "queued",
+                    "position": view.get("position", 0) if view else 0,
+                    "status_url": f"/api/generation/jobs/{job_id}",
+                },
+                status=201,
+            )
+        except DuplicateHighJobError as e:
+            self._send_json(
+                {
+                    "error": "您已有进行中的生图任务，请等待完成或查看任务状态",
+                    "job_id": e.job_id,
+                },
+                status=409,
+            )
+        except QueueFullError as e:
+            self._send_json({"error": str(e)}, status=503)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_generation_job_get(self, job_id: str):
+        if not job_id:
+            self._send_json({"error": "缺少 job_id"}, status=400)
+            return
+        view = lovart_queue.get_job(job_id)
+        if not view:
+            self._send_json({"error": "任务不存在或已过期"}, status=404)
+            return
+        self._send_json(view)
+
     def _handle_generate_with_prompt(self):
         """使用已有的prompt直接生成图片"""
         content_type = self.headers.get('Content-Type', '')
@@ -2011,6 +2286,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
             boundary = content_type.split('boundary=')[-1].encode()
             fields = parse_multipart(body, boundary)
+            if normalize_image_backend(fields.get("image_backend")) == "lovart":
+                self._send_json(
+                    {
+                        "error": "Lovart 生图请使用 /api/generation/jobs（前端已切换异步队列）",
+                        "migration": "/api/generation/jobs",
+                    },
+                    status=410,
+                )
+                return
         else:
             fields = {}
 
@@ -2096,6 +2380,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
             boundary = content_type.split('boundary=')[-1].encode()
             fields = parse_multipart(body, boundary)
+            if normalize_image_backend(fields.get("image_backend")) == "lovart":
+                self._send_json(
+                    {
+                        "error": "Lovart 生图请使用 /api/generation/jobs",
+                        "migration": "/api/generation/jobs",
+                    },
+                    status=410,
+                )
+                return
         else:
             fields = {}
 
@@ -2823,7 +3116,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             image_url, error = call_img2img_with_retry(
-                input_path, prompt, ratio=ratio, local_project=local_project
+                input_path,
+                prompt,
+                ratio=ratio,
+                local_project=local_project,
+                queue_priority=PRIORITY_HIGH,
             )
             if not image_url:
                 self._send_json({"error": error or "修图失败，请重试"})

@@ -39,6 +39,9 @@ cp .env.example .env
 | POST | `/api/multi-size-export` | 单图导出 9 种尺寸 |
 | POST | `/api/crop-image` | 框选裁切 |
 | POST | `/api/magic-cutout` | 魔棒选区抠透明 PNG |
+| POST | `/api/generation/jobs` | 异步生图（Lovart 排队）；multipart 含 `client_id`、`kind` |
+| GET | `/api/generation/jobs/{id}` | 生图任务状态（排队位置、进度、结果） |
+| GET | `/api/generation/jobs?client_id=` | 本浏览器进行中/近期任务 |
 | POST | `/api/smart-cutout` | 框选 + 描述，AI（Lovart img2img）提取透明 PNG |
 | POST | `/api/layout-extend` | 规范延展：框选 Logo/IP，按模板输出多尺寸 |
 | GET | `/api/layout-extend/presets` | 规范延展模板列表 |

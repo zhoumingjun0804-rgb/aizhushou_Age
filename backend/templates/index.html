@@ -677,6 +677,16 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="form-row">
+                    <div class="form-item">
+                        <label>生成数量</label>
+                        <select id="countSelect">
+                            <option value="1">1 张</option>
+                            <option value="3" selected>3 张</option>
+                        </select>
+                    </div>
+                </div>
                 
                 <div class="form-row">
                     <div class="form-item full-width">
@@ -1091,7 +1101,10 @@
             <span class="drawer-title">生图 / 修图记录</span>
             <button class="drawer-close" onclick="toggleHistory()">×</button>
         </div>
-        <div class="drawer-content" id="historyList"></div>
+        <div class="drawer-content">
+            <div id="generationJobsPanel" style="margin-bottom:12px;"></div>
+            <div id="historyList"></div>
+        </div>
     </div>
     
     <!-- 全屏图片查看 -->
@@ -1184,6 +1197,7 @@ window.onload = function() {
         updateProjectRefsVisibility();
     });
     loadHistory();
+    refreshGenerationJobs();
     initMultiUploadZone();
     loadMultiSizePresets();
     initLayoutExtend();
@@ -1284,6 +1298,198 @@ function initImageBackendSelect() {
 function getSelectedImageBackend() {
     var sel = document.getElementById('imageBackendSelect');
     return sel ? sel.value : 'lovart';
+}
+
+function getClientId() {
+    var key = 'aizhushou_client_id';
+    var id = localStorage.getItem(key);
+    if (!id) {
+        id = 'c_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(key, id);
+    }
+    return id;
+}
+
+function appendClientId(formData) {
+    formData.append('client_id', getClientId());
+}
+
+var activeGenerationPoll = null;
+
+function updateLoadingMessage(text) {
+    var el = document.querySelector('.loading-text');
+    if (el) el.textContent = text;
+}
+
+function setGenerateButtonsDisabled(disabled) {
+    document.querySelectorAll('.generate-btn').forEach(function(btn) {
+        btn.disabled = !!disabled;
+    });
+}
+
+async function pollGenerationJob(jobId, onDone) {
+    var maxWait = 1800;
+    var started = Date.now();
+    while (Date.now() - started < maxWait * 1000) {
+        var res = await fetch('/api/generation/jobs/' + encodeURIComponent(jobId));
+        var data = await res.json();
+        if (data.status === 'queued') {
+            updateLoadingMessage('排队中，前面还有 ' + (data.position || 0) + ' 人…');
+        } else if (data.status === 'running') {
+            var p = data.progress || {};
+            updateLoadingMessage('生成中 ' + (p.current || 0) + '/' + (p.total || '?') + '…');
+        } else if (data.status === 'done') {
+            onDone(null, data);
+            return;
+        } else if (data.status === 'failed') {
+            onDone(new Error(data.error || '生成失败'), data);
+            return;
+        }
+        await new Promise(function(r) { setTimeout(r, 2500); });
+    }
+    onDone(new Error('等待超时，请打开「生图记录」查看任务状态'));
+}
+
+async function submitGenerationJob(formData, kind) {
+    formData.append('kind', kind);
+    appendClientId(formData);
+    var res = await fetch('/api/generation/jobs', { method: 'POST', body: formData });
+    var data = await res.json();
+    if (res.status === 409 && data.job_id) {
+        if (confirm('您已有进行中的生图任务，是否继续查看该任务？')) {
+            return { job_id: data.job_id };
+        }
+        throw new Error(data.error || '已有任务进行中');
+    }
+    if (res.status === 503) {
+        throw new Error(data.error || '队列已满，请稍后再试');
+    }
+    if (!res.ok) {
+        throw new Error(data.error || ('HTTP ' + res.status));
+    }
+    return data;
+}
+
+async function runGenerationFlow(formData, kind) {
+    document.getElementById('loadingCard').style.display = 'block';
+    updateLoadingMessage('提交任务…');
+    setGenerateButtonsDisabled(true);
+    try {
+        var submitted = await submitGenerationJob(formData, kind);
+        if (submitted.sync && submitted.variants) {
+            variants = submitted.variants || [];
+            renderVariants(variants);
+            document.getElementById('variantsSection').style.display = 'block';
+            document.getElementById('actionsSection').style.display = 'flex';
+            loadHistory();
+            refreshGenerationJobs();
+            return;
+        }
+        var jobId = submitted.job_id;
+        var data = await new Promise(function(resolve, reject) {
+            activeGenerationPoll = jobId;
+            pollGenerationJob(jobId, function(err, result) {
+                activeGenerationPoll = null;
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        variants = data.variants || [];
+        renderVariants(variants);
+        document.getElementById('variantsSection').style.display = 'block';
+        document.getElementById('actionsSection').style.display = 'flex';
+        loadHistory();
+        refreshGenerationJobs();
+    } finally {
+        document.getElementById('loadingCard').style.display = 'none';
+        setGenerateButtonsDisabled(false);
+    }
+}
+
+async function refreshGenerationJobs() {
+    var panel = document.getElementById('generationJobsPanel');
+    if (!panel) return;
+    try {
+        var res = await fetch('/api/generation/jobs?client_id=' + encodeURIComponent(getClientId()));
+        var data = await res.json();
+        renderGenerationJobsPanel(data.jobs || []);
+        var active = (data.jobs || []).some(function(j) {
+            return j.status === 'queued' || j.status === 'running';
+        });
+        if (active && !activeGenerationPoll) {
+            setGenerateButtonsDisabled(true);
+        } else if (!activeGenerationPoll) {
+            setGenerateButtonsDisabled(false);
+        }
+        var running = (data.jobs || []).find(function(j) {
+            return (j.status === 'queued' || j.status === 'running') && j.job_id;
+        });
+        if (running && !activeGenerationPoll && document.getElementById('loadingCard').style.display !== 'block') {
+            activeGenerationPoll = running.job_id;
+            document.getElementById('loadingCard').style.display = 'block';
+            pollGenerationJob(running.job_id, function(err, result) {
+                activeGenerationPoll = null;
+                document.getElementById('loadingCard').style.display = 'none';
+                setGenerateButtonsDisabled(false);
+                if (!err && result && result.variants) {
+                    variants = result.variants;
+                    renderVariants(variants);
+                    document.getElementById('variantsSection').style.display = 'block';
+                    document.getElementById('actionsSection').style.display = 'flex';
+                    loadHistory();
+                } else if (err) {
+                    alert('生成失败: ' + err.message);
+                }
+                refreshGenerationJobs();
+            });
+        }
+    } catch (e) {
+        panel.innerHTML = '';
+    }
+}
+
+function renderGenerationJobsPanel(jobs) {
+    var panel = document.getElementById('generationJobsPanel');
+    if (!panel) return;
+    var active = jobs.filter(function(j) {
+        return j.status === 'queued' || j.status === 'running';
+    });
+    if (!active.length) {
+        panel.innerHTML = '';
+        return;
+    }
+    panel.innerHTML = '<div style="font-size:12px;color:#a78bfa;margin-bottom:8px;">进行中</div>' +
+        active.map(function(j) {
+            var label = j.kind === 'with_prompt' ? '魔法图' : '生成变体';
+            var detail = j.status === 'queued'
+                ? ('排队中 · 前面 ' + (j.position || 0) + ' 人')
+                : ('生成中 ' + ((j.progress && j.progress.current) || 0) + '/' + ((j.progress && j.progress.total) || '?'));
+            return '<div class="history-item" style="cursor:pointer;margin-bottom:8px;" data-job-id="' + j.job_id + '" onclick="resumeGenerationJob(\'' + j.job_id + '\')">' +
+                '<div class="history-info"><div class="history-meta">' + label + '</div>' +
+                '<div class="history-prompt">' + detail + '</div></div></div>';
+        }).join('');
+}
+
+function resumeGenerationJob(jobId) {
+    if (activeGenerationPoll) return;
+    document.getElementById('loadingCard').style.display = 'block';
+    setGenerateButtonsDisabled(true);
+    activeGenerationPoll = jobId;
+    pollGenerationJob(jobId, function(err, data) {
+        activeGenerationPoll = null;
+        document.getElementById('loadingCard').style.display = 'none';
+        setGenerateButtonsDisabled(false);
+        if (!err && data && data.variants) {
+            variants = data.variants;
+            renderVariants(variants);
+            document.getElementById('variantsSection').style.display = 'block';
+            document.getElementById('actionsSection').style.display = 'flex';
+            loadHistory();
+        } else if (err) {
+            alert('生成失败: ' + err.message);
+        }
+        refreshGenerationJobs();
+    });
 }
 
 var DESIGN_TYPE_RATIO_DEFAULTS = {};
@@ -1779,45 +1985,25 @@ async function generateWithKeyword() {
         ratio = hint.dataset.ratio || '1:1';
     }
     
-    document.getElementById('loadingCard').style.display = 'block';
-    document.querySelector('.loading-text').textContent = 'AI 正在创作变体中...约需 1-2 分钟';
-    document.querySelector('.generate-btn').disabled = true;
-    
     var formData = new FormData();
     formData.append('prompt', prompt);
     formData.append('project', currentProject ? currentProject.name : '');
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
-    formData.append('count', '3');
+    var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '3';
+    formData.append('count', String(count));
     formData.append('ratio', ratio);
     formData.append('image_backend', getSelectedImageBackend());
     appendProjectContext(formData);
-    // 添加上传的参考图
     for (var i = 0; i < uploadedRefImages.length; i++) {
         formData.append('ref_image_' + i, uploadedRefImages[i]);
     }
     
     try {
-        var res = await fetch('/generate-with-prompt', { method: 'POST', body: formData });
-        var data = await res.json();
-        
-        if (data.error) {
-            alert('生成失败: ' + data.error);
-            return;
-        }
-        
-        variants = data.variants || [];
-        renderVariants(variants);
-        
-        document.getElementById('variantsSection').style.display = 'block';
-        document.getElementById('actionsSection').style.display = 'flex';
-        loadHistory();
-        
+        await runGenerationFlow(formData, 'with_prompt');
     } catch(e) {
         alert('生成请求失败: ' + e.message);
+        refreshGenerationJobs();
     }
-    
-    document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.generate-btn').disabled = false;
 }
 
 // 生成变体（保留旧函数兼容）
@@ -1848,40 +2034,22 @@ async function generateVariants() {
         ratio = hint.dataset.ratio || '1:1';
     }
     
-    document.getElementById('loadingCard').style.display = 'block';
-    document.querySelector('.generate-btn').disabled = true;
-    
     var formData = new FormData();
     formData.append('summary', JSON.stringify(summary));
     formData.append('project', currentProject ? currentProject.name : '');
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
-    formData.append('count', '3');
+    var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '3';
+    formData.append('count', String(count));
     formData.append('ratio', ratio);
     formData.append('image_backend', getSelectedImageBackend());
     appendProjectContext(formData);
     
     try {
-        var res = await fetch('/generate-variants', { method: 'POST', body: formData });
-        var data = await res.json();
-        
-        if (data.error) {
-            alert('生成失败: ' + data.error);
-            return;
-        }
-        
-        variants = data.variants || [];
-        renderVariants(variants);
-        
-        document.getElementById('variantsSection').style.display = 'block';
-        document.getElementById('actionsSection').style.display = 'flex';
-        loadHistory();
-        
+        await runGenerationFlow(formData, 'variants');
     } catch(e) {
         alert('生成请求失败: ' + e.message);
+        refreshGenerationJobs();
     }
-    
-    document.getElementById('loadingCard').style.display = 'none';
-    document.querySelector('.generate-btn').disabled = false;
 }
 
 // 渲染变体
@@ -2302,6 +2470,9 @@ function resetAll() {
 function toggleHistory() {
     document.getElementById('historyDrawer').classList.toggle('open');
     document.getElementById('drawerOverlay').classList.toggle('open');
+    if (document.getElementById('historyDrawer').classList.contains('open')) {
+        refreshGenerationJobs();
+    }
 }
 
 // 全屏查看图片
