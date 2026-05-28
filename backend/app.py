@@ -387,11 +387,77 @@ def add_history(entry):
     save_history(history)
 
 
+def _history_title_from_prompt(prompt: str, limit: int = 28) -> str:
+    if prompt is None:
+        text = ""
+    elif isinstance(prompt, str):
+        text = prompt.strip()
+    else:
+        text = str(prompt).strip()
+    if not text:
+        return "未命名记录"
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
+def _history_mode_label(mode: str) -> str:
+    if mode == "edit":
+        return "✏️局部修图"
+    if mode == "text2img":
+        return "✨文字生图"
+    return "📷图片改图"
+
+
+def _history_meta_tags(mode: str, variants_count: int = 0) -> list:
+    tags = [_history_mode_label(mode)]
+    try:
+        count = int(variants_count or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count > 1:
+        tags.append(f"{count}张")
+    return tags
+
+
+def build_history_entry(*, mode: str, prompt: str, description: str = "", source: str = "", **kwargs) -> dict:
+    entry = {
+        "id": kwargs.pop("id", None) or uuid.uuid4().hex[:8],
+        "timestamp": kwargs.pop("timestamp", None) or time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "mode": mode,
+        "prompt": prompt,
+        "title": _history_title_from_prompt(prompt),
+        "description": (description or "").strip(),
+        "meta_tags": _history_meta_tags(mode, kwargs.get("variants_count", 0)),
+        "source": source,
+        "schema_version": kwargs.pop("schema_version", None) or 1,
+    }
+    for key, value in kwargs.items():
+        if value is None or value == "":
+            continue
+        entry[key] = value
+    return entry
+
+
 def filter_history_items(items):
     """仅返回本地 outputs 仍存在的图片，避免历史缩略图 404。"""
     filtered = []
     for item in items:
         entry = dict(item)
+        mode = entry.get("mode", "")
+        prompt = entry.get("prompt", "")
+        existing_title = entry.get("title")
+        if existing_title is None or existing_title == "":
+            entry["title"] = _history_title_from_prompt(prompt)
+        elif isinstance(existing_title, str):
+            entry["title"] = existing_title
+        else:
+            entry["title"] = str(existing_title)
+        entry["description"] = str(entry.get("description") or "").strip()
+        meta_tags = entry.get("meta_tags")
+        if not isinstance(meta_tags, list) or not meta_tags:
+            entry["meta_tags"] = _history_meta_tags(mode, entry.get("variants_count", 0))
+        entry["schema_version"] = entry.get("schema_version") or 1
         images = list(entry.get("output_images") or [])
         if not images and entry.get("output_image"):
             images = [entry["output_image"]]
@@ -1383,16 +1449,16 @@ def execute_generation_job(job: dict) -> None:
 
     if variants and variants[0].get("filename"):
         output_images = [v["filename"] for v in variants if v.get("filename")]
-        entry = {
-            "id": uuid.uuid4().hex[:8],
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "mode": mode,
-            "prompt": prompt,
-            "project": project or "",
-            "input_image": input_filename,
-            "output_images": output_images,
-            "variants_count": len(output_images),
-        }
+        entry = build_history_entry(
+            mode=mode,
+            prompt=prompt,
+            description="",
+            source="job",
+            project=project or "",
+            input_image=input_filename,
+            output_images=output_images,
+            variants_count=len(output_images),
+        )
         add_history(entry)
 
 
@@ -2520,15 +2586,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if variants and variants[0].get("filename"):
                 # 保存所有生成的图片到 output_images
                 output_images = [v["filename"] for v in variants if v.get("filename")]
-                entry = {
-                    "id": uuid.uuid4().hex[:8],
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "mode": mode,
-                    "prompt": prompt,
-                    "project": project,
-                    "output_images": output_images,
-                    "variants_count": len(output_images),
-                }
+                entry = build_history_entry(
+                    mode=mode,
+                    prompt=prompt,
+                    description="",
+                    source="generate",
+                    project=project,
+                    output_images=output_images,
+                    variants_count=len(output_images),
+                )
                 add_history(entry)
 
             self._send_json({"variants": variants, "prompt": prompt})
@@ -2635,16 +2701,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if variants and variants[0].get("filename"):
                 # 保存所有生成的图片到 output_images
                 output_images = [v["filename"] for v in variants if v.get("filename")]
-                entry = {
-                    "id": uuid.uuid4().hex[:8],
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "mode": mode,
-                    "prompt": prompt,
-                    "project": project,
-                    "input_image": input_filename,
-                    "output_images": output_images,
-                    "variants_count": len(output_images),
-                }
+                entry = build_history_entry(
+                    mode=mode,
+                    prompt=prompt,
+                    description="",
+                    source="generate",
+                    project=project,
+                    input_image=input_filename,
+                    output_images=output_images,
+                    variants_count=len(output_images),
+                )
                 add_history(entry)
 
             self._send_json({"variants": variants, "prompt": prompt})
@@ -3340,15 +3406,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             print(f"[EDIT] 尺寸恢复失败: {str(e)}")
 
         # 添加历史记录
-        entry = {
-            "id": uuid.uuid4().hex[:8],
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "mode": "edit",
-            "prompt": prompt,
-            "input_image": input_filename,
-            "output_image": output_filename,
-            "edit_type": edit_type
-        }
+        entry = build_history_entry(
+            mode="edit",
+            prompt=prompt,
+            description=description,
+            source="edit",
+            input_image=input_filename,
+            output_image=output_filename,
+            edit_type=edit_type,
+        )
         try:
             add_history(entry)
         except Exception as e:

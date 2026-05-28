@@ -57,6 +57,8 @@
         .history-info { flex: 1; min-width: 0; }
         .history-time { font-size: 11px; color: rgba(255,255,255,0.35); margin-bottom: 4px; }
         .history-prompt { font-size: 13px; color: rgba(255,255,255,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-title { font-size: 13px; color: rgba(255,255,255,0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-desc { font-size: 12px; color: rgba(255,255,255,0.62); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .history-meta { font-size: 11px; color: #a78bfa; margin-top: 4px; }
         
         /* 全屏图片查看 */
@@ -734,8 +736,6 @@
                         <label>生图模型</label>
                         <select id="imageBackendSelect">
                             <option value="lovart">Lovart 龙虾</option>
-                            <option value="comfyui">ComfyUI</option>
-                            <option value="stable_diffusion">Stable Diffusion</option>
                         </select>
                     </div>
                 </div>
@@ -2819,6 +2819,15 @@ async function loadHistory() {
     } catch(e) {}
 }
 
+function _escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function renderHistory(items) {
     var el = document.getElementById('historyList');
     if (!items.length) {
@@ -2831,8 +2840,18 @@ function renderHistory(items) {
     });
     el.innerHTML = visible.slice(0, 30).map(function(item) {
         var time = new Date(item.timestamp).toLocaleString('zh-CN', {hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
-        var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
-        var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
+        var promptText = item.prompt || '';
+        var title = item.title || (promptText.length > 28 ? promptText.substring(0, 28) + '...' : promptText);
+        var description = (item.description || '').trim();
+        var tags = Array.isArray(item.meta_tags) && item.meta_tags.length ? item.meta_tags.join(' · ') : '';
+        if (!tags) {
+            var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
+            var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
+            tags = mode + variants;
+        }
+        var descHtml = description
+            ? '<div class="history-desc" title="' + _escapeHtml(description) + '">' + _escapeHtml(description) + '</div>'
+            : '';
         var images = item.output_images || (item.output_image ? [item.output_image] : []);
         var imageUrls = images.map(function(img) { return '/outputs/' + String(img).split('?')[0]; });
         var thumbsHtml = imageUrls.length ? imageUrls.map(function(imgSrc, i) {
@@ -2852,8 +2871,9 @@ function renderHistory(items) {
             '</div>' +
             '<div class="history-info">' +
             '<div class="history-time">' + time + '</div>' +
-            '<div class="history-prompt">' + (item.prompt || '').substring(0, 40) + (item.prompt && item.prompt.length > 40 ? '...' : '') + '</div>' +
-            '<div class="history-meta">' + mode + variants + '</div>' +
+            '<div class="history-title" title="' + _escapeHtml(title) + '">' + _escapeHtml(title) + '</div>' +
+            descHtml +
+            '<div class="history-meta">' + _escapeHtml(tags) + '</div>' +
             '</div></div>';
     }).join('');
 }
