@@ -1,4 +1,4 @@
-"""单图按预设尺寸批量导出（本地模糊延展或 Lovart AI 阔图）。"""
+"""单图按预设尺寸批量导出（未勾选 AI 时等比裁切满图，勾选时用 Lovart AI 阔图）。"""
 import json
 import re
 import zipfile
@@ -6,7 +6,7 @@ from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageFilter
+from PIL import Image
 
 BACKEND_DIR = Path(__file__).resolve().parent
 DEFAULT_PRODUCT_TYPE = "xdt"
@@ -65,8 +65,8 @@ def load_output_sizes(config_path: Path | None = None, *, product_type: str | No
     return sizes
 
 
-def _background_cover_blur(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
-    """等比放大裁切铺满画布后高斯模糊，用作延展背景。"""
+def fit_image_cover_crop(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    """等比放大后居中裁切，铺满目标画布（满图、不留白）。"""
     img = src.convert("RGBA")
     sw, sh = img.size
     scale = max(target_w / sw, target_h / sh)
@@ -75,9 +75,7 @@ def _background_cover_blur(src: Image.Image, target_w: int, target_h: int) -> Im
     big = img.resize((nw, nh), Image.Resampling.LANCZOS)
     x = max(0, (nw - target_w) // 2)
     y = max(0, (nh - target_h) // 2)
-    bg = big.crop((x, y, x + target_w, y + target_h))
-    radius = max(12, min(target_w, target_h) // 25)
-    return bg.filter(ImageFilter.GaussianBlur(radius=radius))
+    return big.crop((x, y, x + target_w, y + target_h))
 
 
 def render_splash_canvas(
@@ -87,28 +85,13 @@ def render_splash_canvas(
     *,
     ai_canvas_fn: Callable[[Image.Image, int, int], Image.Image] | None = None,
 ) -> Image.Image:
-    """优先 AI 阔图；失败时回退本地模糊延展。"""
+    """优先 AI 阔图；失败或未启用时等比裁切满图。"""
     if ai_canvas_fn:
         try:
             return ai_canvas_fn(src, target_w, target_h)
         except Exception as e:
-            print(f"[MULTI-SIZE] AI 阔图 {target_w}x{target_h} 失败，回退本地延展: {e}")
-    return fit_image_to_canvas(src, target_w, target_h)
-
-
-def fit_image_to_canvas(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
-    """等比缩放至目标画布内完整显示，空白区用同源图模糊延展（非白底）。"""
-    img = src.convert("RGBA")
-    src_w, src_h = img.size
-    canvas = _background_cover_blur(img, target_w, target_h)
-    scale = min(target_w / src_w, target_h / src_h)
-    new_w = max(1, int(round(src_w * scale)))
-    new_h = max(1, int(round(src_h * scale)))
-    resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    x = (target_w - new_w) // 2
-    y = (target_h - new_h) // 2
-    canvas.paste(resized, (x, y), resized)
-    return canvas
+            print(f"[MULTI-SIZE] AI 阔图 {target_w}x{target_h} 失败，回退裁切满图: {e}")
+    return fit_image_cover_crop(src, target_w, target_h)
 
 
 def save_canvas_compressed(canvas: Image.Image, out_path: Path, *, quality: int = JPEG_QUALITY) -> None:
@@ -183,5 +166,5 @@ def export_multi_sizes(
         "zip_filename": zip_filename,
         "zip_download_name": zip_download_name if make_zip else None,
         "zip_url": zip_url,
-        "backgroundMode": "ai" if ai_fn else "local",
+        "backgroundMode": "ai" if ai_fn else "crop",
     }

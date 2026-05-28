@@ -872,7 +872,7 @@
         <div class="card tab-content" id="multiTab">
             <div class="multi-section">
                 <h3>📐 开屏导出</h3>
-                <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸输出。默认勾选 <strong>AI 阔图</strong>（Lovart）向四周自然补边；未勾选或 AI 不可用时使用本地模糊延展。导出 JPEG。</p>
+                <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸输出。默认勾选 <strong>AI 阔图</strong>（Lovart）向四周自然补边；<strong>不勾选</strong>时按各尺寸<strong>等比放大并居中裁切满图</strong>（无留白）。导出 JPEG。</p>
                 <div class="multi-sizes-list" id="multiSizesList"></div>
                 <div class="multi-upload-zone" id="multiUploadZone" onclick="onMultiUploadZoneClick(event)">
                     <div class="multi-upload-placeholder" id="multiUploadPlaceholder">
@@ -1214,7 +1214,7 @@ function updateMultiHint(count) {
         ? '<code>backend/output_sizes_hll.json</code>'
         : '<code>backend/output_sizes.json</code>';
     hint.innerHTML = '上传一张图片，按 <strong>' + name + '</strong> 预设的 <strong>' +
-        n + ' 种开屏尺寸</strong>；默认 <strong>AI 阔图</strong>（Lovart）自然补边，亦可取消勾选改用本地模糊延展。尺寸配置见 ' + cfg + '。';
+        n + ' 种开屏尺寸</strong>；默认 <strong>AI 阔图</strong>（Lovart），不勾选则<strong>裁切满图</strong>。尺寸配置见 ' + cfg + '。';
 }
 
 function defaultProjectFromUrl() {
@@ -2979,8 +2979,8 @@ async function exportMultiSizes() {
                 (sanitizeDownloadNamePart(data.sourceBaseName || getMultiSourceBaseName()) + '_全部尺寸.zip');
         }
         if (data.sourceBaseName) multiSourceBaseName = data.sourceBaseName;
-        if (multiUseAi && multiUseAi.checked && data.backgroundMode === 'local') {
-            errEl.textContent = '未启用 Lovart 或 AI 阔图失败，已使用本地模糊延展。';
+        if (multiUseAi && multiUseAi.checked && data.backgroundMode === 'crop') {
+            errEl.textContent = '未启用 Lovart 或 AI 阔图失败，已改为等比裁切满图。';
             errEl.style.color = 'rgba(252, 211, 77, 0.95)';
             errEl.style.display = 'block';
         }

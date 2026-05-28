@@ -3070,7 +3070,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             download_image=download_image,
                         )
                 else:
-                    print("[MULTI-SIZE] 未配置 Lovart，AI 阔图回退为本地延展")
+                    print("[MULTI-SIZE] 未配置 Lovart，将使用裁切满图")
 
             result = export_multi_sizes(
                 input_path,
