@@ -23,8 +23,22 @@ from lovart_client import (
     LovartError,
     is_lovart_connection_error,
     is_lovart_limit_error,
-    load_lovart_credentials,
     mask_access_key,
+)
+from project_auth import (
+    unlock,
+    resolve_token,
+    password_for,
+    ALLOWED_PROJECTS,
+    project_slug,
+    is_gate_enabled,
+)
+from project_credentials import (
+    ProjectCredentialsError,
+    ProjectLlmConfig,
+    credentials_status,
+    load_lovart_credentials_for_project,
+    require_project_llm_config,
 )
 from lovart_queue import (
     DuplicateHighJobError,
@@ -121,20 +135,17 @@ def _load_env_file(overwrite: bool = False):
 
 def _reload_runtime_env():
     """重新读取 .env，使修改 Key 后无需重启进程（开发模式）。"""
-    global LOVART_CREDENTIALS, LOVART_ACCESS_KEY, LOVART_SECRET_KEY, LOVART_BASE_URL
+    global LOVART_BASE_URL
     global LOVART_POLL_TIMEOUT, LOVART_MAX_CONCURRENCY, LOVART_TASK_RETRY
     global LOVART_TASK_RETRY_WAIT, LOVART_MODE, LOVART_QUALITY_HINT, IMAGE_BACKEND
     global LOVART_QUEUE_MAX, LOVART_JOB_TTL, LOVART_JOB_MAX_SECONDS, LOVART_ETA_AVG_SECONDS
     global lovart_queue
     global COMFYUI_API_URL, COMFYUI_CHECKPOINT, SD_API_URL, LOCAL_GENERATION_TIMEOUT
-    global DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
-    global QIANWEN_API_KEY, QIANWEN_BASE_URL, QIANWEN_MODEL
-    global KIMI_API_KEY, KIMI_BASE_URL, KIMI_MODEL
-    global DOUBAO_API_KEY, DOUBAO_BASE_URL, DOUBAO_MODEL, DOUBAO_VISION_MODEL
+    global DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    global QIANWEN_BASE_URL, QIANWEN_MODEL
+    global KIMI_BASE_URL, KIMI_MODEL
+    global DOUBAO_BASE_URL, DOUBAO_MODEL, DOUBAO_VISION_MODEL
     _load_env_file(overwrite=True)
-    LOVART_CREDENTIALS = load_lovart_credentials()
-    LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
-    LOVART_SECRET_KEY = LOVART_CREDENTIALS[0][1] if LOVART_CREDENTIALS else ""
     LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai").strip()
     LOVART_POLL_TIMEOUT = int(os.environ.get("LOVART_POLL_TIMEOUT", "300"))
     LOVART_MAX_CONCURRENCY = max(1, int(os.environ.get("LOVART_MAX_CONCURRENCY", "1")))
@@ -150,16 +161,12 @@ def _reload_runtime_env():
     COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
     SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
     LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
-    DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
     DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-    QIANWEN_API_KEY = os.environ.get("QIANWEN_API_KEY", "")
     QIANWEN_BASE_URL = os.environ.get("QIANWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     QIANWEN_MODEL = os.environ.get("QIANWEN_MODEL", "qwen-plus")
-    KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
     KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
     KIMI_MODEL = os.environ.get("KIMI_MODEL", "moonshot-v1-8k")
-    DOUBAO_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
     DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
     DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
     DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
@@ -173,9 +180,6 @@ def _reload_runtime_env():
 _load_env_file()
 DREAMINA_BIN = _resolve_dreamina_bin()
 PORT = int(os.environ.get("PORT", "8000"))
-LOVART_CREDENTIALS = load_lovart_credentials()
-LOVART_ACCESS_KEY = LOVART_CREDENTIALS[0][0] if LOVART_CREDENTIALS else ""
-LOVART_SECRET_KEY = LOVART_CREDENTIALS[0][1] if LOVART_CREDENTIALS else ""
 LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai").strip()
 LOVART_POLL_TIMEOUT = int(os.environ.get("LOVART_POLL_TIMEOUT", "300"))
 LOVART_MAX_CONCURRENCY = max(1, int(os.environ.get("LOVART_MAX_CONCURRENCY", "1")))
@@ -218,142 +222,129 @@ from ssl_utils import make_ssl_context
 
 ssl_ctx = make_ssl_context()
 
-# ─── DeepSeek API 配置 ───────────────────────────────────────────
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+# ─── 大模型 API（按项目组配置，见 project_credentials）────────────────
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-
-
-def call_deepseek(messages, temperature=0.7, max_tokens=1000):
-    """调用 DeepSeek API"""
-    if not DEEPSEEK_API_KEY:
-        return None, "未配置 DEEPSEEK_API_KEY"
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": DEEPSEEK_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-    
-    req = urllib.request.Request(
-        f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST'
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            return data['choices'][0]['message']['content'], None
-    except Exception as e:
-        return None, str(e)
-
-
-# ─── 通义千问 API 配置 ───────────────────────────────────────────
-QIANWEN_API_KEY = os.environ.get("QIANWEN_API_KEY", "")
 QIANWEN_BASE_URL = os.environ.get("QIANWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 QIANWEN_MODEL = os.environ.get("QIANWEN_MODEL", "qwen-plus")
-
-
-def call_qianwen(messages, temperature=0.7, max_tokens=1000):
-    """调用通义千问 API（OpenAI 兼容格式）"""
-    if not QIANWEN_API_KEY:
-        return None, "未配置 QIANWEN_API_KEY"
-    headers = {
-        "Authorization": f"Bearer {QIANWEN_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": QIANWEN_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-    
-    req = urllib.request.Request(
-        f"{QIANWEN_BASE_URL}/chat/completions",
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST'
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            return data['choices'][0]['message']['content'], None
-    except Exception as e:
-        return None, str(e)
-
-
-# ─── Kimi API 配置 ───────────────────────────────────────────────
-KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
 KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
 KIMI_MODEL = os.environ.get("KIMI_MODEL", "moonshot-v1-8k")
-
-
-def call_kimi(messages, temperature=0.7, max_tokens=1000):
-    """调用 Kimi API（OpenAI 兼容格式）"""
-    if not KIMI_API_KEY:
-        return None, "未配置 KIMI_API_KEY"
-    headers = {
-        "Authorization": f"Bearer {KIMI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": KIMI_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-    
-    req = urllib.request.Request(
-        f"{KIMI_BASE_URL}/chat/completions",
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST'
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            return data['choices'][0]['message']['content'], None
-    except Exception as e:
-        return None, str(e)
-
-
-# ─── 豆包 API 配置 ───────────────────────────────────────────────
-DOUBAO_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
 DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
 DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
 
 
-def call_doubao(messages, temperature=0.7, max_tokens=1000):
-    """调用豆包 API（OpenAI 兼容格式）"""
-    if not DOUBAO_API_KEY:
-        return None, "未配置 DOUBAO_API_KEY"
+def call_deepseek(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
+    """调用 DeepSeek API"""
+    if not config.deepseek_api_key:
+        return None, f"未配置 DEEPSEEK_API_KEY_{config.slug}"
     headers = {
-        "Authorization": f"Bearer {DOUBAO_API_KEY}",
+        "Authorization": f"Bearer {config.deepseek_api_key}",
         "Content-Type": "application/json"
     }
     
     payload = {
-        "model": DOUBAO_MODEL,
+        "model": config.deepseek_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens
     }
     
     req = urllib.request.Request(
-        f"{DOUBAO_BASE_URL}/chat/completions",
+        f"{config.deepseek_base_url.rstrip('/')}/v1/chat/completions",
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST'
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            return data['choices'][0]['message']['content'], None
+    except Exception as e:
+        return None, str(e)
+
+
+def call_qianwen(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
+    """调用通义千问 API（OpenAI 兼容格式）"""
+    if not config.qianwen_api_key:
+        return None, f"未配置 QIANWEN_API_KEY_{config.slug}"
+    headers = {
+        "Authorization": f"Bearer {config.qianwen_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": config.qianwen_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+    
+    req = urllib.request.Request(
+        f"{config.qianwen_base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST'
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            return data['choices'][0]['message']['content'], None
+    except Exception as e:
+        return None, str(e)
+
+
+def call_kimi(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
+    """调用 Kimi API（OpenAI 兼容格式）"""
+    if not config.kimi_api_key:
+        return None, f"未配置 KIMI_API_KEY_{config.slug}"
+    headers = {
+        "Authorization": f"Bearer {config.kimi_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": config.kimi_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+    
+    req = urllib.request.Request(
+        f"{config.kimi_base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST'
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            return data['choices'][0]['message']['content'], None
+    except Exception as e:
+        return None, str(e)
+
+
+def call_doubao(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
+    """调用豆包 API（OpenAI 兼容格式）"""
+    if not config.doubao_api_key:
+        return None, f"未配置 DOUBAO_API_KEY_{config.slug}"
+    headers = {
+        "Authorization": f"Bearer {config.doubao_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": config.doubao_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+    
+    req = urllib.request.Request(
+        f"{config.doubao_base_url.rstrip('/')}/chat/completions",
         data=json.dumps(payload).encode('utf-8'),
         headers=headers,
         method='POST'
@@ -407,6 +398,12 @@ def _history_mode_label(mode: str) -> str:
     if mode == "text2img":
         return "✨文字生图"
     return "📷图片改图"
+
+
+def _main_title_from_summary(summary) -> str:
+    if not isinstance(summary, dict):
+        return ""
+    return str(summary.get("主标题") or "").strip()
 
 
 def _history_meta_tags(mode: str, variants_count: int = 0) -> list:
@@ -806,14 +803,14 @@ ANALYZE_SYSTEM_PROMPT = """你是专业的视觉设计助手，擅长将设计�
 3D立体风格,产品宣传图,标题"新品首发",紫色渐变背景,科技感光效,现代简约构图,专业商务氛围"""
 
 
-def _primary_llm_provider_label():
-    base = (DEEPSEEK_BASE_URL or "").lower()
-    if "dtok.ai" in base:
+def _primary_llm_provider_label(config: ProjectLlmConfig):
+    base = (config.deepseek_base_url or "").lower()
+    if "dtok.ai" in base or "agenthub" in base:
         return "dtok"
     return "deepseek"
 
 
-def analyze_prompt_from_summary(summary, project_meta=None, regenerate=False):
+def analyze_prompt_from_summary(summary, project_meta=None, regenerate=False, project: str = ""):
     """调用 LLM 润色提示词；全部失败时降级为本地规则拼接。
 
     返回 (prompt, source, provider, model, warning)
@@ -849,32 +846,33 @@ def analyze_prompt_from_summary(summary, project_meta=None, regenerate=False):
     ]
     temperature = 0.85 if regenerate else 0.7
     last_error = ""
+    cfg = require_project_llm_config(project)
 
-    ai_prompt, error = call_deepseek(messages, temperature=temperature, max_tokens=500)
+    ai_prompt, error = call_deepseek(messages, cfg, temperature=temperature, max_tokens=500)
     if not error:
-        print(f"[{_primary_llm_provider_label()}] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", _primary_llm_provider_label(), DEEPSEEK_MODEL, None
+        print(f"[{_primary_llm_provider_label(cfg)}] AI 输出: {ai_prompt}")
+        return (ai_prompt or "").strip(), "llm", _primary_llm_provider_label(cfg), cfg.deepseek_model, None
     last_error = error
     print(f"[DeepSeek Error] {error}, 尝试千问...")
 
-    ai_prompt, error2 = call_qianwen(messages, temperature=temperature, max_tokens=500)
+    ai_prompt, error2 = call_qianwen(messages, cfg, temperature=temperature, max_tokens=500)
     if not error2:
         print(f"[千问] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", "qianwen", QIANWEN_MODEL, None
+        return (ai_prompt or "").strip(), "llm", "qianwen", cfg.qianwen_model, None
     last_error = error2
     print(f"[千问 Error] {error2}, 尝试Kimi...")
 
-    ai_prompt, error3 = call_kimi(messages, temperature=temperature, max_tokens=500)
+    ai_prompt, error3 = call_kimi(messages, cfg, temperature=temperature, max_tokens=500)
     if not error3:
         print(f"[Kimi] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", "kimi", KIMI_MODEL, None
+        return (ai_prompt or "").strip(), "llm", "kimi", cfg.kimi_model, None
     last_error = error3
     print(f"[Kimi Error] {error3}, 尝试豆包...")
 
-    ai_prompt, error4 = call_doubao(messages, temperature=temperature, max_tokens=500)
+    ai_prompt, error4 = call_doubao(messages, cfg, temperature=temperature, max_tokens=500)
     if not error4:
         print(f"[豆包] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", "doubao", DOUBAO_MODEL, None
+        return (ai_prompt or "").strip(), "llm", "doubao", cfg.doubao_model, None
 
     last_error = error4
     print(f"[豆包 Error] {error4}, 降级到简单拼接")
@@ -913,22 +911,27 @@ def call_lovart(
     size_mode="online",
     dpi=None,
 ):
-    """调用 Lovart OpenAPI 生图；多 Key 时在并发/额度受限时自动切换。"""
-    if not LOVART_CREDENTIALS:
-        return None, "未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY"
+    """调用 Lovart OpenAPI 生图；同项目组多 Key 时在并发/额度受限时自动切换。"""
+    if not local_project:
+        return None, "未指定项目组，无法选择 Lovart Key"
+    lovart_credentials = load_lovart_credentials_for_project(local_project)
+    if not lovart_credentials:
+        slug = require_project_llm_config(local_project).slug
+        return None, f"{local_project} 未配置 Lovart Key（LOVART_ACCESS_KEY_{slug}）"
 
     timeout = max(poll_timeout, LOVART_POLL_TIMEOUT)
     last_error = None
     project_title = ""
-    if local_project:
-        meta = get_project_meta(local_project) or {}
-        project_title = (meta.get("display_name") or local_project).strip()
+    meta = get_project_meta(local_project) or {}
+    project_title = (meta.get("display_name") or local_project).strip()
+    cfg = require_project_llm_config(local_project)
+    lovart_base = cfg.lovart_base_url
 
-    for cred_index, (access_key, secret_key) in enumerate(LOVART_CREDENTIALS):
+    for cred_index, (access_key, secret_key) in enumerate(lovart_credentials):
         client = LovartClient(
             access_key=access_key,
             secret_key=secret_key,
-            base_url=LOVART_BASE_URL,
+            base_url=lovart_base,
             timeout=timeout,
         )
         resolved_project_id = lovart_project_id
@@ -973,11 +976,11 @@ def call_lovart(
             if is_lovart_connection_error(error):
                 break
 
-            has_backup_key = cred_index + 1 < len(LOVART_CREDENTIALS)
+            has_backup_key = cred_index + 1 < len(lovart_credentials)
             if is_lovart_limit_error(error) and has_backup_key:
                 print(
                     f"[Lovart] Key {mask_access_key(access_key)} 并发或额度受限，"
-                    f"切换到备用 Key ({cred_index + 2}/{len(LOVART_CREDENTIALS)})"
+                    f"切换到备用 Key ({cred_index + 2}/{len(lovart_credentials)})"
                 )
                 switch_to_next_key = True
                 break
@@ -999,15 +1002,18 @@ def call_lovart(
     return None, last_error or "Lovart 生成失败"
 
 
-def check_lovart_reachable(timeout: int = 8) -> tuple[bool, str]:
+def check_lovart_reachable(project: str, timeout: int = 8) -> tuple[bool, str]:
     """快速探测 Lovart API 是否可达（用于生图/智能提取前置检查）。"""
-    if not LOVART_CREDENTIALS:
-        return False, "未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY"
-    ak, sk = LOVART_CREDENTIALS[0]
+    creds = load_lovart_credentials_for_project(project)
+    if not creds:
+        slug = require_project_llm_config(project).slug
+        return False, f"{project} 未配置 Lovart Key（LOVART_ACCESS_KEY_{slug}）"
+    ak, sk = creds[0]
+    cfg = require_project_llm_config(project)
     client = LovartClient(
         access_key=ak,
         secret_key=sk,
-        base_url=LOVART_BASE_URL,
+        base_url=cfg.lovart_base_url,
         timeout=timeout,
     )
     try:
@@ -1276,15 +1282,18 @@ def generate_variants(
     poll_timeout = LOVART_POLL_TIMEOUT if backend == "lovart" else LOCAL_GENERATION_TIMEOUT
 
     lovart_project_id = None
-    if backend == "lovart" and local_project and LOVART_CREDENTIALS:
-        ak, sk = LOVART_CREDENTIALS[0]
-        client = LovartClient(
-            access_key=ak,
-            secret_key=sk,
-            base_url=LOVART_BASE_URL,
-            timeout=poll_timeout,
-        )
-        lovart_project_id = ensure_lovart_project(local_project, client) or None
+    if backend == "lovart" and local_project:
+        creds = load_lovart_credentials_for_project(local_project)
+        if creds:
+            ak, sk = creds[0]
+            cfg = require_project_llm_config(local_project)
+            client = LovartClient(
+                access_key=ak,
+                secret_key=sk,
+                base_url=cfg.lovart_base_url,
+                timeout=poll_timeout,
+            )
+            lovart_project_id = ensure_lovart_project(local_project, client) or None
 
     def generate_one(idx):
         image_url, error = call_image_generator(
@@ -1449,6 +1458,7 @@ def execute_generation_job(job: dict) -> None:
 
     if variants and variants[0].get("filename"):
         output_images = [v["filename"] for v in variants if v.get("filename")]
+        summary = payload.get("summary") or {}
         entry = build_history_entry(
             mode=mode,
             prompt=prompt,
@@ -1458,6 +1468,7 @@ def execute_generation_job(job: dict) -> None:
             input_image=input_filename,
             output_images=output_images,
             variants_count=len(output_images),
+            main_title=_main_title_from_summary(summary),
         )
         add_history(entry)
 
@@ -1789,9 +1800,9 @@ def run_ai_extract_subject(
                 "usedPrompt": bool((prompt or "").strip()),
             }
         except Exception as cutout_err:
-            if not LOVART_CREDENTIALS:
+            if not local_project or not load_lovart_credentials_for_project(local_project):
                 raise ValueError(f"智能抠图失败：{cutout_err}")
-            reachable, reach_err = check_lovart_reachable(timeout=8)
+            reachable, reach_err = check_lovart_reachable(local_project, timeout=8)
             if not reachable:
                 raise ValueError(f"智能抠图失败：{cutout_err}；且无法连接 Lovart 兜底服务：{reach_err or '网络不可用'}")
 
@@ -2007,20 +2018,25 @@ HTML_TEMPLATE = TEMPLATE_DIR / "index.html"
 _html_cache = {"mtime": 0.0, "content": ""}
 
 
+def _inject_project_gate_flag(html: str) -> str:
+    gate_flag = "true" if is_gate_enabled() else "false"
+    return html.replace("__PROJECT_GATE_ENABLED__", gate_flag)
+
+
 def get_html_page():
     """生产环境缓存模板；DEV_RELOAD=1 时每次请求重新读取（改 UI 无需重启）。"""
     if not HTML_TEMPLATE.exists():
         return "<html><body><h1>缺少 templates/index.html</h1></body></html>"
     dev = os.environ.get("DEV_RELOAD", "").strip().lower() in ("1", "true", "yes")
     if dev:
-        return HTML_TEMPLATE.read_text(encoding="utf-8")
+        return _inject_project_gate_flag(HTML_TEMPLATE.read_text(encoding="utf-8"))
     mtime = HTML_TEMPLATE.stat().st_mtime
     if _html_cache["content"] and _html_cache["mtime"] == mtime:
-        return _html_cache["content"]
+        return _inject_project_gate_flag(_html_cache["content"])
     content = HTML_TEMPLATE.read_text(encoding="utf-8")
     _html_cache["mtime"] = mtime
     _html_cache["content"] = content
-    return content
+    return _inject_project_gate_flag(content)
 
 
 
@@ -2047,10 +2063,49 @@ class Handler(http.server.BaseHTTPRequestHandler):
         raw = params.get("type", [""])[0]
         return normalize_product_type(raw)
 
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            return json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return {}
+
+    def _bearer_token(self) -> str:
+        auth = (self.headers.get("Authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+        return ""
+
+    def _token_project(self) -> Optional[str]:
+        info = resolve_token(self._bearer_token())
+        return info["project"] if info else None
+
+    def _auth_any(self) -> bool:
+        if not is_gate_enabled():
+            return True
+        if self._token_project():
+            return True
+        self._send_json({"error": "未登录或登录已失效"}, status=401)
+        return False
+
+    def _auth_project(self, project_name: str) -> Optional[str]:
+        project_name = (project_name or "").strip()
+        if not is_gate_enabled():
+            return project_name or None
+        auth = self._token_project()
+        if not auth:
+            self._send_json({"error": "未登录或登录已失效"}, status=401)
+            return None
+        if project_name and project_name != auth:
+            self._send_json({"error": "无权访问该项目"}, status=403)
+            return None
+        return auth
+
     def _send_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id, Authorization')
 
     def do_OPTIONS(self):
         path = self._normalized_path()
@@ -2058,7 +2113,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     '/generate-variants', '/generate-with-prompt', '/upscale', '/api/gif-to-svga',
                     '/api/multi-size-export', '/api/crop-image', '/api/magic-cutout',
                     '/api/smart-cutout', '/api/make-breathing-gif', '/api/layout-extend',
-                    '/api/generation/jobs'):
+                    '/api/generation/jobs', '/api/project-unlock'):
             self.send_response(204)
             self._send_cors_headers()
             self.end_headers()
@@ -2082,16 +2137,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
             parts = path.split('/')
             if len(parts) >= 5:
                 project = urllib.parse.unquote(parts[2])
+                if self._auth_project(project) is None:
+                    return
                 filename = urllib.parse.unquote(parts[4].split('?')[0])
                 self._serve_file(project_refs_dir(project), filename)
             else:
                 self.send_response(404)
                 self.end_headers()
         elif path == '/projects':
-            self._send_json({"projects": list_projects()})
+            if is_gate_enabled():
+                auth = self._token_project()
+                if not auth:
+                    self._send_json({"error": "未登录或登录已失效"}, status=401)
+                    return
+                all_projects = list_projects()
+                one = [p for p in all_projects if p.get("name") == auth]
+                self._send_json({"projects": one})
+            else:
+                self._send_json({"projects": list_projects()})
         elif path.startswith('/projects/') and path.endswith('/images'):
             parts = path.split('/')
             project = urllib.parse.unquote(parts[2])
+            if self._auth_project(project) is None:
+                return
             params = self._query_params()
             design_type = params.get("design_type", [""])[0]
             self._send_json({
@@ -2102,6 +2170,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             parts = path.split('/')
             if len(parts) >= 6:
                 project = urllib.parse.unquote(parts[2])
+                if self._auth_project(project) is None:
+                    return
                 folder = urllib.parse.unquote(parts[4])
                 filename = urllib.parse.unquote(parts[5].split('?')[0])
                 ref_dir = typed_reference_dir(project, folder)
@@ -2114,10 +2184,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif path == '/history':
-            self._send_json({"items": filter_history_items(load_history())})
+            if is_gate_enabled():
+                auth = self._token_project()
+                if not auth:
+                    self._send_json({"error": "未登录或登录已失效"}, status=401)
+                    return
+                items = [
+                    i for i in filter_history_items(load_history())
+                    if i.get("project") == auth
+                ]
+            else:
+                items = filter_history_items(load_history())
+            self._send_json({"items": items})
         elif path == '/api/output-sizes':
             params = self._query_params()
             project = params.get("project", [""])[0]
+            if project and self._auth_project(project) is None:
+                return
             ptype = self._product_type_from_query()
             if project:
                 ptype = project_product_type(project)
@@ -2128,9 +2211,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/system-info':
             self._handle_system_info()
         elif path.startswith('/api/generation/jobs/'):
+            if not self._auth_any():
+                return
             job_id = path[len('/api/generation/jobs/'):].strip('/')
             self._handle_generation_job_get(job_id)
         elif path == '/api/generation/jobs':
+            if not self._auth_any():
+                return
             params = self._query_params()
             client_id = (params.get("client_id", [""])[0] or "").strip()
             if not client_id:
@@ -2138,6 +2225,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             self._send_json({"jobs": lovart_queue.list_jobs(client_id)})
         elif path == '/api/smart-cutout/status':
+            if not self._auth_any():
+                return
             self._handle_smart_cutout_status()
         elif path == '/api/layout-extend/presets':
             self._send_json({"presets": list_layout_presets()})
@@ -2146,6 +2235,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             project = urllib.parse.unquote(params.get("project", [""])[0])
             if not project:
                 self._send_json({"error": "请指定 project 参数"})
+                return
+            if self._auth_project(project) is None:
                 return
             self._send_json({
                 "project": project,
@@ -2160,6 +2251,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self._normalized_path()
         post_routes = {
+            '/api/project-unlock': self._handle_project_unlock,
             '/parse': self._handle_parse,
             '/api/analyze': self._handle_analyze,
             '/generate-variants': self._handle_generate_variants,
@@ -2326,6 +2418,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             return None, f"抓取失败: {str(e)}"
 
+    def _handle_project_unlock(self):
+        _reload_runtime_env()
+        if not is_gate_enabled():
+            self._send_json({"error": "项目组门禁已关闭"}, status=400)
+            return
+        body = self._read_json_body()
+        project = (body.get("project") or "").strip()
+        password = body.get("password") or ""
+        if project not in ALLOWED_PROJECTS:
+            self._send_json({"error": "未知项目组"}, status=400)
+            return
+        if not password_for(project):
+            self._send_json({"error": "该项目组未配置密码"}, status=400)
+            return
+        token = unlock(project, password)
+        if not token:
+            self._send_json({"error": "密码错误"}, status=401)
+            return
+        meta = get_project_meta(project) or {}
+        self._send_json({
+            "token": token,
+            "project": project,
+            "display_name": meta.get("display_name") or project,
+            "catalog": detect_project_catalog(project),
+            "product_type": project_product_type(project),
+            "credentials_status": credentials_status(project),
+        })
+
     def _handle_fetch_url(self, url):
         """GET /fetch-url?url=... 抓取网页内容"""
         text, error = self._fetch_url_content(url)
@@ -2344,8 +2464,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "无效请求"})
             return
 
+        auth_project = self._auth_project((data.get('project') or '').strip())
+        if not auth_project:
+            return
+
         text = data.get('text', '').strip()
-        project_name = data.get('project')
+        project_name = auth_project
 
         if not text:
             self._send_json({"error": "请输入需求描述或网址"})
@@ -2391,22 +2515,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fields = {}
 
         summary_json = fields.get('summary', '{}')
-        project = fields.get('project', '')
+        auth_project = self._auth_project(str(fields.get('project', '') or '').strip())
+        if not auth_project:
+            return
 
         try:
             summary = json.loads(summary_json)
         except:
             summary = {}
 
-        # 获取项目元数据
-        project_meta = get_project_meta(project) if project else None
+        project_meta = get_project_meta(auth_project)
         regenerate = str(fields.get("regenerate", "0")).strip().lower() in ("1", "true", "yes")
 
-        ai_prompt, source, provider, model, warning = analyze_prompt_from_summary(
-            summary,
-            project_meta,
-            regenerate=regenerate,
-        )
+        try:
+            ai_prompt, source, provider, model, warning = analyze_prompt_from_summary(
+                summary,
+                project_meta,
+                regenerate=regenerate,
+                project=auth_project,
+            )
+        except ProjectCredentialsError as e:
+            self._send_json({"error": str(e)}, status=503)
+            return
 
         payload = {
             "prompt": ai_prompt,
@@ -2430,6 +2560,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
+            auth_project = self._auth_project(str(fields.get("project", "") or "").strip())
+            if not auth_project:
+                return
             kind = str(fields.get("kind", "variants") or "variants").strip()
             client_id = str(fields.get("client_id", "") or "").strip()
             if not client_id:
@@ -2440,6 +2573,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             payload = build_generation_payload(fields, kind)
+            payload["project"] = auth_project
             payload["client_id"] = client_id
             backend = normalize_image_backend(payload.get("image_backend"))
 
@@ -2531,14 +2665,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fields = {}
 
         prompt = fields.get('prompt', '')
-        project = fields.get('project', '')
+        auth_project = self._auth_project(str(fields.get('project', '') or '').strip())
+        if not auth_project:
+            return
+        project = auth_project
         count = int(fields.get('count', '3'))
         ratio = fields.get('ratio', '1:1')
         if not prompt:
             self._send_json({"error": "请提供关键词"})
             return
 
-        product_type = project_product_type(project) if project else normalize_product_type(str(fields.get("type", "")))
+        product_type = project_product_type(project)
         lovart_err = lovart_project_required_error(project)
         if lovart_err:
             self._send_json({"error": lovart_err})
@@ -2625,7 +2762,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fields = {}
 
         summary_json = fields.get('summary', '{}')
-        project = fields.get('project', '')
+        auth_project = self._auth_project(str(fields.get('project', '') or '').strip())
+        if not auth_project:
+            return
+        project = auth_project
         count = int(fields.get('count', '3'))
         ratio = fields.get('ratio', '1:1')
         uploaded_file = fields.get('file')
@@ -2635,10 +2775,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except:
             summary = {}
 
-        # 获取项目元数据
-        project_meta = get_project_meta(project) if project else None
+        project_meta = get_project_meta(project)
 
-        product_type = project_product_type(project) if project else normalize_product_type(str(fields.get("type", "")))
+        product_type = project_product_type(project)
         lovart_err = lovart_project_required_error(project)
         if lovart_err:
             self._send_json({"error": lovart_err})
@@ -2710,6 +2849,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     input_image=input_filename,
                     output_images=output_images,
                     variants_count=len(output_images),
+                    main_title=_main_title_from_summary(summary),
                 )
                 add_history(entry)
 
@@ -2743,6 +2883,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _handle_make_breathing_gif(self):
         """静态底图 + 按钮图层 → 呼吸动效 GIF"""
         try:
+            if not self._auth_any():
+                return
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
                 self._send_json({"error": "请使用 multipart 上传图片"})
@@ -2797,6 +2939,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _handle_crop_image(self):
         """按用户框选区域裁切为指定宽高"""
         try:
+            if not self._auth_any():
+                return
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
                 self._send_json({"error": "请使用 multipart 上传图片"})
@@ -2853,6 +2997,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _handle_magic_cutout(self):
         """魔棒选区抠图：蒙版白色区域变为透明"""
         try:
+            if not self._auth_any():
+                return
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
                 self._send_json({"error": "请使用 multipart 上传图片"})
@@ -2894,13 +3040,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _handle_system_info(self):
         _reload_runtime_env()
+        if is_gate_enabled():
+            project = self._token_project()
+            if not project:
+                self._send_json({"error": "未登录或登录已失效"}, status=401)
+                return
+        else:
+            params = self._query_params()
+            project = urllib.parse.unquote(params.get("project", [""])[0]).strip()
+            if not project:
+                self._send_json({"error": "请指定 project 参数"}, status=400)
+                return
+        ok, msg = check_lovart_reachable(project)
+        creds = load_lovart_credentials_for_project(project)
         self._send_json({
-            "lovartKeyCount": len(LOVART_CREDENTIALS),
+            "project": project,
+            "lovartReachable": ok,
+            "lovartMessage": msg,
+            "lovartKeyCount": len(creds),
             "imageBackend": normalize_image_backend(),
             "smartCutoutBackend": preferred_cutout_backend(),
             "smartCutoutHasRembg": has_rembg(),
             "smartCutoutAsync": True,
-            "lovartBaseUrl": LOVART_BASE_URL,
+            "lovartBaseUrl": require_project_llm_config(project).lovart_base_url,
+            "credentials_status": credentials_status(project),
+            "projectGateEnabled": is_gate_enabled(),
         })
 
     def _handle_smart_cutout_status(self):
@@ -2957,7 +3121,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "请先在图片上框选要提取的区域（选区太小）"})
                 return
             trim = str(fields.get("trim", "1")).strip().lower() not in ("0", "false", "no")
-            local_project = str(fields.get("local_project", "") or "").strip() or None
+            local_project = self._auth_project(
+                str(fields.get("local_project", "") or fields.get("project", "")).strip()
+            )
+            if not local_project:
+                return
             job_id = uuid.uuid4().hex[:12]
             ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()
             if ext not in (".png", ".jpg", ".jpeg", ".webp"):
@@ -3009,6 +3177,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
+            auth_project = self._auth_project(
+                str(fields.get("local_project", "") or fields.get("project", "")).strip()
+            )
+            if not auth_project:
+                return
             img_field = fields.get("image")
             if not img_field or not isinstance(img_field, dict):
                 self._send_json({"error": "请上传设计图"})
@@ -3033,10 +3206,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ai_fn = None
             if use_ai:
                 _reload_runtime_env()
-                if LOVART_CREDENTIALS:
-                    local_project = (
-                        str(fields.get("local_project", "") or fields.get("project", "")).strip() or None
-                    )
+                local_project = auth_project
+                if load_lovart_credentials_for_project(local_project):
 
                     def ai_background_fn(src_img, meta):
                         tw, th = int(meta["width"]), int(meta["height"])
@@ -3097,11 +3268,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
             project_name = str(fields.get("project", "")).strip()
-            ptype = (
-                project_product_type(project_name)
-                if project_name
-                else normalize_product_type(str(fields.get("type", "")))
-            )
+            auth_project = self._auth_project(project_name)
+            if not auth_project:
+                return
+            project_name = auth_project
+            ptype = project_product_type(project_name)
             img_field = fields.get("image")
             if not img_field or not isinstance(img_field, dict):
                 self._send_json({"error": "请上传图片"})
@@ -3119,8 +3290,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ai_canvas_fn = None
             if use_ai:
                 _reload_runtime_env()
-                if LOVART_CREDENTIALS:
-                    local_project = project_name or None
+                auth_project = self._auth_project(project_name)
+                if auth_project and load_lovart_credentials_for_project(auth_project):
+                    local_project = auth_project
 
                     def ai_canvas_fn(src_img, tw, th):
                         return run_ai_extend_to_size(
@@ -3186,6 +3358,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _handle_gif_to_svga(self):
         """GIF 转 SVGA"""
         try:
+            if not self._auth_any():
+                return
             content_type = self.headers.get("Content-Type", "")
             if "multipart/form-data" not in content_type:
                 self._send_json({"error": "请使用 multipart 上传 GIF 文件"})
@@ -3290,11 +3464,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "无效请求格式"})
             return
 
+        auth_project = self._auth_project((data.get('project') or '').strip())
+        if not auth_project:
+            return
+
         image_data = data.get('image', '')
         description = data.get('description', '')
         edit_type = data.get('editType', '文案修改')
         keep_elements = data.get('keepElements', '')
-        local_project = (data.get('project') or '').strip() or None
+        local_project = auth_project
         regions = data.get('regions') or []
         reference_paths = _save_edit_reference_images_from_payload(data)
 
@@ -3411,6 +3589,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             prompt=prompt,
             description=description,
             source="edit",
+            project=auth_project,
             input_image=input_filename,
             output_image=output_filename,
             edit_type=edit_type,
@@ -3466,13 +3645,17 @@ if __name__ == '__main__':
     print(f"   打开浏览器访问: http://localhost:{listen_port}")
     print(f"   项目目录: {BASE_DIR}")
     print(f"   项目组目录: {PROJECTS_DIR}")
-    key_count = len(LOVART_CREDENTIALS)
-    print(f"   生图后端: Lovart（当前仅此）")
-    print(f"   Lovart API: {LOVART_BASE_URL}（已配置 {key_count} 组 Key，受限时自动切换）")
-    if not LOVART_CREDENTIALS:
-        print("   提示: 未配置 LOVART_ACCESS_KEY / LOVART_SECRET_KEY，生图将不可用")
-    if not any([DEEPSEEK_API_KEY, QIANWEN_API_KEY, KIMI_API_KEY, DOUBAO_API_KEY]):
-        print("   提示: 未配置大模型 API Key，关键词分析将使用本地规则拼接")
+    print(f"   生图后端: Lovart（按项目组 Key，见 LOVART_*_HLL / LOVART_*_XDT）")
+    print(f"   Lovart API: {LOVART_BASE_URL}")
+    for pname in ALLOWED_PROJECTS:
+        creds = load_lovart_credentials_for_project(pname)
+        print(f"   · {pname}: Lovart {len(creds)} 组 Key")
+        try:
+            require_project_llm_config(pname)
+            print(f"     DeepSeek: 已配置 DEEPSEEK_API_KEY_{project_slug(pname)}")
+        except ProjectCredentialsError:
+            print(f"     DeepSeek: 未配置 DEEPSEEK_API_KEY_{project_slug(pname)}")
+    print(f"   门禁: 打开页面需选择项目组并输入密码（PROJECT_PASSWORD_HLL / _XDT）")
     print(f"   功能: 需求解析 · 多图变体 · 项目组选择 · 风格参考\n")
 
     with httpd:

@@ -224,25 +224,43 @@ curl -I https://lgw.lovart.ai -x http://proxy.example.com:1080
 
 | 值 | 依赖 |
 |----|------|
-| `lovart`（推荐） | `LOVART_ACCESS_KEY`、`LOVART_SECRET_KEY` |
+| `lovart`（推荐） | 每组 `LOVART_ACCESS_KEY_HLL`/`_XDT` 与对应 `LOVART_SECRET_KEY_*` |
 | `dreamina` | 已安装 **即梦 CLI**（`dreamina` 命令，或配置 `DREAMINA_BIN`） |
 | `comfyui` | 本地 ComfyUI（`COMFYUI_API_URL`、`COMFYUI_CHECKPOINT`） |
 | `stable_diffusion` | 本地 SD WebUI（`SD_API_URL`） |
 | `auto` | 有 Lovart Key 时优先 Lovart，否则即梦 |
 
-### 关键词分析（至少配置一个 LLM Key）
+### 项目组门禁
 
-- `DEEPSEEK_API_KEY`
-- `QIANWEN_API_KEY`
-- `KIMI_API_KEY`
-- `DOUBAO_API_KEY`
+| 变量 | 说明 |
+|------|------|
+| `PROJECT_GATE_ENABLED` | `1`（默认）开启门禁；`0` / `false` 关闭（恢复项目组下拉，API 不校验 Bearer） |
 
-未配置时仍可使用，但「AI 分析关键词」会走本地规则拼接。
+门禁**开启**时，打开或刷新页面需先选择项目组并输入密码（内存 Token，刷新后需重登）：
 
-**公司 TokenHub / AgentHub（推荐）**：入口 [https://agenthub.vipthink.cn/](https://agenthub.vipthink.cn/)，扫码登录 → 创建 Key → 写入：
+| 项目组 | 环境变量 | 示例 |
+|--------|----------|------|
+| 画啦啦 | `PROJECT_PASSWORD_HLL` | `hll2026` |
+| 小灯塔 | `PROJECT_PASSWORD_XDT` | `xdt2026` |
+
+解锁后 API 请求须带：`Authorization: Bearer <token>`。
+
+### 项目组大模型 / Lovart Key（必须分组，禁止回落无后缀全局 Key）
+
+| 项目组 | Lovart（迁移） | DeepSeek 润色（必填） |
+|--------|----------------|------------------------|
+| 画啦啦 | `LOVART_ACCESS_KEY_HLL`（原主 Key） | `DEEPSEEK_API_KEY_HLL` |
+| 小灯塔 | `LOVART_ACCESS_KEY_XDT`（原 `_2` 备用 Key） | `DEEPSEEK_API_KEY_XDT` |
+
+可选：`QIANWEN_API_KEY_*`、`KIMI_API_KEY_*`、`DOUBAO_API_KEY_*`；同组 Lovart 备用 `LOVART_ACCESS_KEY_HLL_2` 等。
+
+未配置对应组的 `DEEPSEEK_API_KEY_*` 时，「AI 分析关键词」会走本地规则拼接。
+
+**公司 TokenHub / AgentHub（推荐）**：入口 [https://agenthub.vipthink.cn/](https://agenthub.vipthink.cn/)，扫码登录 → 创建 Key → **画啦啦、小灯塔各写一份**（目前仅一个 Key 时可先填相同值到 `_HLL` 与 `_XDT`）：
 
 ```bash
-DEEPSEEK_API_KEY=sk-user-你的Key
+DEEPSEEK_API_KEY_HLL=sk-user-你的Key
+DEEPSEEK_API_KEY_XDT=sk-user-你的Key
 DEEPSEEK_BASE_URL=https://agenthub.vipthink.cn
 # 模型 ID 须与 AgentHub 列表一致，例如 claude-haiku-4-5-20251001（不是简称 claude-haiku-4-5）
 DEEPSEEK_MODEL=claude-haiku-4-5-20251001

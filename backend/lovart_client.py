@@ -56,10 +56,26 @@ def load_lovart_credentials() -> list[tuple[str, str]]:
     return unique
 
 
-def is_lovart_limit_error(message: str) -> bool:
-    """并发已满、额度或频率受限时可切换下一组 Key。"""
+def is_lovart_credit_error(message: str) -> bool:
+    """快速生成信用不足，可改走套餐内的无限低速模式。"""
     if not message:
         return False
+    markers = (
+        "insufficient credit",
+        "payment required",
+        "信用",
+        "充值",
+    )
+    lower = message.lower()
+    return any(marker in lower for marker in markers)
+
+
+def is_lovart_limit_error(message: str) -> bool:
+    """并发已满、额度/信用用尽或频率受限时可切换下一组 Key。"""
+    if not message:
+        return False
+    if is_lovart_credit_error(message):
+        return True
     markers = (
         "concurrent task limit",
         "rate limit",
@@ -72,6 +88,16 @@ def is_lovart_limit_error(message: str) -> bool:
     )
     lower = message.lower()
     return any(marker in lower for marker in markers)
+
+
+def _lovart_unlimited_attempts() -> tuple[bool, ...]:
+    """生图前 set_mode(unlimited=…) 的尝试顺序（见 LOVART_UNLIMITED）。"""
+    pref = os.environ.get("LOVART_UNLIMITED", "auto").strip().lower()
+    if pref in ("1", "true", "yes", "on", "unlimited", "only"):
+        return (True,)
+    if pref in ("0", "false", "no", "off", "never", "fast"):
+        return (False,)
+    return (False, True)
 
 
 def is_lovart_connection_error(message: str) -> bool:
@@ -342,11 +368,6 @@ class LovartClient:
             return None, "Lovart 创建项目失败"
         project_id = resolved_id
 
-        try:
-            self.set_mode(unlimited=False)
-        except LovartError:
-            pass
-
         attachments = []
         for image_path in image_paths or []:
             attachments.append(self.upload_file(str(image_path)))
@@ -359,12 +380,50 @@ class LovartClient:
         if attachments:
             full_prompt = f"请参考附件图片的风格与构图，{full_prompt}"
 
-        thread_id = self.send(full_prompt, project_id, attachments=attachments or None, mode=mode)
-        status = self.poll(thread_id, timeout=timeout)
-        if status == "abort":
-            return None, "Lovart 生成已中止"
-        if status == "timeout":
-            return None, f"Lovart 生成超时（已等待 {timeout} 秒，可在 .env 调大 LOVART_POLL_TIMEOUT）"
+        last_error = None
+        unlimited_attempts = _lovart_unlimited_attempts()
+        for attempt_index, unlimited in enumerate(unlimited_attempts):
+            try:
+                self.set_mode(unlimited=unlimited)
+            except LovartError:
+                if unlimited and len(unlimited_attempts) == 1:
+                    return None, "无法启用 Lovart 无限低速模式，请确认套餐已开通"
+                continue
 
-        result = self.get_result(thread_id)
-        return self.extract_image_url(result)
+            try:
+                thread_id = self.send(
+                    full_prompt, project_id, attachments=attachments or None, mode=mode
+                )
+            except LovartError as e:
+                last_error = e.message
+                if (
+                    is_lovart_credit_error(last_error)
+                    and not unlimited
+                    and attempt_index + 1 < len(unlimited_attempts)
+                ):
+                    continue
+                return None, last_error
+
+            status = self.poll(thread_id, timeout=timeout)
+            if status == "abort":
+                return None, "Lovart 生成已中止"
+            if status == "timeout":
+                return None, (
+                    f"Lovart 生成超时（已等待 {timeout} 秒，可在 .env 调大 LOVART_POLL_TIMEOUT）"
+                )
+
+            result = self.get_result(thread_id)
+            image_url, error = self.extract_image_url(result)
+            if image_url:
+                return image_url, None
+
+            last_error = error
+            if (
+                is_lovart_credit_error(error or "")
+                and not unlimited
+                and attempt_index + 1 < len(unlimited_attempts)
+            ):
+                continue
+            return None, error
+
+        return None, last_error or "Lovart 生成失败"

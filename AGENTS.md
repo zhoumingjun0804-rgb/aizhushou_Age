@@ -33,8 +33,11 @@ cp .env.example .env
 
 ## HTTP API（相较旧版新增）
 
+`PROJECT_GATE_ENABLED=1` 时：除 `GET /`、`POST /api/project-unlock`、`GET /fetch-url`、`GET /api/layout-extend/presets` 外，项目相关接口需请求头 `Authorization: Bearer <token>`（解锁后获得；刷新页面需重新解锁）。设为 `0` 则关闭门禁，恢复项目组下拉，无需 token。
+
 | 方法 | 路径 | 用途 |
 |------|------|------|
+| POST | `/api/project-unlock` | 项目组门禁：JSON `{project, password}` → `{token, project, …}` |
 | GET | `/api/output-sizes?type=xdt\|hll` | 多尺寸导出预设（随 type 变化） |
 | POST | `/api/multi-size-export` | 单图导出 9 种尺寸 |
 | POST | `/api/crop-image` | 框选裁切 |

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 视觉设计助手 v4</title>
+    <title>A-智绘 v4</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -64,10 +64,33 @@
         /* 全屏图片查看 */
         .fullscreen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
                                background: rgba(0,0,0,0.92); backdrop-filter: blur(8px); z-index: 2000; display: none;
-                               justify-content: center; align-items: center; cursor: zoom-out; }
+                               justify-content: center; align-items: center; cursor: zoom-out; overflow-y: auto;
+                               padding: 56px 16px 24px; box-sizing: border-box; }
         .fullscreen-overlay.open { display: flex; }
-        .fullscreen-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 12px;
-                          box-shadow: 0 0 60px rgba(167,139,250,0.15); }
+        .fullscreen-stage { display: flex; flex-direction: column; align-items: center; max-width: min(920px, 96vw);
+                            width: 100%; cursor: default; }
+        .fullscreen-img { max-width: 96vw; max-height: min(62vh, 720px); object-fit: contain; border-radius: 12px;
+                          box-shadow: 0 0 60px rgba(167,139,250,0.15); flex-shrink: 0; }
+        .fullscreen-details { display: none; width: 100%; margin-top: 14px; padding: 14px 16px;
+                             background: rgba(255,255,255,0.06); border: 1px solid rgba(167,139,250,0.25);
+                             border-radius: 12px; color: rgba(255,255,255,0.88); user-select: text;
+                             -webkit-user-select: text; max-height: 28vh; overflow-y: auto; }
+        .fullscreen-details.open { display: block; }
+        .fullscreen-details-head { display: flex; align-items: center; justify-content: space-between;
+                                  gap: 12px; margin-bottom: 10px; user-select: none; }
+        .fullscreen-details-title { font-size: 13px; font-weight: 600; color: #c4b5fd; }
+        .fullscreen-details-copy { font-size: 12px; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+                                   border: 1px solid rgba(167,139,250,0.45); background: rgba(167,139,250,0.15);
+                                   color: #e9d5ff; flex-shrink: 0; }
+        .fullscreen-details-copy:hover { background: rgba(167,139,250,0.3); }
+        .fullscreen-detail-row { display: flex; gap: 10px; margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+        .fullscreen-detail-label { flex: 0 0 72px; color: rgba(255,255,255,0.45); font-size: 12px; }
+        .fullscreen-detail-value { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+        .fullscreen-detail-block { margin-top: 6px; }
+        .fullscreen-detail-block .fullscreen-detail-label { display: block; margin-bottom: 4px; }
+        .fullscreen-detail-pre { margin: 0; padding: 10px 12px; border-radius: 8px;
+                                 background: rgba(0,0,0,0.35); font-size: 12px; line-height: 1.55;
+                                 white-space: pre-wrap; word-break: break-word; color: rgba(255,255,255,0.9); }
         .fullscreen-close { position: absolute; top: 20px; right: 20px; color: rgba(255,255,255,0.7); 
                              font-size: 32px; cursor: pointer; background: none; border: none; }
         .fullscreen-close:hover { color: white; }
@@ -86,9 +109,8 @@
         .edit-side img { cursor: pointer; }
         .fullscreen-prev { left: 20px; }
         .fullscreen-next { right: 20px; }
-        .fullscreen-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-                              color: white; font-size: 14px; background: rgba(0,0,0,0.5);
-                              padding: 6px 16px; border-radius: 20px; }
+        .fullscreen-counter { margin-top: 10px; color: white; font-size: 14px; background: rgba(0,0,0,0.5);
+                              padding: 6px 16px; border-radius: 20px; flex-shrink: 0; }
         
         /* 项目选择 */
         .project-section { margin-bottom: 16px; }
@@ -541,12 +563,46 @@
 
         .gifmaker-canvas-wrap #gifLayoutBtn { position: absolute; z-index: 2; cursor: move; user-select: none;
             touch-action: none; pointer-events: auto; }
+
+        /* 项目组门禁 */
+        .project-gate-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center;
+            justify-content: center; background: rgba(8,6,24,0.92); backdrop-filter: blur(12px); }
+        .project-gate-overlay.hidden { display: none; }
+        .project-gate-card { width: min(400px, 92vw); padding: 28px 24px; border-radius: 16px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(167,139,250,0.35);
+            box-shadow: 0 12px 48px rgba(0,0,0,0.45); }
+        .project-gate-card h2 { text-align: center; font-size: 20px; margin-bottom: 20px; color: #e9d5ff; }
+        .project-gate-card label { display: block; font-size: 13px; color: rgba(255,255,255,0.65); margin: 12px 0 6px; }
+        .project-gate-card select, .project-gate-card input { width: 100%; padding: 10px 12px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #eee; font-size: 14px; }
+        .project-gate-card select option { background: #1a1a3e; }
+        .gate-error { min-height: 20px; font-size: 13px; color: #f87171; margin: 10px 0 4px; }
+        #gateSubmitBtn { width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 600; cursor: pointer; color: #1a1a3e;
+            background: linear-gradient(135deg, #a78bfa, #818cf8); }
+        #gateSubmitBtn:hover { filter: brightness(1.08); }
+        #appMain.app-locked { visibility: hidden; pointer-events: none; }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div id="projectGateOverlay" class="project-gate-overlay">
+        <div class="project-gate-card">
+            <h2>选择项目组</h2>
+            <label for="gateProjectSelect">项目组</label>
+            <select id="gateProjectSelect">
+                <option value="">请选择</option>
+                <option value="画啦啦">画啦啦</option>
+                <option value="小灯塔">小灯塔</option>
+            </select>
+            <label for="gatePassword">密码</label>
+            <input type="password" id="gatePassword" autocomplete="current-password" placeholder="请输入项目组密码" />
+            <p id="gateError" class="gate-error"></p>
+            <button type="button" id="gateSubmitBtn">进入</button>
+        </div>
+    </div>
+    <div id="appMain" class="container app-locked">
         <div class="app-topbar">
-            <p class="credit" id="appCredit">✦ AI 视觉设计助手 v4 ✦</p>
+            <p class="credit" id="appCredit">✦ A-智绘 v4 ✦</p>
         </div>
         <nav class="nav-primary" aria-label="主要功能">
             <div class="nav-primary-tabs">
@@ -565,7 +621,7 @@
         </nav>
         
         <div class="card tab-content active" id="generateTab">
-            <h1>🎨 AI 视觉设计助手</h1>
+            <h1>🎨 A-智绘</h1>
             <p class="subtitle">填写需求，一键生成多张变体</p>
             
             <!-- 项目组 + 设计类型 -->
@@ -1157,10 +1213,13 @@
     <div class="fullscreen-overlay" id="fullscreenOverlay" onclick="closeFullscreen()">
         <button class="fullscreen-close" onclick="event.stopPropagation(); closeFullscreen()">×</button>
         <a class="fullscreen-download" id="fullscreenDownload" download href="#" onclick="event.stopPropagation()">⬇ 下载图片</a>
-        <img class="fullscreen-img" id="fullscreenImg">
         <button class="fullscreen-nav fullscreen-prev" onclick="event.stopPropagation(); prevImage()">‹</button>
         <button class="fullscreen-nav fullscreen-next" onclick="event.stopPropagation(); nextImage()">›</button>
-        <div class="fullscreen-counter" id="fullscreenCounter"></div>
+        <div class="fullscreen-stage" onclick="event.stopPropagation()">
+            <img class="fullscreen-img" id="fullscreenImg">
+            <div class="fullscreen-details" id="fullscreenDetails"></div>
+            <div class="fullscreen-counter" id="fullscreenCounter"></div>
+        </div>
     </div>
     
 <script>
@@ -1171,6 +1230,116 @@ var variants = [];
 var editImageData = null;
 
 var currentProjectCatalog = '';
+var projectAuthToken = null;
+var unlockedProjectData = null;
+var projectGateEnabled = __PROJECT_GATE_ENABLED__;
+
+function authFetch(url, options) {
+    options = options || {};
+    var headers = new Headers(options.headers || {});
+    if (projectAuthToken) {
+        headers.set('Authorization', 'Bearer ' + projectAuthToken);
+    }
+    options.headers = headers;
+    return fetch(url, options).then(function(res) {
+        if (res.status === 401 && projectGateEnabled) {
+            projectAuthToken = null;
+            showProjectGate('登录已失效，请重新输入密码');
+            return Promise.reject(new Error('unauthorized'));
+        }
+        return res;
+    });
+}
+
+function showProjectGate(message) {
+    var overlay = document.getElementById('projectGateOverlay');
+    var appMain = document.getElementById('appMain');
+    var err = document.getElementById('gateError');
+    if (overlay) overlay.classList.remove('hidden');
+    if (appMain) appMain.classList.add('app-locked');
+    if (err) err.textContent = message || '';
+    var preset = defaultProjectFromUrl();
+    var sel = document.getElementById('gateProjectSelect');
+    if (sel && preset) sel.value = preset;
+}
+
+function hideProjectGate() {
+    var overlay = document.getElementById('projectGateOverlay');
+    var appMain = document.getElementById('appMain');
+    if (overlay) overlay.classList.add('hidden');
+    if (appMain) appMain.classList.remove('app-locked');
+    var err = document.getElementById('gateError');
+    if (err) err.textContent = '';
+}
+
+function submitProjectGate() {
+    var sel = document.getElementById('gateProjectSelect');
+    var pwd = document.getElementById('gatePassword');
+    var err = document.getElementById('gateError');
+    var project = sel ? sel.value : '';
+    var password = pwd ? pwd.value : '';
+    if (!project) {
+        if (err) err.textContent = '请选择项目组';
+        return;
+    }
+    if (err) err.textContent = '';
+    fetch('/api/project-unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: project, password: password })
+    }).then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            if (err) err.textContent = (result.data && result.data.error) || '密码错误';
+            return;
+        }
+        projectAuthToken = result.data.token;
+        unlockedProjectData = result.data;
+        if (pwd) pwd.value = '';
+        hideProjectGate();
+        initUnlockedApp(result.data);
+    })
+    .catch(function() {
+        if (err) err.textContent = '网络错误，请重试';
+    });
+}
+
+function applyUnlockedProject(data) {
+    var sel = document.getElementById('projectSelect');
+    if (!sel || !data) return;
+    sel.innerHTML = '';
+    var opt = document.createElement('option');
+    opt.value = data.project;
+    opt.textContent = data.display_name || data.project;
+    opt.dataset.catalog = data.catalog || 'static_types';
+    opt.dataset.productType = data.product_type || 'xdt';
+    sel.appendChild(opt);
+    sel.disabled = true;
+    currentProjectCatalog = data.catalog || 'static_types';
+    applyProductBranding();
+}
+
+function initUnlockedApp(data) {
+    applyUnlockedProject(data);
+    loadDesignTypesForProject(data.project).then(function() {
+        updateProjectRefsVisibility();
+    });
+    loadHistory();
+    refreshGenerationJobs();
+    onSizeCategoryChange();
+    loadMultiSizePresets();
+}
+
+function initAppWithoutGate() {
+    var sel = document.getElementById('projectSelect');
+    if (sel) sel.disabled = false;
+    loadProjects().then(function() {
+        onSizeCategoryChange();
+        loadMultiSizePresets();
+    });
+    loadHistory();
+    refreshGenerationJobs();
+}
 
 function getSelectedProjectName() {
     var sel = document.getElementById('projectSelect');
@@ -1198,10 +1367,10 @@ function apiProjectQuery() {
 
 function applyProductBranding() {
     var meta = getSelectedProjectMeta();
-    var label = meta ? meta.displayName : 'AI 视觉设计助手';
+    var label = meta ? meta.displayName : 'A-智绘';
     var credit = document.getElementById('appCredit');
-    if (credit) credit.textContent = '✦ AI 视觉设计助手 · ' + label + ' ✦';
-    document.title = 'AI 视觉设计助手 · ' + label;
+    if (credit) credit.textContent = '✦ A-智绘 · ' + label + ' ✦';
+    document.title = 'A-智绘 · ' + label;
 }
 
 function updateMultiHint(count) {
@@ -1238,17 +1407,21 @@ function switchTab(tab, btnEl) {
 // 初始化
 window.onload = function() {
     initImageBackendSelect();
-    loadProjects().then(function() {
-        applyProductBranding();
-        updateProjectRefsVisibility();
+    var gateBtn = document.getElementById('gateSubmitBtn');
+    var gatePwd = document.getElementById('gatePassword');
+    if (gateBtn) gateBtn.addEventListener('click', submitProjectGate);
+    if (gatePwd) gatePwd.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') submitProjectGate();
     });
-    loadHistory();
-    refreshGenerationJobs();
-    onSizeCategoryChange();
+    if (projectGateEnabled) {
+        showProjectGate();
+    } else {
+        hideProjectGate();
+        initAppWithoutGate();
+    }
     var printDpiSel = document.getElementById('printDpiSelect');
     if (printDpiSel) printDpiSel.addEventListener('change', onPrintSizeChange);
     initMultiUploadZone();
-    loadMultiSizePresets();
     initLayoutExtend();
     initCropUploadZone();
     bindCropInteractions();
@@ -1306,7 +1479,7 @@ function buildMultiDownloadName(img) {
 }
 
 function triggerFileDownload(url, filename) {
-    fetch(url).then(function(r) { return r.blob(); }).then(function(blob) {
+    authFetch(url).then(function(r) { return r.blob(); }).then(function(blob) {
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = filename;
@@ -1380,7 +1553,7 @@ async function pollGenerationJob(jobId, onDone) {
     var maxWait = 1800;
     var started = Date.now();
     while (Date.now() - started < maxWait * 1000) {
-        var res = await fetch('/api/generation/jobs/' + encodeURIComponent(jobId));
+        var res = await authFetch('/api/generation/jobs/' + encodeURIComponent(jobId));
         var data = await res.json();
         if (data.status === 'queued') {
             updateLoadingMessage('排队中，前面还有 ' + (data.position || 0) + ' 人…');
@@ -1402,7 +1575,7 @@ async function pollGenerationJob(jobId, onDone) {
 async function submitGenerationJob(formData, kind) {
     formData.append('kind', kind);
     appendClientId(formData);
-    var res = await fetch('/api/generation/jobs', { method: 'POST', body: formData });
+    var res = await authFetch('/api/generation/jobs', { method: 'POST', body: formData });
     var data = await res.json();
     if (res.status === 409 && data.job_id) {
         if (confirm('您已有进行中的生图任务，是否继续查看该任务？')) {
@@ -1459,7 +1632,7 @@ async function refreshGenerationJobs() {
     var panel = document.getElementById('generationJobsPanel');
     if (!panel) return;
     try {
-        var res = await fetch('/api/generation/jobs?client_id=' + encodeURIComponent(getClientId()));
+        var res = await authFetch('/api/generation/jobs?client_id=' + encodeURIComponent(getClientId()));
         var data = await res.json();
         renderGenerationJobsPanel(data.jobs || []);
         var active = (data.jobs || []).some(function(j) {
@@ -1751,7 +1924,7 @@ async function loadDesignTypesForProject(project) {
     sel.innerHTML = '<option value="">请选择设计类型</option>';
     DESIGN_TYPE_RATIO_DEFAULTS = {};
     try {
-        var res = await fetch('/api/design-types?project=' + encodeURIComponent(project));
+        var res = await authFetch('/api/design-types?project=' + encodeURIComponent(project));
         var data = await res.json();
         currentProjectCatalog = data.catalog || 'static_types';
         (data.designTypes || []).forEach(function(item) {
@@ -1799,7 +1972,7 @@ function applyDefaultRatioForDesignType() {
 // 加载项目列表
 async function loadProjects() {
     try {
-        var res = await fetch('/projects');
+        var res = await authFetch('/projects');
         var data = await res.json();
         var sel = document.getElementById('projectSelect');
         sel.innerHTML = '<option value="">请选择项目组</option>';
@@ -1863,7 +2036,7 @@ async function loadProjectImages(projectName, designType, grid) {
         if (currentProjectCatalog === 'folder_types' && designType) {
             url += '?design_type=' + encodeURIComponent(designType);
         }
-        var res = await fetch(url);
+        var res = await authFetch(url);
         var data = await res.json();
         var images = data.images || [];
         if (data.catalog) currentProjectCatalog = data.catalog;
@@ -2151,7 +2324,7 @@ async function analyzeKeyword() {
         if (isReanalyze) formData.append('regenerate', '1');
         appendProjectContext(formData);
         
-        var res = await fetch('/api/analyze', { method: 'POST', body: formData });
+        var res = await authFetch('/api/analyze', { method: 'POST', body: formData });
         var data = await res.json();
         
         if (data.error) {
@@ -2318,7 +2491,7 @@ async function upscaleSelected(resolution) {
     document.querySelector('.loading-text').textContent = '放大中 ' + resolution + '...';
     
     try {
-        var res = await fetch('/upscale', {
+        var res = await authFetch('/upscale', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({filename: v.filename, resolution: resolution})
@@ -2621,7 +2794,7 @@ async function startEditImage() {
         if (editUploadedRefImages.length > 0) {
             payload.reference_images = editUploadedRefImages.slice(0, 3);
         }
-        const response = await fetch('/api/edit-image', {
+        const response = await authFetch('/api/edit-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -2697,6 +2870,9 @@ function toggleHistory() {
 var fullscreenImages = [];
 var fullscreenLabels = [];
 var fullscreenIndex = 0;
+var fullscreenHistoryItem = null;
+var historyItemsById = {};
+var _fullscreenDetailsCopyText = '';
 
 function normalizeImageUrls(images) {
     if (!images) return [];
@@ -2713,6 +2889,8 @@ function openHistoryThumb(el) {
     try {
         var images = JSON.parse(decodeURIComponent(el.getAttribute('data-images')));
         var index = parseInt(el.getAttribute('data-index'), 10) || 0;
+        var historyId = el.getAttribute('data-history-id') || '';
+        fullscreenHistoryItem = historyId ? (historyItemsById[historyId] || null) : null;
         openFullscreen(images, index);
     } catch (e) {
         console.error('历史图片打开失败', e);
@@ -2745,11 +2923,15 @@ function openFullscreen(images, startIndex, labels) {
             images = [images];
         }
     }
+    if (labels !== undefined) {
+        fullscreenHistoryItem = null;
+    }
     fullscreenImages = normalizeImageUrls(images);
     fullscreenLabels = labels || [];
     fullscreenIndex = startIndex || 0;
     if (!fullscreenImages.length) return;
     updateFullscreenImage();
+    renderFullscreenDetails(fullscreenHistoryItem);
     document.getElementById('fullscreenOverlay').classList.add('open');
     document.addEventListener('keydown', handleFullscreenKey);
 }
@@ -2798,6 +2980,133 @@ function handleFullscreenKey(e) {
 function closeFullscreen() {
     document.getElementById('fullscreenOverlay').classList.remove('open');
     document.removeEventListener('keydown', handleFullscreenKey);
+    fullscreenHistoryItem = null;
+    _fullscreenDetailsCopyText = '';
+    var detailsEl = document.getElementById('fullscreenDetails');
+    if (detailsEl) {
+        detailsEl.classList.remove('open');
+        detailsEl.innerHTML = '';
+    }
+}
+
+function _historyModeText(mode) {
+    if (mode === 'edit') return '局部修图';
+    if (mode === 'text2img') return '文字生图';
+    return '图片改图';
+}
+
+function _formatHistoryTimestamp(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return String(ts);
+    return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+function _historyDetailMainTitle(item) {
+    if (!item) return '';
+    var mainTitle = (item.main_title || '').trim();
+    if (mainTitle) return mainTitle;
+    var title = (item.title || '').trim();
+    if (title && !title.endsWith('...')) return title;
+    var prompt = (item.prompt || '').trim();
+    var m = prompt.match(/标题文字[“"]([^”"]+)[”"]/);
+    if (m && m[1]) return m[1].trim();
+    return title || prompt;
+}
+
+function _buildHistoryDetailsPlainText(item) {
+    if (!item) return '';
+    var lines = [];
+    lines.push('时间：' + _formatHistoryTimestamp(item.timestamp));
+    lines.push('类型：' + (Array.isArray(item.meta_tags) && item.meta_tags.length
+        ? item.meta_tags.join(' · ')
+        : _historyModeText(item.mode)));
+    if (item.project) lines.push('项目组：' + item.project);
+    if (item.edit_type) lines.push('修图类型：' + item.edit_type);
+    if (item.variants_count > 1) lines.push('张数：' + item.variants_count);
+    var mainTitleText = _historyDetailMainTitle(item);
+    if (mainTitleText) lines.push('主标题：' + mainTitleText);
+    if ((item.description || '').trim()) lines.push('修改说明：' + String(item.description).trim());
+    if (item.prompt) lines.push('', 'Prompt：', String(item.prompt));
+    return lines.join('\n');
+}
+
+function copyFullscreenHistoryDetails() {
+    var text = _fullscreenDetailsCopyText || '';
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+            alert('已复制记录详情');
+        }).catch(function() {
+            _copyTextFallback(text);
+        });
+    } else {
+        _copyTextFallback(text);
+    }
+}
+
+function _copyTextFallback(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        alert('已复制记录详情');
+    } catch (e) {
+        alert('复制失败，请手动选中下方文字复制');
+    }
+    document.body.removeChild(ta);
+}
+
+function renderFullscreenDetails(item) {
+    var panel = document.getElementById('fullscreenDetails');
+    if (!panel) return;
+    if (!item) {
+        panel.classList.remove('open');
+        panel.innerHTML = '';
+        _fullscreenDetailsCopyText = '';
+        return;
+    }
+    _fullscreenDetailsCopyText = _buildHistoryDetailsPlainText(item);
+    var tags = Array.isArray(item.meta_tags) && item.meta_tags.length
+        ? item.meta_tags.join(' · ')
+        : _historyModeText(item.mode);
+    var desc = (item.description || '').trim();
+    var promptText = item.prompt || '';
+    var rows = [
+        ['时间', _formatHistoryTimestamp(item.timestamp)],
+        ['类型', tags]
+    ];
+    if (item.project) rows.push(['项目组', item.project]);
+    if (item.edit_type) rows.push(['修图类型', item.edit_type]);
+    if (item.variants_count > 1) rows.push(['张数', String(item.variants_count)]);
+    var rowsHtml = rows.map(function(r) {
+        return '<div class="fullscreen-detail-row"><span class="fullscreen-detail-label">' +
+            _escapeHtml(r[0]) + '</span><span class="fullscreen-detail-value">' +
+            _escapeHtml(r[1]) + '</span></div>';
+    }).join('');
+    var mainTitleText = _historyDetailMainTitle(item);
+    var mainTitleHtml = mainTitleText
+        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">主标题</span>' +
+          '<pre class="fullscreen-detail-pre">' + _escapeHtml(mainTitleText) + '</pre></div>'
+        : '';
+    var descHtml = desc
+        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">修改说明</span>' +
+          '<pre class="fullscreen-detail-pre">' + _escapeHtml(desc) + '</pre></div>'
+        : '';
+    var promptHtml = promptText
+        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">Prompt</span>' +
+          '<pre class="fullscreen-detail-pre">' + _escapeHtml(promptText) + '</pre></div>'
+        : '';
+    panel.innerHTML =
+        '<div class="fullscreen-details-head">' +
+        '<span class="fullscreen-details-title">记录详情</span>' +
+        '<button type="button" class="fullscreen-details-copy" onclick="copyFullscreenHistoryDetails()">复制全部</button>' +
+        '</div>' + rowsHtml + mainTitleHtml + descHtml + promptHtml;
+    panel.classList.add('open');
 }
 
 function prevImage() {
@@ -2813,7 +3122,7 @@ function nextImage() {
 // 加载历史
 async function loadHistory() {
     try {
-        var res = await fetch('/history');
+        var res = await authFetch('/history');
         var data = await res.json();
         renderHistory(data.items || []);
     } catch(e) {}
@@ -2830,6 +3139,7 @@ function _escapeHtml(str) {
 
 function renderHistory(items) {
     var el = document.getElementById('historyList');
+    historyItemsById = {};
     if (!items.length) {
         el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">暂无记录</div>';
         return;
@@ -2838,7 +3148,9 @@ function renderHistory(items) {
         var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
         return imgs.length > 0;
     });
-    el.innerHTML = visible.slice(0, 30).map(function(item) {
+    el.innerHTML = visible.slice(0, 30).map(function(item, idx) {
+        var historyId = item.id || ('hist_' + idx);
+        historyItemsById[historyId] = item;
         var time = new Date(item.timestamp).toLocaleString('zh-CN', {hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
         var promptText = item.prompt || '';
         var title = item.title || (promptText.length > 28 ? promptText.substring(0, 28) + '...' : promptText);
@@ -2856,6 +3168,7 @@ function renderHistory(items) {
         var imageUrls = images.map(function(img) { return '/outputs/' + String(img).split('?')[0]; });
         var thumbsHtml = imageUrls.length ? imageUrls.map(function(imgSrc, i) {
             return '<img class="history-thumb" src="' + imgSrc + '" loading="lazy" ' +
+                'data-history-id="' + _escapeHtml(historyId) + '" ' +
                 'data-images="' + encodeURIComponent(JSON.stringify(imageUrls)) + '" data-index="' + i + '" ' +
                 'onclick="event.stopPropagation(); openHistoryThumb(this)" style="cursor:pointer;">';
         }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,0.35);">无图</div>';
@@ -2884,7 +3197,7 @@ var multiSourceBaseName = '开屏';
 
 function loadMultiSizePresets() {
     var q = apiProjectQuery();
-    fetch('/api/output-sizes' + (q ? '?' + q : '')).then(function(r) { return r.json(); }).then(function(data) {
+    authFetch('/api/output-sizes' + (q ? '?' + q : '')).then(function(r) { return r.json(); }).then(function(data) {
         var list = document.getElementById('multiSizesList');
         if (!list || !data.sizes) return;
         list.innerHTML = data.sizes.map(function(s) {
@@ -2979,7 +3292,7 @@ async function exportMultiSizes() {
     appendProjectContext(form);
     try {
         var q = apiProjectQuery();
-        var resp = await fetch('/api/multi-size-export' + (q ? '?' + q : ''), { method: 'POST', body: form });
+        var resp = await authFetch('/api/multi-size-export' + (q ? '?' + q : ''), { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
@@ -3057,7 +3370,7 @@ function initLayoutExtend() {
 }
 
 function loadLayoutPresets() {
-    fetch('/api/layout-extend/presets').then(function(r) { return r.json(); }).then(function(data) {
+    authFetch('/api/layout-extend/presets').then(function(r) { return r.json(); }).then(function(data) {
         var list = document.getElementById('layoutTemplatesList');
         var hint = document.getElementById('layoutHint');
         if (!list || !data.presets || !data.presets.length) return;
@@ -3274,7 +3587,7 @@ async function exportLayoutExtend() {
     }
     appendProjectContext(form);
     try {
-        var resp = await fetch('/api/layout-extend', { method: 'POST', body: form });
+        var resp = await authFetch('/api/layout-extend', { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
@@ -3443,7 +3756,10 @@ function setCutoutMode(mode, btnEl) {
             : '<strong>智能提取：</strong>拖拽框选标题、Logo 或主体区域，优先做真实透明抠图，复杂场景自动回退 Lovart。';
     }
     if (mode === 'extract') {
-        fetch('/api/system-info').then(function(r) { return r.json(); }).then(function(info) {
+        var sysUrl = '/api/system-info';
+        var pq = apiProjectQuery();
+        if (pq) sysUrl += '?' + pq;
+        authFetch(sysUrl).then(function(r) { return r.json(); }).then(function(info) {
             if (cutoutMode !== 'extract' || !hint || !info) return;
             if (info.smartCutoutBackend === 'rembg') {
                 hint.innerHTML += ' <span style="color:#86efac">（当前优先使用本地真实抠图）</span>';
@@ -3856,7 +4172,7 @@ async function applyCutout() {
         var form = new FormData();
         form.append('image', cutoutImageFile);
         form.append('mask', maskBlob, 'mask.png');
-        var resp = await fetch('/api/magic-cutout', { method: 'POST', body: form });
+        var resp = await authFetch('/api/magic-cutout', { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
@@ -3909,7 +4225,7 @@ async function fetchWithRetry(url, options, retries) {
     var lastErr = null;
     for (var i = 0; i < retries; i++) {
         try {
-            return await fetch(url, options);
+            return await authFetch(url, options);
         } catch (err) {
             lastErr = err;
             if (i < retries - 1) await sleepMs(800);
@@ -4213,7 +4529,7 @@ async function applyCrop() {
     form.append('crop_w', String(Math.round(cropNatural.w)));
     form.append('crop_h', String(Math.round(cropNatural.h)));
     try {
-        var resp = await fetch('/api/crop-image', { method: 'POST', body: form });
+        var resp = await authFetch('/api/crop-image', { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
@@ -4387,7 +4703,7 @@ async function convertUploadedGifToSvga() {
     var form = new FormData();
     form.append('gif', gifUploadFile);
     try {
-        var resp = await fetch('/api/gif-to-svga', { method: 'POST', body: form });
+        var resp = await authFetch('/api/gif-to-svga', { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
@@ -4641,7 +4957,7 @@ async function convertBreathingGifToSvga() {
     form.append('source_output', gifLastResult.output_file);
     if (gifLastResult.fps) form.append('fps', String(gifLastResult.fps));
     try {
-        var resp = await fetch('/api/gif-to-svga', { method: 'POST', body: form });
+        var resp = await authFetch('/api/gif-to-svga', { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
@@ -4704,7 +5020,7 @@ async function generateBreathingGif() {
     form.append('offset_x', document.getElementById('gifOffsetX').value);
     form.append('offset_y', document.getElementById('gifOffsetY').value);
     try {
-        var resp = await fetch('/api/make-breathing-gif', { method: 'POST', body: form });
+        var resp = await authFetch('/api/make-breathing-gif', { method: 'POST', body: form });
         var text = await resp.text();
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) {
