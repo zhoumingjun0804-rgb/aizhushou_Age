@@ -20,10 +20,38 @@ if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 10 ]; }
   exit 1
 fi
 
-echo "正在升级 pip..."
-"$PYTHON_BIN" -m pip install --upgrade pip
+# 从 .env 加载 pip/出网代理（与 dev.sh 一致，避免本机直连 PyPI 超时）
+load_env_for_pip() {
+  local env_file="$ROOT_DIR/.env"
+  [ -f "$env_file" ] || return 0
+  local line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ "$line" =~ ^(HTTP_PROXY|HTTPS_PROXY|http_proxy|https_proxy|NO_PROXY|no_proxy|PIP_INDEX_URL)= ]] || continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    val="${val%\"}"; val="${val#\"}"
+    val="${val%\'}"; val="${val#\'}"
+    export "$key=$val"
+  done < "$env_file"
+}
 
-"$PYTHON_BIN" -m pip install -r "$BACKEND_DIR/requirements.txt"
+load_env_for_pip
+
+deps_ready() {
+  "$PYTHON_BIN" -c 'import PIL, bs4, lxml, watchdog, certifi' >/dev/null 2>&1
+}
+
+if deps_ready; then
+  echo "Python 依赖已就绪，跳过 pip 安装"
+else
+  echo "检查 Python 依赖..."
+  if ! "$PYTHON_BIN" -m pip install -q -r "$BACKEND_DIR/requirements.txt"; then
+    echo "警告: 依赖安装失败（可能无法访问 PyPI），将使用已安装的依赖继续启动..."
+  fi
+fi
 
 if [ ! -f "$ROOT_DIR/.env" ] && [ -f "$ROOT_DIR/.env.example" ]; then
   cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"

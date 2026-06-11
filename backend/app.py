@@ -36,7 +36,12 @@ from project_auth import (
 from project_credentials import (
     ProjectCredentialsError,
     ProjectLlmConfig,
+    analyze_model_allowed,
     credentials_status,
+    get_available_models,
+    get_gpt_chat_settings,
+    get_gpt_image_settings,
+    image_backend_allowed,
     load_lovart_credentials_for_project,
     require_project_llm_config,
 )
@@ -48,6 +53,13 @@ from lovart_queue import (
     QueueFullError,
 )
 from comfyui_client import ComfyUIClient, ComfyUIClientError
+from gpt_image_client import (
+    GptImageClient,
+    GptImageError,
+    call_gpt_chat,
+    resolve_gpt_image_model,
+    validate_official_gpt_image_key,
+)
 from sd_client import StableDiffusionClient, SDClientError
 from gif_to_svga.converter import (
     DEFAULT_MAX_BYTES,
@@ -234,6 +246,23 @@ DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
 DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
 
 
+def call_openai_chat(messages, config: ProjectLlmConfig, model: str, temperature=0.7, max_tokens=1000):
+    """调用 GPT chat（按项目组 Key / Azure 或 AgentHub 网关）。"""
+    chat_cfg = get_gpt_chat_settings(config)
+    if not chat_cfg.api_key:
+        return None, f"未配置 OPENAI_API_KEY_{config.slug}"
+    return call_gpt_chat(
+        messages,
+        api_key=chat_cfg.api_key,
+        base_url=chat_cfg.base_url,
+        provider=chat_cfg.provider,
+        model=model,
+        fallback_bearer_key=chat_cfg.fallback_bearer_key,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
 def call_deepseek(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
     """调用 DeepSeek API"""
     if not config.deepseek_api_key:
@@ -373,8 +402,6 @@ def save_history(history):
 def add_history(entry):
     history = load_history()
     history.insert(0, entry)
-    if len(history) > 200:
-        history = history[:200]
     save_history(history)
 
 
@@ -521,12 +548,22 @@ def save_project_meta(project_name, **updates):
     )
 
 
+def lovart_project_title(local_project: str, meta: dict | None = None) -> str:
+    """Lovart 网页侧项目文件夹名，默认「{项目组}-A智绘」。"""
+    meta = meta if meta is not None else (get_project_meta(local_project) or {})
+    custom = (meta.get("lovart_project_title") or "").strip()
+    if custom:
+        return custom
+    base = (meta.get("display_name") or local_project).strip()
+    return f"{base}-A智绘"
+
+
 def _sync_lovart_project_title(client: LovartClient, project_id: str, title: str) -> None:
     if not title:
         return
     try:
         current = client.get_project_name(project_id)
-        if not current or current.lower() == "untitled":
+        if current != title:
             client.rename_project(project_id, title)
     except LovartError:
         pass
@@ -541,7 +578,7 @@ def ensure_lovart_project(local_project: str, client: LovartClient) -> str:
     proj_dir.mkdir(parents=True, exist_ok=True)
 
     meta = get_project_meta(local_project) or {}
-    title = (meta.get("display_name") or local_project).strip()
+    title = lovart_project_title(local_project, meta)
     existing = (meta.get("lovart_project_id") or "").strip()
 
     if existing and client.validate_project(existing):
@@ -810,7 +847,13 @@ def _primary_llm_provider_label(config: ProjectLlmConfig):
     return "deepseek"
 
 
-def analyze_prompt_from_summary(summary, project_meta=None, regenerate=False, project: str = ""):
+def analyze_prompt_from_summary(
+    summary,
+    project_meta=None,
+    regenerate=False,
+    project: str = "",
+    analyze_model: str = "",
+):
     """调用 LLM 润色提示词；全部失败时降级为本地规则拼接。
 
     返回 (prompt, source, provider, model, warning)
@@ -845,40 +888,38 @@ def analyze_prompt_from_summary(summary, project_meta=None, regenerate=False, pr
         {"role": "user", "content": user_message},
     ]
     temperature = 0.85 if regenerate else 0.7
-    last_error = ""
     cfg = require_project_llm_config(project)
+    chosen_model = (analyze_model or cfg.deepseek_model or "").strip()
+    use_gpt = chosen_model.lower().startswith("gpt-")
+    provider_label = f"GPT {chosen_model}" if use_gpt else "Claude Haiku"
 
-    ai_prompt, error = call_deepseek(messages, cfg, temperature=temperature, max_tokens=500)
-    if not error:
-        print(f"[{_primary_llm_provider_label(cfg)}] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", _primary_llm_provider_label(cfg), cfg.deepseek_model, None
-    last_error = error
-    print(f"[DeepSeek Error] {error}, 尝试千问...")
+    if use_gpt:
+        ai_prompt, error = call_openai_chat(
+            messages,
+            cfg,
+            model=chosen_model,
+            temperature=temperature,
+            max_tokens=500,
+        )
+        if not error:
+            print(f"[GPT] AI 输出: {ai_prompt}")
+            return (ai_prompt or "").strip(), "llm", "gpt", chosen_model, None
+        print(f"[GPT Error] {error}, 降级到简单拼接")
+        primary_error = error
+    else:
+        ai_prompt, error = call_deepseek(messages, cfg, temperature=temperature, max_tokens=500)
+        if not error:
+            print(f"[{_primary_llm_provider_label(cfg)}] AI 输出: {ai_prompt}")
+            return (ai_prompt or "").strip(), "llm", _primary_llm_provider_label(cfg), cfg.deepseek_model, None
+        print(f"[Claude/AgentHub Error] {error}, 降级到简单拼接")
+        primary_error = error
 
-    ai_prompt, error2 = call_qianwen(messages, cfg, temperature=temperature, max_tokens=500)
-    if not error2:
-        print(f"[千问] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", "qianwen", cfg.qianwen_model, None
-    last_error = error2
-    print(f"[千问 Error] {error2}, 尝试Kimi...")
-
-    ai_prompt, error3 = call_kimi(messages, cfg, temperature=temperature, max_tokens=500)
-    if not error3:
-        print(f"[Kimi] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", "kimi", cfg.kimi_model, None
-    last_error = error3
-    print(f"[Kimi Error] {error3}, 尝试豆包...")
-
-    ai_prompt, error4 = call_doubao(messages, cfg, temperature=temperature, max_tokens=500)
-    if not error4:
-        print(f"[豆包] AI 输出: {ai_prompt}")
-        return (ai_prompt or "").strip(), "llm", "doubao", cfg.doubao_model, None
-
-    last_error = error4
-    print(f"[豆包 Error] {error4}, 降级到简单拼接")
     fallback = expand_prompt_from_summary(summary, project_meta)
-    detail = (last_error or "未知错误")[:160]
-    warning = f"大模型不可用（{detail}），已使用本地规则拼接。请检查 .env 中的 Key 与模型名。"
+    detail = (primary_error or "未知错误")[:160]
+    warning = (
+        f"{provider_label} 润色失败（{detail}），已使用本地规则拼接。"
+        f"请检查 DEEPSEEK_API_KEY_{cfg.slug} / AgentHub 连通性，或改选其他润色模型。"
+    )
     return fallback, "fallback", "local", "", warning
 
 
@@ -921,9 +962,8 @@ def call_lovart(
 
     timeout = max(poll_timeout, LOVART_POLL_TIMEOUT)
     last_error = None
-    project_title = ""
     meta = get_project_meta(local_project) or {}
-    project_title = (meta.get("display_name") or local_project).strip()
+    project_title = lovart_project_title(local_project, meta)
     cfg = require_project_llm_config(local_project)
     lovart_base = cfg.lovart_base_url
 
@@ -1088,6 +1128,8 @@ def _resolve_image_backend():
 
 def normalize_image_backend(value=None):
     backend = (value or "").strip().lower()
+    if backend.startswith("gpt:"):
+        return "gpt"
     aliases = {
         "sd": "stable_diffusion",
         "stable-diffusion": "stable_diffusion",
@@ -1097,6 +1139,20 @@ def normalize_image_backend(value=None):
     if backend:
         return backend
     return _resolve_image_backend()
+
+
+def resolve_gpt_model(image_backend_value=None, fields: dict | None = None) -> str:
+    raw = (image_backend_value or "").strip()
+    if raw.startswith("gpt:"):
+        return resolve_gpt_image_model(model=raw.split(":", 1)[1])
+    if fields:
+        explicit = str(fields.get("gpt_model", "") or "").strip()
+        if explicit:
+            return resolve_gpt_image_model(model=explicit)
+        tier = str(fields.get("gpt_tier", "") or "").strip()
+        if tier:
+            return resolve_gpt_image_model(tier=tier)
+    return resolve_gpt_image_model()
 
 
 ONLINE_RATIO_TO_SIZE = {
@@ -1206,6 +1262,56 @@ def call_stable_diffusion(
         return None, e.message
 
 
+def call_gpt(
+    mode,
+    prompt,
+    image_paths=None,
+    ratio="1:1",
+    poll_timeout=90,
+    local_project=None,
+    output_width=None,
+    output_height=None,
+    gpt_model=None,
+):
+    if not local_project:
+        return None, "GPT 生图请先选择项目组"
+    try:
+        cfg = require_project_llm_config(local_project)
+    except ProjectCredentialsError as e:
+        return None, str(e)
+    image_cfg = get_gpt_image_settings(cfg)
+    if not image_cfg.api_key:
+        if image_cfg.provider == "agenthub":
+            return None, f"{local_project} 未配置 OPENAI_APP_KEY_{cfg.slug}（AgentHub 生图）"
+        return None, f"{local_project} 未配置 OPENAI_API_KEY_{cfg.slug}（官方 OpenAI 生图）"
+
+    if image_cfg.provider == "official":
+        key_err = validate_official_gpt_image_key(image_cfg.api_key, cfg.slug, local_project)
+        if key_err:
+            return None, key_err
+
+    _, width, height = resolve_output_dimensions(ratio, output_width, output_height)
+    model = resolve_gpt_image_model(model=gpt_model)
+    client = GptImageClient(
+        api_key=image_cfg.api_key,
+        base_url=image_cfg.base_url,
+        timeout=max(poll_timeout, LOCAL_GENERATION_TIMEOUT),
+        temp_dir=OUTPUT_DIR,
+        fallback_bearer_key=image_cfg.fallback_bearer_key,
+        provider=image_cfg.provider,
+    )
+    try:
+        return client.generate_image(
+            prompt,
+            model=model,
+            width=width,
+            height=height,
+            image_paths=image_paths if mode == "img2img" else None,
+        )
+    except GptImageError as e:
+        return None, e.message
+
+
 def call_image_generator(
     mode,
     prompt,
@@ -1221,8 +1327,21 @@ def call_image_generator(
     output_height=None,
     size_mode="online",
     dpi=None,
+    gpt_model=None,
 ):
     backend = normalize_image_backend(image_backend)
+    if backend == "gpt":
+        return call_gpt(
+            mode,
+            prompt,
+            image_paths=image_paths,
+            ratio=ratio,
+            poll_timeout=poll_timeout,
+            local_project=local_project,
+            output_width=output_width,
+            output_height=output_height,
+            gpt_model=gpt_model,
+        )
     if backend == "lovart":
         return call_lovart(
             mode,
@@ -1340,7 +1459,9 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
     project = str(fields.get("project", "") or "").strip()
     count = int(str(fields.get("count", "3")).strip() or "3")
     client_id = str(fields.get("client_id", "") or "").strip()
-    image_backend = normalize_image_backend(fields.get("image_backend"))
+    image_backend_raw = str(fields.get("image_backend", "") or "")
+    image_backend = normalize_image_backend(image_backend_raw)
+    gpt_model = resolve_gpt_model(image_backend_raw, fields) if image_backend == "gpt" else None
     size_info = parse_size_fields(fields)
 
     payload = {
@@ -1357,6 +1478,8 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
         "width_mm": size_info["width_mm"],
         "height_mm": size_info["height_mm"],
         "image_backend": image_backend,
+        "image_backend_raw": image_backend_raw,
+        "gpt_model": gpt_model,
     }
 
     if kind == "with_prompt":
@@ -1394,6 +1517,10 @@ def execute_generation_job(job: dict) -> None:
     payload = job["payload"]
     job_id = job["job_id"]
     started = time.time()
+    with lovart_queue._jobs_lock:
+        stored = lovart_queue._jobs.get(job_id)
+        if stored:
+            stored["started_at"] = started
 
     project = payload.get("project") or None
     lovart_err = lovart_project_required_error(project or "")
@@ -1436,6 +1563,7 @@ def execute_generation_job(job: dict) -> None:
             output_height=output_height,
             size_mode=size_mode,
             dpi=dpi,
+            gpt_model=payload.get("gpt_model"),
         )
         if image_url:
             output_filename = f"variant_{uuid.uuid4().hex}.png"
@@ -1733,6 +1861,7 @@ def call_img2img_with_retry(
     reference_paths=None,
 ):
     backend = normalize_image_backend(image_backend)
+    gpt_model = resolve_gpt_model(image_backend) if backend == "gpt" else None
     ref_list = [str(p) for p in (reference_paths or [])]
 
     def _once():
@@ -1747,6 +1876,7 @@ def call_img2img_with_retry(
                     ratio=ratio,
                     local_project=local_project,
                     image_backend=backend,
+                    gpt_model=gpt_model,
                 )
                 if image_url:
                     return image_url, None
@@ -1921,6 +2051,7 @@ def edit_image_regions(
     ratio,
     local_project=None,
     reference_paths=None,
+    image_backend=None,
 ):
     """对多个选区依次裁剪、修图、仅将结果融合回选区，保持原图尺寸与选区外样式"""
     from PIL import Image
@@ -1960,6 +2091,7 @@ def edit_image_regions(
             ratio=crop_ratio,
             local_project=local_project,
             reference_paths=reference_paths,
+            image_backend=image_backend,
         )
         if not image_url:
             return None, f"选区 {idx + 1} 修图失败: {error or '未知错误'}"
@@ -2019,8 +2151,11 @@ _html_cache = {"mtime": 0.0, "content": ""}
 
 
 def _inject_project_gate_flag(html: str) -> str:
-    gate_flag = "true" if is_gate_enabled() else "false"
-    return html.replace("__PROJECT_GATE_ENABLED__", gate_flag)
+    gate_on = is_gate_enabled()
+    html = html.replace("__PROJECT_GATE_ENABLED__", "true" if gate_on else "false")
+    html = html.replace("__GATE_OVERLAY_EXTRA__", "" if gate_on else " hidden")
+    html = html.replace("__APP_MAIN_EXTRA__", " app-locked" if gate_on else "")
+    return html
 
 
 def get_html_page():
@@ -2238,12 +2373,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             if self._auth_project(project) is None:
                 return
-            self._send_json({
+            catalog = detect_project_catalog(project)
+            payload = {
                 "project": project,
-                "catalog": detect_project_catalog(project),
+                "catalog": catalog,
                 "product_type": project_product_type(project),
                 "designTypes": list_design_types_for_project(project),
-            })
+                "available_models": get_available_models(project),
+            }
+            if catalog == "folder_types":
+                from product_design import folder_type_online_size_presets
+                payload["onlineSizePresets"] = folder_type_online_size_presets()
+            self._send_json(payload)
         else:
             self.send_response(404)
             self.end_headers()
@@ -2444,6 +2585,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "catalog": detect_project_catalog(project),
             "product_type": project_product_type(project),
             "credentials_status": credentials_status(project),
+            "available_models": get_available_models(project),
         })
 
     def _handle_fetch_url(self, url):
@@ -2526,6 +2668,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         project_meta = get_project_meta(auth_project)
         regenerate = str(fields.get("regenerate", "0")).strip().lower() in ("1", "true", "yes")
+        analyze_model = str(fields.get("analyze_model", "") or "").strip()
+        if not analyze_model_allowed(auth_project, analyze_model):
+            self._send_json({"error": "当前项目组未配置该润色模型"}, status=400)
+            return
 
         try:
             ai_prompt, source, provider, model, warning = analyze_prompt_from_summary(
@@ -2533,6 +2679,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 project_meta,
                 regenerate=regenerate,
                 project=auth_project,
+                analyze_model=analyze_model,
             )
         except ProjectCredentialsError as e:
             self._send_json({"error": str(e)}, status=503)
@@ -2572,6 +2719,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "缺少 client_id"}, status=400)
                 return
 
+            image_backend_raw = str(fields.get("image_backend", "") or "").strip() or "lovart"
+            if not image_backend_allowed(auth_project, image_backend_raw):
+                models = get_available_models(auth_project)
+                if not models["image_backends"]:
+                    self._send_json(
+                        {"error": f"{auth_project} 未配置任何生图模型（Lovart 或 GPT Key）"},
+                        status=400,
+                    )
+                    return
+                self._send_json({"error": "当前项目组不可用该生图模型"}, status=400)
+                return
+
             payload = build_generation_payload(fields, kind)
             payload["project"] = auth_project
             payload["client_id"] = client_id
@@ -2587,15 +2746,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "priority": PRIORITY_HIGH,
                     "payload": payload,
                     "progress": {"current": 0, "total": int(payload.get("count") or 3)},
+                    "started_at": time.time(),
                 }
                 with lovart_queue._jobs_lock:
                     lovart_queue._jobs[job_id] = job
                 execute_generation_job(job)
                 with lovart_queue._jobs_lock:
                     stored = lovart_queue._jobs.get(job_id, {})
-                variants = stored.get("variants")
+                variants = stored.get("variants") or []
                 if stored.get("status") == "failed":
                     self._send_json({"error": stored.get("error") or "生成失败"}, status=500)
+                    return
+                variant_errors = [v.get("error") for v in variants if v.get("error")]
+                if variants and not any(v.get("filename") for v in variants):
+                    self._send_json(
+                        {"error": variant_errors[0] if variant_errors else "生成失败"},
+                        status=500,
+                    )
                     return
                 self._send_json(
                     {
@@ -3064,6 +3231,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "smartCutoutAsync": True,
             "lovartBaseUrl": require_project_llm_config(project).lovart_base_url,
             "credentials_status": credentials_status(project),
+            "available_models": get_available_models(project),
             "projectGateEnabled": is_gate_enabled(),
         })
 
@@ -3475,6 +3643,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         local_project = auth_project
         regions = data.get('regions') or []
         reference_paths = _save_edit_reference_images_from_payload(data)
+        image_backend_raw = str(data.get("image_backend", "") or "").strip() or "lovart"
+        if not image_backend_allowed(local_project, image_backend_raw):
+            self._send_json({"error": "当前项目组不可用该修图模型"}, status=400)
+            return
 
         if not image_data:
             self._send_json({"error": "未上传图片"})
@@ -3532,6 +3704,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ratio,
                 local_project=local_project,
                 reference_paths=reference_paths,
+                image_backend=image_backend_raw,
             )
             if region_error:
                 self._send_json({"error": region_error})
@@ -3553,6 +3726,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 local_project=local_project,
                 queue_priority=PRIORITY_HIGH,
                 reference_paths=reference_paths,
+                image_backend=image_backend_raw,
             )
             if not image_url:
                 self._send_json({"error": error or "修图失败，请重试"})

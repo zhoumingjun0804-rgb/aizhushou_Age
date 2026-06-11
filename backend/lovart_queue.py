@@ -293,7 +293,9 @@ class LovartQueue:
             job = self._jobs.get(job_id)
             if not job or job.get("status") != "running":
                 return False
-            started = job.get("started_at", 0)
+            started = job.get("started_at") or 0
+        if not started:
+            return False
         if time.time() - started > self.job_max_seconds:
             self.fail_job(job_id, f"任务超时（超过 {self.job_max_seconds} 秒）")
             return True

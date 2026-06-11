@@ -32,6 +32,7 @@ projects/
 | `product_type` | 开屏导出尺寸：`xdt` → `output_sizes.json`，`hll` → `output_sizes_hll.json` |
 | `display_name` | 界面显示名 |
 | `lovart_project_id` | Lovart 项目绑定（可选） |
+| `lovart_project_title` | Lovart 文件夹名（可选；默认 `{display_name}-A智绘`，如小灯塔→`小灯塔-A智绘`） |
 
 未写 `catalog` 时：若存在 `types/` 且含子文件夹 → 自动识别为 `folder_types`。
 

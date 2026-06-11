@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A-智绘 v4</title>
+    <title>A-智绘</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -20,8 +20,7 @@
              -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .subtitle { text-align: center; color: rgba(255,255,255,0.45); font-size: 13px; margin-bottom: 16px; }
         
-        .app-topbar { margin-bottom: 14px; }
-        .app-topbar .credit { margin-bottom: 0; }
+        .app-header { text-align: center; margin-bottom: 18px; }
         .history-entry { flex-shrink: 0; align-self: center; background: transparent; border: none; border-radius: 10px;
             padding: 10px 4px 10px 12px; cursor: pointer; font-size: 13px; font-weight: 500;
             color: rgba(255,255,255,0.42); transition: color 0.2s, background 0.2s; white-space: nowrap; }
@@ -60,6 +59,18 @@
         .history-title { font-size: 13px; color: rgba(255,255,255,0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .history-desc { font-size: 12px; color: rgba(255,255,255,0.62); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .history-meta { font-size: 11px; color: #a78bfa; margin-top: 4px; }
+        .history-date-item { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 14px 16px; border-radius: 12px; margin-bottom: 8px; cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03);
+            transition: all 0.2s; }
+        .history-date-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(167,139,250,0.3); }
+        .history-date-label { font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.9); }
+        .history-date-count { font-size: 12px; color: rgba(255,255,255,0.4); flex-shrink: 0; }
+        .drawer-back { background: none; border: none; font-size: 20px; cursor: pointer;
+            color: rgba(255,255,255,0.5); padding: 0 8px 0 0; line-height: 1; display: none; }
+        .drawer-back.visible { display: block; }
+        .drawer-back:hover { color: rgba(255,255,255,0.9); }
+        .drawer-header-left { display: flex; align-items: center; min-width: 0; }
         
         /* 全屏图片查看 */
         .fullscreen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -277,9 +288,6 @@
         .btn-outline { background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.15); }
         .btn-outline:hover { border-color: rgba(167,139,250,0.4); color: #a78bfa; background: rgba(167,139,250,0.08); }
         
-        .credit { text-align: center; color: rgba(255,255,255,0.3); margin-bottom: 10px; font-size: 13px;
-                  font-weight: 500; letter-spacing: 1px; }
-        
         /* 主导航：生图 / 修图（左铺满）+ 记录入口（右对齐） */
         .nav-primary { display: flex; align-items: center; justify-content: space-between; gap: 16px;
             margin-bottom: 12px; width: 100%; }
@@ -317,6 +325,9 @@
         /* 修图区域 */
         .edit-section { margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 12px; }
         .edit-section h3 { color: white; font-size: 16px; margin-bottom: 16px; }
+        .edit-config-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin: 0 0 8px; }
+        .edit-config-hint.ready { color: rgba(52,211,153,0.85); }
+        .shared-project-card { padding: 12px 16px; margin-bottom: 12px; }
         .edit-type-select { width: 100%; padding: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
                         border-radius: 8px; color: white; font-size: 14px; margin-bottom: 16px; }
         .edit-type-select option { background: #1a1a3e; color: #eee; }
@@ -585,7 +596,7 @@
     </style>
 </head>
 <body>
-    <div id="projectGateOverlay" class="project-gate-overlay">
+    <div id="projectGateOverlay" class="project-gate-overlay__GATE_OVERLAY_EXTRA__">
         <div class="project-gate-card">
             <h2>选择项目组</h2>
             <label for="gateProjectSelect">项目组</label>
@@ -600,10 +611,11 @@
             <button type="button" id="gateSubmitBtn">进入</button>
         </div>
     </div>
-    <div id="appMain" class="container app-locked">
-        <div class="app-topbar">
-            <p class="credit" id="appCredit">✦ A-智绘 v4 ✦</p>
-        </div>
+    <div id="appMain" class="container__APP_MAIN_EXTRA__">
+        <header class="app-header">
+            <h1>🎨 A-智绘</h1>
+            <p class="subtitle">填写需求，一键生成多张变体</p>
+        </header>
         <nav class="nav-primary" aria-label="主要功能">
             <div class="nav-primary-tabs">
                 <button type="button" class="tab-btn active" data-tab="generate" onclick="switchTab('generate', this)">🖼️ 生图</button>
@@ -619,20 +631,23 @@
             <button type="button" class="tab-btn-tool feature-hidden" data-tab="cutout" onclick="switchTab('cutout', this)">🪄 抠图</button>
             <button type="button" class="tab-btn-tool" data-tab="gifmaker" onclick="switchTab('gifmaker', this)">🎞️ 动图</button>
         </nav>
+
+        <!-- 项目组（生图 / 修图共用） -->
+        <div class="card shared-project-card">
+            <div class="project-bar" style="margin:0;padding:0;background:none;border:none;">
+                <div class="project-bar-field">
+                    <label>📁 项目组</label>
+                    <select id="projectSelect" onchange="onProjectSelectChange()">
+                        <option value="">请选择项目组</option>
+                    </select>
+                </div>
+            </div>
+        </div>
         
         <div class="card tab-content active" id="generateTab">
-            <h1>🎨 A-智绘</h1>
-            <p class="subtitle">填写需求，一键生成多张变体</p>
-            
-            <!-- 项目组 + 设计类型 -->
+            <!-- 设计类型 -->
             <div class="project-section">
                 <div class="project-bar">
-                    <div class="project-bar-field">
-                        <label>📁 项目组</label>
-                        <select id="projectSelect" onchange="onProjectSelectChange()">
-                            <option value="">请选择项目组</option>
-                        </select>
-                    </div>
                     <div class="project-bar-field">
                         <label>设计类型</label>
                         <select id="designType" onchange="onDesignTypeChange()">
@@ -787,12 +802,17 @@
                     </div>
                 </div>
 
-                <div class="form-row">
+                <div class="form-row" id="imageBackendRow" style="display:none">
                     <div class="form-item full-width">
                         <label>生图模型</label>
-                        <select id="imageBackendSelect">
-                            <option value="lovart">Lovart 龙虾</option>
-                        </select>
+                        <select id="imageBackendSelect"></select>
+                    </div>
+                </div>
+
+                <div class="form-row" id="analyzeModelRow" style="display:none">
+                    <div class="form-item full-width">
+                        <label>润色模型</label>
+                        <select id="analyzeModelSelect"></select>
                     </div>
                 </div>
                 
@@ -837,6 +857,14 @@
         <div class="tab-content" id="editTab">
             <div class="edit-section">
                 <h3>✏️ 图片局部修改</h3>
+
+                <p class="edit-config-hint" id="editConfigHint">请先选择项目组和修图模型，再开始修图</p>
+                <div class="form-row" id="editImageBackendRow" style="display:none; margin-top: 12px; margin-bottom: 4px;">
+                    <div class="form-item full-width">
+                        <label>修图模型</label>
+                        <select id="editImageBackendSelect" class="edit-type-select" style="margin-bottom: 0;"></select>
+                    </div>
+                </div>
                 
                 <!-- 修图类型 -->
                 <select class="edit-type-select" id="editType">
@@ -892,9 +920,9 @@
                     <input type="file" id="editRefImagesInput" class="upload-ref-input" accept="image/*" multiple>
                     <div class="uploaded-previews" id="editUploadedPreviews"></div>
                 </div>
-                
+
                 <!-- 开始修图按钮 -->
-                <button class="generate-btn" onclick="startEditImage()" style="margin-top: 20px;">✨ AI 智能修图</button>
+                <button type="button" class="generate-btn" id="editImageBtn" onclick="startEditImage()" disabled style="margin-top: 20px;">✨ AI 智能修图</button>
                 
                 <!-- 加载状态 -->
                 <div class="loading-card" id="editLoadingCard" style="display: none;">
@@ -1200,7 +1228,10 @@
     <div class="drawer-overlay" id="drawerOverlay" onclick="toggleHistory()"></div>
     <div class="history-drawer" id="historyDrawer">
         <div class="drawer-header">
-            <span class="drawer-title">生图 / 修图记录</span>
+            <div class="drawer-header-left">
+                <button type="button" class="drawer-back" id="historyBackBtn" onclick="historyBackToDates()" title="返回日期列表">‹</button>
+                <span class="drawer-title" id="historyDrawerTitle">生图 / 修图记录</span>
+            </div>
             <button class="drawer-close" onclick="toggleHistory()">×</button>
         </div>
         <div class="drawer-content">
@@ -1317,17 +1348,20 @@ function applyUnlockedProject(data) {
     sel.disabled = true;
     currentProjectCatalog = data.catalog || 'static_types';
     applyProductBranding();
+    updateEditImageButtonState();
 }
 
 function initUnlockedApp(data) {
     applyUnlockedProject(data);
+    applyAvailableModels(data.available_models);
     loadDesignTypesForProject(data.project).then(function() {
         updateProjectRefsVisibility();
+        updateEditImageButtonState();
     });
-    loadHistory();
     refreshGenerationJobs();
     onSizeCategoryChange();
     loadMultiSizePresets();
+    updateEditImageButtonState();
 }
 
 function initAppWithoutGate() {
@@ -1337,7 +1371,6 @@ function initAppWithoutGate() {
         onSizeCategoryChange();
         loadMultiSizePresets();
     });
-    loadHistory();
     refreshGenerationJobs();
 }
 
@@ -1368,8 +1401,6 @@ function apiProjectQuery() {
 function applyProductBranding() {
     var meta = getSelectedProjectMeta();
     var label = meta ? meta.displayName : 'A-智绘';
-    var credit = document.getElementById('appCredit');
-    if (credit) credit.textContent = '✦ A-智绘 · ' + label + ' ✦';
     document.title = 'A-智绘 · ' + label;
 }
 
@@ -1430,6 +1461,7 @@ window.onload = function() {
     bindGifLayoutInteractions();
     initGifUploadZones();
     updateGifGenBtnState();
+    updateEditImageButtonState();
 };
 
 function sanitizeDownloadNamePart(text) {
@@ -1507,19 +1539,135 @@ function findVariantDownloadNameByUrl(url) {
     return null;
 }
 
-function initImageBackendSelect() {
-    var sel = document.getElementById('imageBackendSelect');
-    if (!sel) return;
-    var saved = localStorage.getItem('imageBackendSelect');
-    if (saved) sel.value = saved;
-    sel.addEventListener('change', function() {
-        localStorage.setItem('imageBackendSelect', sel.value);
+var modelSelectListenersBound = false;
+var IMAGE_BACKEND_SELECT_IDS = ['imageBackendSelect', 'editImageBackendSelect'];
+var IMAGE_BACKEND_ROW_IDS = ['imageBackendRow', 'editImageBackendRow'];
+
+function syncImageBackendSelects(value) {
+    if (!value) return;
+    IMAGE_BACKEND_SELECT_IDS.forEach(function(id) {
+        var sel = document.getElementById(id);
+        if (sel) sel.value = value;
     });
+    localStorage.setItem('imageBackendSelect', value);
+}
+
+function fillImageBackendSelects(backends) {
+    IMAGE_BACKEND_SELECT_IDS.forEach(function(id) {
+        var sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '';
+        backends.forEach(function(item) {
+            var opt = document.createElement('option');
+            opt.value = item.value;
+            opt.textContent = item.label;
+            sel.appendChild(opt);
+        });
+    });
+    if (backends.length) {
+        var saved = localStorage.getItem('imageBackendSelect');
+        var values = backends.map(function(b) { return b.value; });
+        var chosen = (saved && values.indexOf(saved) >= 0) ? saved : backends[0].value;
+        syncImageBackendSelects(chosen);
+    }
+    IMAGE_BACKEND_ROW_IDS.forEach(function(id) {
+        var row = document.getElementById(id);
+        if (row) row.style.display = backends.length ? '' : 'none';
+    });
+    updateEditImageButtonState();
+}
+
+function applyAvailableModels(models) {
+    models = models || { image_backends: [], analyze_models: [] };
+    fillImageBackendSelects(models.image_backends || []);
+
+    var analyzeSel = document.getElementById('analyzeModelSelect');
+    var analyzeRow = document.getElementById('analyzeModelRow');
+    var analyzeModels = models.analyze_models || [];
+    if (analyzeSel) {
+        analyzeSel.innerHTML = '';
+        analyzeModels.forEach(function(item) {
+            var opt = document.createElement('option');
+            opt.value = item.value;
+            opt.textContent = item.label;
+            analyzeSel.appendChild(opt);
+        });
+        if (analyzeModels.length) {
+            var savedAnalyze = localStorage.getItem('analyzeModelSelect');
+            var analyzeValues = analyzeModels.map(function(m) { return m.value; });
+            analyzeSel.value = (savedAnalyze != null && analyzeValues.indexOf(savedAnalyze) >= 0)
+                ? savedAnalyze
+                : analyzeModels[0].value;
+            localStorage.setItem('analyzeModelSelect', analyzeSel.value);
+        }
+    }
+    if (analyzeRow) analyzeRow.style.display = analyzeModels.length ? '' : 'none';
+}
+
+function initImageBackendSelect() {
+    if (modelSelectListenersBound) return;
+    IMAGE_BACKEND_SELECT_IDS.forEach(function(id) {
+        var sel = document.getElementById(id);
+        if (sel) {
+            sel.addEventListener('change', function() {
+                syncImageBackendSelects(sel.value);
+                updateEditImageButtonState();
+            });
+        }
+    });
+    var analyzeSel = document.getElementById('analyzeModelSelect');
+    if (analyzeSel) {
+        analyzeSel.addEventListener('change', function() {
+            localStorage.setItem('analyzeModelSelect', analyzeSel.value);
+        });
+    }
+    modelSelectListenersBound = true;
 }
 
 function getSelectedImageBackend() {
     var sel = document.getElementById('imageBackendSelect');
-    return sel ? sel.value : 'lovart';
+    return sel ? sel.value : (localStorage.getItem('imageBackendSelect') || 'lovart');
+}
+
+function getSelectedEditImageBackend() {
+    var sel = document.getElementById('editImageBackendSelect');
+    return sel && sel.value ? sel.value : '';
+}
+
+function hasEditImageBackendSelected() {
+    var row = document.getElementById('editImageBackendRow');
+    var sel = document.getElementById('editImageBackendSelect');
+    if (!row || row.style.display === 'none') return false;
+    if (!sel || !sel.options.length) return false;
+    return !!sel.value;
+}
+
+function isEditImageConfigReady() {
+    return !!getSelectedProjectName() && hasEditImageBackendSelected();
+}
+
+function updateEditImageButtonState() {
+    var btn = document.getElementById('editImageBtn');
+    var hint = document.getElementById('editConfigHint');
+    var ready = isEditImageConfigReady();
+    if (btn) btn.disabled = !ready;
+    if (hint) {
+        if (ready) {
+            hint.textContent = '已选择项目组与修图模型，可以开始修图';
+            hint.classList.add('ready');
+        } else {
+            var missing = [];
+            if (!getSelectedProjectName()) missing.push('项目组');
+            if (!hasEditImageBackendSelected()) missing.push('修图模型');
+            hint.textContent = '请先选择' + missing.join('和') + '，再开始修图';
+            hint.classList.remove('ready');
+        }
+    }
+}
+
+function getSelectedAnalyzeModel() {
+    var sel = document.getElementById('analyzeModelSelect');
+    return sel ? sel.value : '';
 }
 
 function getClientId() {
@@ -1544,7 +1692,7 @@ function updateLoadingMessage(text) {
 }
 
 function setGenerateButtonsDisabled(disabled) {
-    document.querySelectorAll('.generate-btn').forEach(function(btn) {
+    document.querySelectorAll('#generateTab .generate-btn').forEach(function(btn) {
         btn.disabled = !!disabled;
     });
 }
@@ -1714,7 +1862,9 @@ function resumeGenerationJob(jobId) {
     });
 }
 
-var DESIGN_TYPE_RATIO_DEFAULTS = {};
+var DESIGN_TYPE_SIZE_DEFAULTS = {};
+var DESIGN_TYPE_ALTERNATE_SIZES = {};
+var hllOnlineSizePresetsFull = null;
 
 var ONLINE_SIZE_PRESETS = {
     '1:1': { ratio: '1:1', width: 1024, height: 1024 },
@@ -1797,16 +1947,69 @@ function ratioFromPixels(width, height) {
     return closest.ratio;
 }
 
+function onlineSizeKey(width, height) {
+    return String(width) + 'x' + String(height);
+}
+
+function populateOnlineSizeSelect(presets) {
+    var sel = document.getElementById('onlineSizeSelect');
+    if (!sel) return;
+    sel.innerHTML = '';
+    (presets || []).forEach(function(p) {
+        var w = parseInt(p.width, 10);
+        var h = parseInt(p.height, 10);
+        if (!w || !h) return;
+        var opt = document.createElement('option');
+        opt.value = onlineSizeKey(w, h);
+        opt.dataset.width = String(w);
+        opt.dataset.height = String(h);
+        opt.textContent = w + '×' + h;
+        sel.appendChild(opt);
+    });
+}
+
+function refreshOnlineSizeOptions(catalog, apiPresets) {
+    if (catalog === 'folder_types' && apiPresets && apiPresets.length) {
+        populateOnlineSizeSelect(apiPresets);
+    } else {
+        populateOnlineSizeSelect(Object.keys(ONLINE_SIZE_PRESETS).map(function(key) {
+            var p = ONLINE_SIZE_PRESETS[key];
+            return { width: p.width, height: p.height, ratio: p.ratio };
+        }));
+    }
+}
+
+function selectOnlineSize(width, height) {
+    var sel = document.getElementById('onlineSizeSelect');
+    if (!sel) return false;
+    var key = onlineSizeKey(width, height);
+    var found = Array.prototype.some.call(sel.options, function(opt) {
+        return opt.value === key;
+    });
+    if (!found) {
+        var opt = document.createElement('option');
+        opt.value = key;
+        opt.dataset.width = String(width);
+        opt.dataset.height = String(height);
+        opt.textContent = width + '×' + height;
+        sel.appendChild(opt);
+    }
+    sel.value = key;
+    return true;
+}
+
 function getGenerationSizeParams() {
     var cat = document.getElementById('sizeCategorySelect').value;
     if (cat === 'online') {
         var sel = document.getElementById('onlineSizeSelect');
         var opt = sel.options[sel.selectedIndex];
+        var w = parseInt(opt.dataset.width, 10);
+        var h = parseInt(opt.dataset.height, 10);
         return {
             size_mode: 'online',
-            ratio: opt.value,
-            output_width: parseInt(opt.dataset.width, 10),
-            output_height: parseInt(opt.dataset.height, 10)
+            ratio: ratioFromPixels(w, h),
+            output_width: w,
+            output_height: h
         };
     }
     var dpi = parseInt(document.getElementById('printDpiSelect').value, 10) || 300;
@@ -1890,7 +2093,7 @@ function clearProjectRefs() {
 }
 
 function onDesignTypeChange() {
-    applyDefaultRatioForDesignType();
+    applyDefaultSizeForDesignType();
     var designType = document.getElementById('designType').value;
     var meta = getSelectedProjectMeta();
     if (meta && meta.catalog === 'static_types' && designType === '其他') {
@@ -1910,23 +2113,32 @@ async function onProjectSelectChange() {
     clearProjectRefs();
     applyProductBranding();
     if (!project) {
+        hllOnlineSizePresetsFull = null;
+        refreshOnlineSizeOptions('static_types');
+        applyAvailableModels({ image_backends: [], analyze_models: [] });
         updateProjectRefsVisibility();
+        updateEditImageButtonState();
         return;
     }
     await loadDesignTypesForProject(project);
     loadMultiSizePresets();
     updateProjectRefsVisibility();
+    updateEditImageButtonState();
 }
 
 async function loadDesignTypesForProject(project) {
     var sel = document.getElementById('designType');
     if (!sel || !project) return;
     sel.innerHTML = '<option value="">请选择设计类型</option>';
-    DESIGN_TYPE_RATIO_DEFAULTS = {};
+    DESIGN_TYPE_SIZE_DEFAULTS = {};
+    DESIGN_TYPE_ALTERNATE_SIZES = {};
     try {
         var res = await authFetch('/api/design-types?project=' + encodeURIComponent(project));
         var data = await res.json();
         currentProjectCatalog = data.catalog || 'static_types';
+        hllOnlineSizePresetsFull = data.onlineSizePresets || null;
+        refreshOnlineSizeOptions(currentProjectCatalog, hllOnlineSizePresetsFull);
+        if (data.available_models) applyAvailableModels(data.available_models);
         (data.designTypes || []).forEach(function(item) {
             var opt = document.createElement('option');
             opt.value = item.value;
@@ -1935,9 +2147,18 @@ async function loadDesignTypesForProject(project) {
                 suffix = ' (' + item.referenceCount + '张参考)';
             }
             opt.textContent = (item.label || item.value) + suffix;
-            if (item.defaultRatio) {
-                DESIGN_TYPE_RATIO_DEFAULTS[item.value] = item.defaultRatio;
-                DESIGN_TYPE_RATIO_DEFAULTS[item.label || ''] = item.defaultRatio;
+            if (item.defaultSize && item.defaultSize.width && item.defaultSize.height) {
+                DESIGN_TYPE_SIZE_DEFAULTS[item.value] = item.defaultSize;
+                DESIGN_TYPE_SIZE_DEFAULTS[item.label || ''] = item.defaultSize;
+            } else if (item.defaultRatio && ONLINE_SIZE_PRESETS[item.defaultRatio]) {
+                var ratioPreset = ONLINE_SIZE_PRESETS[item.defaultRatio];
+                var ratioSize = { width: ratioPreset.width, height: ratioPreset.height };
+                DESIGN_TYPE_SIZE_DEFAULTS[item.value] = ratioSize;
+                DESIGN_TYPE_SIZE_DEFAULTS[item.label || ''] = ratioSize;
+            }
+            if (item.alternateSizes && item.alternateSizes.length) {
+                DESIGN_TYPE_ALTERNATE_SIZES[item.value] = item.alternateSizes;
+                DESIGN_TYPE_ALTERNATE_SIZES[item.label || ''] = item.alternateSizes;
             }
             sel.appendChild(opt);
         });
@@ -1952,21 +2173,32 @@ function onProjectOrDesignTypeChange() {
     selectProject();
 }
 
-function applyDefaultRatioForDesignType() {
+function applyDefaultSizeForDesignType() {
     var designType = document.getElementById('designType').value;
     if (!designType) return;
-    var ratio = DESIGN_TYPE_RATIO_DEFAULTS[designType];
-    if (!ratio) return;
+    var size = DESIGN_TYPE_SIZE_DEFAULTS[designType];
+    if (!size || !size.width || !size.height) return;
     var catSel = document.getElementById('sizeCategorySelect');
-    var onlineSel = document.getElementById('onlineSizeSelect');
-    if (!catSel || !onlineSel) return;
-    var hasOption = Array.prototype.some.call(onlineSel.options, function(opt) {
-        return opt.value === ratio;
-    });
-    if (!hasOption) return;
+    if (!catSel) return;
     catSel.value = 'online';
     onSizeCategoryChange();
-    onlineSel.value = ratio;
+    var alternates = DESIGN_TYPE_ALTERNATE_SIZES[designType] || [];
+    if (currentProjectCatalog === 'folder_types' && hllOnlineSizePresetsFull) {
+        if (alternates.length) {
+            var presets = [{ width: size.width, height: size.height }].concat(alternates);
+            var seen = {};
+            presets = presets.filter(function(p) {
+                var k = onlineSizeKey(p.width, p.height);
+                if (seen[k]) return false;
+                seen[k] = true;
+                return true;
+            });
+            populateOnlineSizeSelect(presets);
+        } else {
+            refreshOnlineSizeOptions('folder_types', hllOnlineSizePresetsFull);
+        }
+    }
+    selectOnlineSize(size.width, size.height);
 }
 
 // 加载项目列表
@@ -1994,6 +2226,7 @@ async function loadProjects() {
             sel.value = preset;
             await onProjectSelectChange();
         }
+        updateEditImageButtonState();
     } catch(e) {
         console.error('加载项目失败', e);
     }
@@ -2322,6 +2555,8 @@ async function analyzeKeyword() {
         formData.append('summary', JSON.stringify(summary));
         formData.append('project', currentProject ? currentProject.name : '');
         if (isReanalyze) formData.append('regenerate', '1');
+        var analyzeModel = getSelectedAnalyzeModel();
+        if (analyzeModel) formData.append('analyze_model', analyzeModel);
         appendProjectContext(formData);
         
         var res = await authFetch('/api/analyze', { method: 'POST', body: formData });
@@ -2755,6 +2990,14 @@ function compressImageDataUrl(dataUrl, maxDim, quality) {
 
 // 开始修图
 async function startEditImage() {
+    if (!getSelectedProjectName()) {
+        alert('请先选择项目组');
+        return;
+    }
+    if (!hasEditImageBackendSelected()) {
+        alert('请先选择修图模型');
+        return;
+    }
     if (!editImageData) {
         alert('请先上传要修改的图片');
         return;
@@ -2773,6 +3016,8 @@ async function startEditImage() {
     document.getElementById('editLoadingCard').style.display = 'block';
     document.getElementById('editResultsSection').style.display = 'none';
     document.getElementById('editOriginalImg').src = editImageData;
+    var editBtn = document.getElementById('editImageBtn');
+    if (editBtn) editBtn.disabled = true;
     
     try {
         var imageToSend = editImageData;
@@ -2786,7 +3031,8 @@ async function startEditImage() {
             editType: editType,
             description: editDesc,
             keepElements: keepElements,
-            image_backend: localStorage.getItem('imageBackendSelect') || 'lovart'
+            image_backend: getSelectedEditImageBackend(),
+            project: getSelectedProjectName()
         };
         if (regions.length > 0) {
             payload.regions = regions;
@@ -2819,6 +3065,7 @@ async function startEditImage() {
         alert('请求失败: ' + e.message);
     } finally {
         document.getElementById('editLoadingCard').style.display = 'none';
+        updateEditImageButtonState();
     }
 }
 
@@ -2857,11 +3104,29 @@ function resetAll() {
 }
 
 // 历史记录侧边栏开关
+function isHistoryDrawerOpen() {
+    var drawer = document.getElementById('historyDrawer');
+    return drawer && drawer.classList.contains('open');
+}
+
 function toggleHistory() {
-    document.getElementById('historyDrawer').classList.toggle('open');
+    var drawer = document.getElementById('historyDrawer');
+    var opening = !drawer.classList.contains('open');
+    drawer.classList.toggle('open');
     document.getElementById('drawerOverlay').classList.toggle('open');
-    if (document.getElementById('historyDrawer').classList.contains('open')) {
+    if (opening) {
+        historyViewDate = null;
+        var el = document.getElementById('historyList');
+        if (historyItemsCache) {
+            renderHistory(historyItemsCache);
+        } else if (el) {
+            el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">加载中...</div>';
+        }
+        loadHistory();
         refreshGenerationJobs();
+    } else {
+        historyViewDate = null;
+        updateHistoryDrawerHeader();
     }
 }
 
@@ -2872,6 +3137,8 @@ var fullscreenLabels = [];
 var fullscreenIndex = 0;
 var fullscreenHistoryItem = null;
 var historyItemsById = {};
+var historyItemsCache = null;
+var historyViewDate = null;
 var _fullscreenDetailsCopyText = '';
 
 function normalizeImageUrls(images) {
@@ -3119,12 +3386,15 @@ function nextImage() {
     updateFullscreenImage();
 }
 
-// 加载历史
+// 加载历史（仅抽屉打开时渲染缩略图，避免首屏批量下载 outputs）
 async function loadHistory() {
     try {
         var res = await authFetch('/history');
         var data = await res.json();
-        renderHistory(data.items || []);
+        historyItemsCache = data.items || [];
+        if (isHistoryDrawerOpen()) {
+            renderHistory(historyItemsCache);
+        }
     } catch(e) {}
 }
 
@@ -3137,58 +3407,160 @@ function _escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-function renderHistory(items) {
-    var el = document.getElementById('historyList');
-    historyItemsById = {};
-    if (!items.length) {
-        el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">暂无记录</div>';
-        return;
-    }
-    var visible = items.filter(function(item) {
+function _historyDateKey(timestamp) {
+    if (!timestamp) return 'unknown';
+    var s = String(timestamp);
+    if (s.length >= 10 && s.charAt(4) === '-' && s.charAt(7) === '-') return s.slice(0, 10);
+    var d = new Date(timestamp);
+    if (isNaN(d.getTime())) return 'unknown';
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+}
+
+function _formatHistoryDateLabel(dateKey) {
+    if (!dateKey || dateKey === 'unknown') return '未知日期';
+    var parts = dateKey.split('-');
+    if (parts.length !== 3) return dateKey;
+    var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    if (isNaN(d.getTime())) return dateKey;
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var target = new Date(d.getTime());
+    target.setHours(0, 0, 0, 0);
+    var diffDays = Math.round((today - target) / 86400000);
+    if (diffDays === 0) return '今天';
+    if (diffDays === 1) return '昨天';
+    return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+}
+
+function _historyVisibleItems(items) {
+    return (items || []).filter(function(item) {
         var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
         return imgs.length > 0;
     });
-    el.innerHTML = visible.slice(0, 30).map(function(item, idx) {
-        var historyId = item.id || ('hist_' + idx);
-        historyItemsById[historyId] = item;
-        var time = new Date(item.timestamp).toLocaleString('zh-CN', {hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
-        var promptText = item.prompt || '';
-        var title = item.title || (promptText.length > 28 ? promptText.substring(0, 28) + '...' : promptText);
-        var description = (item.description || '').trim();
-        var tags = Array.isArray(item.meta_tags) && item.meta_tags.length ? item.meta_tags.join(' · ') : '';
-        if (!tags) {
-            var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
-            var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
-            tags = mode + variants;
-        }
-        var descHtml = description
-            ? '<div class="history-desc" title="' + _escapeHtml(description) + '">' + _escapeHtml(description) + '</div>'
-            : '';
-        var images = item.output_images || (item.output_image ? [item.output_image] : []);
-        var imageUrls = images.map(function(img) { return '/outputs/' + String(img).split('?')[0]; });
-        var thumbsHtml = imageUrls.length ? imageUrls.map(function(imgSrc, i) {
-            return '<img class="history-thumb" src="' + imgSrc + '" loading="lazy" ' +
-                'data-history-id="' + _escapeHtml(historyId) + '" ' +
-                'data-images="' + encodeURIComponent(JSON.stringify(imageUrls)) + '" data-index="' + i + '" ' +
-                'onclick="event.stopPropagation(); openHistoryThumb(this)" style="cursor:pointer;">';
-        }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,0.35);">无图</div>';
-        var downloadsHtml = imageUrls.map(function(imgSrc, i) {
-            var name = images[i] || ('image_' + i + '.png');
-            return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
-        }).join('');
-        var clickAttr = imageUrls.length ? ' onclick="openHistoryThumb(this.querySelector(\'.history-thumb\'))"' : '';
-        return '<div class="history-item"' + clickAttr + '>' +
-            '<div class="history-img-wrap" style="display:flex;gap:4px;flex-wrap:wrap;position:relative;">' +
-            thumbsHtml +
-            downloadsHtml +
-            '</div>' +
-            '<div class="history-info">' +
-            '<div class="history-time">' + time + '</div>' +
-            '<div class="history-title" title="' + _escapeHtml(title) + '">' + _escapeHtml(title) + '</div>' +
-            descHtml +
-            '<div class="history-meta">' + _escapeHtml(tags) + '</div>' +
-            '</div></div>';
+}
+
+function _groupHistoryByDate(items) {
+    var groups = {};
+    _historyVisibleItems(items).forEach(function(item) {
+        var key = _historyDateKey(item.timestamp);
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(item);
+    });
+    return Object.keys(groups).sort(function(a, b) {
+        if (a === 'unknown') return 1;
+        if (b === 'unknown') return -1;
+        return b.localeCompare(a);
+    }).map(function(key) {
+        return { dateKey: key, items: groups[key] };
+    });
+}
+
+function updateHistoryDrawerHeader() {
+    var titleEl = document.getElementById('historyDrawerTitle');
+    var backBtn = document.getElementById('historyBackBtn');
+    if (!titleEl || !backBtn) return;
+    if (historyViewDate) {
+        titleEl.textContent = _formatHistoryDateLabel(historyViewDate);
+        backBtn.classList.add('visible');
+    } else {
+        titleEl.textContent = '生图 / 修图记录';
+        backBtn.classList.remove('visible');
+    }
+}
+
+function historyBackToDates() {
+    historyViewDate = null;
+    if (historyItemsCache) renderHistory(historyItemsCache);
+}
+
+function selectHistoryDate(dateKey) {
+    historyViewDate = dateKey;
+    if (historyItemsCache) renderHistory(historyItemsCache);
+}
+
+function _renderHistoryItemHtml(item, idx) {
+    var historyId = item.id || ('hist_' + idx);
+    historyItemsById[historyId] = item;
+    var time = new Date(item.timestamp).toLocaleString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    var promptText = item.prompt || '';
+    var title = item.title || (promptText.length > 28 ? promptText.substring(0, 28) + '...' : promptText);
+    var description = (item.description || '').trim();
+    var tags = Array.isArray(item.meta_tags) && item.meta_tags.length ? item.meta_tags.join(' · ') : '';
+    if (!tags) {
+        var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
+        var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
+        tags = mode + variants;
+    }
+    var descHtml = description
+        ? '<div class="history-desc" title="' + _escapeHtml(description) + '">' + _escapeHtml(description) + '</div>'
+        : '';
+    var images = item.output_images || (item.output_image ? [item.output_image] : []);
+    var imageUrls = images.map(function(img) { return '/outputs/' + String(img).split('?')[0]; });
+    var thumbsHtml = imageUrls.length ? imageUrls.map(function(imgSrc, i) {
+        return '<img class="history-thumb" src="' + imgSrc + '" loading="lazy" ' +
+            'data-history-id="' + _escapeHtml(historyId) + '" ' +
+            'data-images="' + encodeURIComponent(JSON.stringify(imageUrls)) + '" data-index="' + i + '" ' +
+            'onclick="event.stopPropagation(); openHistoryThumb(this)" style="cursor:pointer;">';
+    }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,0.35);">无图</div>';
+    var downloadsHtml = imageUrls.map(function(imgSrc, i) {
+        var name = images[i] || ('image_' + i + '.png');
+        return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
     }).join('');
+    var clickAttr = imageUrls.length ? ' onclick="openHistoryThumb(this.querySelector(\'.history-thumb\'))"' : '';
+    return '<div class="history-item"' + clickAttr + '>' +
+        '<div class="history-img-wrap" style="display:flex;gap:4px;flex-wrap:wrap;position:relative;">' +
+        thumbsHtml +
+        downloadsHtml +
+        '</div>' +
+        '<div class="history-info">' +
+        '<div class="history-time">' + time + '</div>' +
+        '<div class="history-title" title="' + _escapeHtml(title) + '">' + _escapeHtml(title) + '</div>' +
+        descHtml +
+        '<div class="history-meta">' + _escapeHtml(tags) + '</div>' +
+        '</div></div>';
+}
+
+function renderHistoryDateList(items) {
+    var el = document.getElementById('historyList');
+    var groups = _groupHistoryByDate(items);
+    updateHistoryDrawerHeader();
+    if (!groups.length) {
+        el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">暂无记录</div>';
+        return;
+    }
+    el.innerHTML = groups.map(function(g) {
+        return '<div class="history-date-item" data-date-key="' + _escapeHtml(g.dateKey) + '" onclick="selectHistoryDate(this.getAttribute(\'data-date-key\'))">' +
+            '<span class="history-date-label">' + _escapeHtml(_formatHistoryDateLabel(g.dateKey)) + '</span>' +
+            '<span class="history-date-count">' + g.items.length + ' 条</span>' +
+            '</div>';
+    }).join('');
+}
+
+function renderHistoryForDate(items, dateKey) {
+    var el = document.getElementById('historyList');
+    historyItemsById = {};
+    var dayItems = _historyVisibleItems(items).filter(function(item) {
+        return _historyDateKey(item.timestamp) === dateKey;
+    });
+    updateHistoryDrawerHeader();
+    if (!dayItems.length) {
+        el.innerHTML = '<div style="text-align:center;color:#999;padding:30px;">该日暂无记录</div>';
+        return;
+    }
+    el.innerHTML = dayItems.map(function(item, idx) {
+        return _renderHistoryItemHtml(item, idx);
+    }).join('');
+}
+
+function renderHistory(items) {
+    if (historyViewDate) {
+        renderHistoryForDate(items, historyViewDate);
+    } else {
+        renderHistoryDateList(items);
+    }
 }
 
 // ─── 开屏导出 ───────────────────────────────────────

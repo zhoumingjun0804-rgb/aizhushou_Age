@@ -24,24 +24,42 @@ STATIC_DESIGN_TYPES: list[dict] = [
     {"value": "其他", "label": "其他", "defaultRatio": None},
 ]
 
-FOLDER_TYPE_RATIO_BY_LABEL: dict[str, str] = {
-    "banner": "16:9",
-    "弹窗": "1:1",
-    "品宣海报": "9:16",
-    "销售海报": "9:16",
-    "倒计时海报": "9:16",
-    "开屏": "9:16",
-    "直播间": "16:9",
-    "课程表": "16:9",
-    "画具清单": "16:9",
-    "礼品海报": "9:16",
-    "投放素材": "1:1",
-    "好友添加页": "9:16",
-    "公众号海报": "16:9",
-    "拼团海报": "9:16",
-    "转介绍海报": "9:16",
-    "小程序封面图": "1:1",
+# 画啦啦设计类型 → 默认线上像素尺寸（宽×高）
+FOLDER_TYPE_SIZE_BY_LABEL: dict[str, dict] = {
+    "banner": {"width": 1024, "height": 388},
+    "弹窗": {"width": 600, "height": 800},
+    "品宣海报": {"width": 1080, "height": 2160},
+    "销售海报": {"width": 750, "height": 1334},
+    "倒计时海报": {"width": 750, "height": 1334},
+    "开屏": {"width": 750, "height": 1334},
+    "直播间": {"width": 2480, "height": 3508},
+    "课程表": {"width": 750, "height": 1623},
+    "画具清单": {"width": 750, "height": 825},
+    "礼品海报": {"width": 750, "height": 1334},
+    "投放素材": {"width": 800, "height": 1000, "alternates": [{"width": 800, "height": 800}]},
+    "好友添加页": {"width": 1080, "height": 2123},
+    "公众号海报": {"width": 800, "height": 1000},
+    "拼团海报": {"width": 750, "height": 1065},
+    "转介绍海报": {"width": 1080, "height": 1920},
+    "小程序封面图": {"width": 520, "height": 416},
+    "封面": {"width": 1920, "height": 1080},
 }
+
+
+def folder_type_online_size_presets() -> list[dict]:
+    """画啦啦线上尺寸下拉选项（去重，含投放素材备选 800×800）。"""
+    seen: set[tuple[int, int]] = set()
+    presets: list[dict] = []
+    for size in FOLDER_TYPE_SIZE_BY_LABEL.values():
+        for candidate in [size, *(size.get("alternates") or [])]:
+            w, h = int(candidate["width"]), int(candidate["height"])
+            key = (w, h)
+            if key in seen:
+                continue
+            seen.add(key)
+            presets.append({"width": w, "height": h})
+    presets.sort(key=lambda p: (-p["width"] * p["height"], -p["width"]))
+    return presets
 
 # 项目组名 → 开屏导出 product_type（output_sizes*.json）
 PROJECT_PRODUCT_TYPE_BY_NAME: dict[str, str] = {
@@ -139,13 +157,21 @@ def list_design_types_for_project(project_name: str) -> list[dict]:
                 continue
             folder = path.name
             label = folder_type_label(folder)
-            result.append({
+            default_size = FOLDER_TYPE_SIZE_BY_LABEL.get(label)
+            entry = {
                 "value": folder,
                 "label": label,
                 "folder": folder,
-                "defaultRatio": FOLDER_TYPE_RATIO_BY_LABEL.get(label),
                 "referenceCount": len(list_typed_reference_images(project_name, folder)),
-            })
+            }
+            if default_size:
+                entry["defaultSize"] = {
+                    "width": default_size["width"],
+                    "height": default_size["height"],
+                }
+                if default_size.get("alternates"):
+                    entry["alternateSizes"] = default_size["alternates"]
+            result.append(entry)
         return result
     return [dict(item) for item in STATIC_DESIGN_TYPES]
 

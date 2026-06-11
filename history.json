@@ -1,5 +1,23 @@
 [
   {
+    "id": "852e1f8e",
+    "timestamp": "2026-06-09T13:44:09",
+    "mode": "img2img",
+    "prompt": "清新插画风格，banner设计，标题文字\"今年是猪年\"，副标题\"猪年大肥猪\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "title": "清新插画风格，banner设计，标题文字\"今年是猪年\"，...",
+    "description": "",
+    "meta_tags": [
+      "📷图片改图"
+    ],
+    "source": "job",
+    "schema_version": 1,
+    "project": "画啦啦",
+    "output_images": [
+      "variant_bce5f66525d34740b7a728c87f085338.png"
+    ],
+    "variants_count": 1
+  },
+  {
     "id": "0cae8cfa",
     "timestamp": "2026-05-26T15:50:16",
     "mode": "img2img",
