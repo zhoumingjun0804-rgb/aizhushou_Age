@@ -43,6 +43,12 @@ FOLDER_TYPE_SIZE_BY_LABEL: dict[str, dict] = {
     "转介绍海报": {"width": 1080, "height": 1920},
     "小程序封面图": {"width": 520, "height": 416},
     "封面": {"width": 1920, "height": 1080},
+    "创意演说家封面": {"width": 1000, "height": 1439},
+    "学员优才外化": {"width": 1080, "height": 1920},
+    "徽章": {"width": 1080, "height": 1080},
+    "教师技能大赛": {"width": 750, "height": 1334},
+    "节假日海报": {"width": 750, "height": 1334},
+    "证书": {"width": 1080, "height": 1527},
 }
 
 

@@ -10,19 +10,32 @@ from PIL import Image
 Img2ImgFn = Callable[[Path, str, str], tuple[str | None, str | None]]
 DownloadFn = Callable[[str, Path], None]
 
+SPLASH_OUTPAINT_RULES = (
+    "【Outpainting 纯扩边·禁止改图·最高优先级】"
+    "附件是已完成的成品设计稿，不是灵感参考。"
+    "任务 ONLY：向外扩展(outpaint/inpaint edge)背景与场景，使画布达到目标尺寸与比例。"
+    "中心主体区域必须与附件完全一致："
+    "禁止 img2img 重绘、禁止换风格、禁止改配色、"
+    "禁止新增/删除/修改任何文字、人物、IP、Logo、按钮、UI 元素、装饰与构图；"
+    "禁止替换主体、禁止重新设计、禁止生成新的海报或 Banner。"
+    "只允许在四周新增与原有背景连贯的延伸区域；"
+    "若需补边，延伸现有天空/地面/渐变/纹理，不得引入新主体。"
+)
+
 
 def splash_extend_prompt(target_w: int, target_h: int) -> str:
     return (
-        f"将参考图自然延展为 {target_w}x{target_h} 像素开屏图，"
-        "保持原图风格、色调与画面主体不变，向四周自然补边延展背景与场景，"
-        "不要新增文字、不要添加 Logo、不要裁切或变形主体。"
+        f"{SPLASH_OUTPAINT_RULES}"
+        f"目标输出 {target_w}x{target_h} 像素。"
+        "输出整张图必须看起来像是原图自然加宽/加高，而非新画的图。"
     )
 
 
 def layout_background_extend_prompt(target_w: int, target_h: int) -> str:
     return (
-        f"将参考图延展为 {target_w}x{target_h} 像素横竖比的设计背景，"
-        "保持原图背景风格与色调一致，自然补边，不要新增文字或 Logo。"
+        f"{SPLASH_OUTPAINT_RULES}"
+        f"目标输出 {target_w}x{target_h} 像素背景层。"
+        "仅延伸背景，主体 Logo/IP 将由后续合成覆盖，背景勿含新文字。"
     )
 
 

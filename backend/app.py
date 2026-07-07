@@ -56,6 +56,7 @@ from comfyui_client import ComfyUIClient, ComfyUIClientError
 from gpt_image_client import (
     GptImageClient,
     GptImageError,
+    build_chat_completion_payload,
     call_gpt_chat,
     resolve_gpt_image_model,
     validate_official_gpt_image_key,
@@ -74,6 +75,7 @@ from ai_outpaint import (
 from multi_size_export import (
     export_multi_sizes,
     load_output_sizes,
+    normalize_export_sizes,
     normalize_product_type,
     sizes_config_path,
 )
@@ -246,7 +248,14 @@ DOUBAO_MODEL = os.environ.get("DOUBAO_MODEL", "doubao-pro-32k")
 DOUBAO_VISION_MODEL = os.environ.get("DOUBAO_VISION_MODEL", "doubao-1-5-vision-pro-32k-250115")
 
 
-def call_openai_chat(messages, config: ProjectLlmConfig, model: str, temperature=0.7, max_tokens=1000):
+def call_openai_chat(
+    messages,
+    config: ProjectLlmConfig,
+    model: str,
+    temperature=0.7,
+    max_tokens=1000,
+    timeout=120,
+):
     """调用 GPT chat（按项目组 Key / Azure 或 AgentHub 网关）。"""
     chat_cfg = get_gpt_chat_settings(config)
     if not chat_cfg.api_key:
@@ -260,38 +269,61 @@ def call_openai_chat(messages, config: ProjectLlmConfig, model: str, temperature
         fallback_bearer_key=chat_cfg.fallback_bearer_key,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout,
     )
 
 
-def call_deepseek(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
-    """调用 DeepSeek API"""
+def call_deepseek(
+    messages,
+    config: ProjectLlmConfig,
+    temperature=0.7,
+    max_tokens=1000,
+    timeout=120,
+    max_retries=2,
+):
+    """调用 DeepSeek / AgentHub Claude 等 OpenAI 兼容 chat API"""
     if not config.deepseek_api_key:
         return None, f"未配置 DEEPSEEK_API_KEY_{config.slug}"
     headers = {
         "Authorization": f"Bearer {config.deepseek_api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
-    payload = {
-        "model": config.deepseek_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-    
-    req = urllib.request.Request(
-        f"{config.deepseek_base_url.rstrip('/')}/v1/chat/completions",
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST'
+    model = config.deepseek_model
+    payload = build_chat_completion_payload(
+        model,
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            return data['choices'][0]['message']['content'], None
-    except Exception as e:
-        return None, str(e)
+    url = f"{config.deepseek_base_url.rstrip('/')}/v1/chat/completions"
+    last_error = "润色请求失败"
+
+    for attempt in range(max(1, max_retries)):
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"], None
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            last_error = f"HTTP Error {e.code}: {body[:200]}"
+            if e.code in (524, 502, 503, 504, 429) and attempt + 1 < max_retries:
+                time.sleep(2 * (attempt + 1))
+                continue
+            return None, last_error
+        except Exception as e:
+            last_error = str(e)
+            lower = last_error.lower()
+            if attempt + 1 < max_retries and ("timeout" in lower or "524" in lower):
+                time.sleep(2 * (attempt + 1))
+                continue
+            return None, last_error
+    return None, last_error
 
 
 def call_qianwen(messages, config: ProjectLlmConfig, temperature=0.7, max_tokens=1000):
@@ -620,19 +652,11 @@ def _selected_images_from_fields(fields: dict, project: str) -> list:
 
 
 def _build_image_paths_from_selection(fields: dict, project: str) -> list:
+    """仅使用用户在项目参考图网格中勾选的图片，未勾选则不注入项目组素材。"""
     selected_list = _selected_images_from_fields(fields, project)
-    image_paths = []
-    if not selected_list and project:
-        proj_dir = PROJECTS_DIR / project
-        if proj_dir.exists():
-            for img in sorted(proj_dir.iterdir()):
-                if img.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
-                    image_paths.append(img)
-                    if len(image_paths) >= 10:
-                        break
-    elif selected_list:
-        image_paths = collect_reference_image_paths(selected_list, project)
-    return image_paths
+    if not selected_list:
+        return []
+    return collect_reference_image_paths(selected_list, project)
 
 def get_project_images(project_name, design_type: str = ""):
     """获取项目参考图：folder_types 按设计类型子目录，static_types 为扁平 refs/。"""
@@ -916,10 +940,14 @@ def analyze_prompt_from_summary(
 
     fallback = expand_prompt_from_summary(summary, project_meta)
     detail = (primary_error or "未知错误")[:160]
-    warning = (
-        f"{provider_label} 润色失败（{detail}），已使用本地规则拼接。"
-        f"请检查 DEEPSEEK_API_KEY_{cfg.slug} / AgentHub 连通性，或改选其他润色模型。"
-    )
+    if use_gpt:
+        hint = f"请检查 OPENAI_API_KEY_{cfg.slug} / AgentHub 连通性，或改选 Claude Haiku（默认）润色模型。"
+    else:
+        hint = (
+            f"请检查 DEEPSEEK_API_KEY_{cfg.slug} / AgentHub 连通性，"
+            f"稍后再试，或改选 {cfg.openai_chat_model or 'gpt-5.4'} 润色模型。"
+        )
+    warning = f"{provider_label} 润色失败（{detail}），已使用本地规则拼接。{hint}"
     return fallback, "fallback", "local", "", warning
 
 
@@ -951,6 +979,7 @@ def call_lovart(
     output_height=None,
     size_mode="online",
     dpi=None,
+    lovart_task_kind=None,
 ):
     """调用 Lovart OpenAPI 生图；同项目组多 Key 时在并发/额度受限时自动切换。"""
     if not local_project:
@@ -1000,6 +1029,7 @@ def call_lovart(
                     quality_hint=quality_hint,
                     project_id=resolved_project_id,
                     project_title=project_title,
+                    task_kind=lovart_task_kind or "generate",
                 )
             except LovartError as e:
                 image_url, error = None, e.message
@@ -1184,7 +1214,7 @@ def resolve_output_dimensions(
     w = _parse_positive_int(output_width)
     h = _parse_positive_int(output_height)
     if w and h:
-        return ratio or bbox_to_ratio(w, h), w, h
+        return bbox_to_ratio(w, h), w, h
     rw, rh = ratio_to_size(ratio or "1:1")
     return ratio or "1:1", rw, rh
 
@@ -1328,6 +1358,7 @@ def call_image_generator(
     size_mode="online",
     dpi=None,
     gpt_model=None,
+    lovart_task_kind=None,
 ):
     backend = normalize_image_backend(image_backend)
     if backend == "gpt":
@@ -1355,6 +1386,7 @@ def call_image_generator(
             output_height=output_height,
             size_mode=size_mode,
             dpi=dpi,
+            lovart_task_kind=lovart_task_kind,
         )
     if backend == "comfyui":
         return call_comfyui(
@@ -1440,6 +1472,20 @@ def generate_variants(
     return results
 
 
+def _normalize_reference_upload(path: pathlib.Path) -> pathlib.Path:
+    """GIF 动图取首帧转 PNG，便于生图 API 识别。"""
+    if path.suffix.lower() != ".gif":
+        return path
+    from PIL import Image
+
+    png_path = path.with_suffix(".png")
+    with Image.open(path) as im:
+        im.seek(0)
+        im.convert("RGBA").save(png_path, "PNG")
+    path.unlink(missing_ok=True)
+    return png_path
+
+
 def _save_ref_images_from_fields(fields: dict) -> list:
     paths = []
     for i in range(3):
@@ -1450,8 +1496,24 @@ def _save_ref_images_from_fields(fields: dict) -> list:
             ref_filename = f"ref_{uuid.uuid4().hex}{file_ext}"
             ref_path = UPLOAD_DIR / ref_filename
             ref_path.write_bytes(ref_data["data"])
-            paths.append(ref_path)
+            paths.append(_normalize_reference_upload(ref_path))
     return paths
+
+
+GENERATION_REF_PROMPT_SUFFIX = (
+    "请严格参考上传参考图的画风、角色/IP 造型、配色与构图，保持视觉风格一致，"
+    "仅按需求文案替换主题内容，不要换成另一种插画风格。"
+)
+
+
+def _save_logo_from_fields(fields: dict):
+    logo_data = fields.get("logo_image")
+    if not logo_data or not isinstance(logo_data, dict):
+        return None
+    file_ext = pathlib.Path(logo_data.get("filename", ".png")).suffix or ".png"
+    logo_path = UPLOAD_DIR / f"logo_{uuid.uuid4().hex}{file_ext}"
+    logo_path.write_bytes(logo_data["data"])
+    return logo_path
 
 
 def build_generation_payload(fields: dict, kind: str) -> dict:
@@ -1505,8 +1567,29 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
         image_paths.append(str(input_path))
 
     image_paths.extend(str(p) for p in _build_image_paths_from_selection(fields, project))
-    image_paths.extend(str(p) for p in _save_ref_images_from_fields(fields))
+    user_ref_paths = _save_ref_images_from_fields(fields)
+    image_paths.extend(str(p) for p in user_ref_paths)
+    if user_ref_paths:
+        base_prompt = payload.get("prompt") or ""
+        payload["prompt"] = (
+            f"{base_prompt}。{GENERATION_REF_PROMPT_SUFFIX}"
+            if base_prompt
+            else GENERATION_REF_PROMPT_SUFFIX
+        )
+
+    logo_path = _save_logo_from_fields(fields)
+    logo_position = normalize_logo_position(str(fields.get("logo_position", "") or ""))
+    if logo_path:
+        max_refs = 3
+        image_paths = image_paths[:max_refs]
+        image_paths.append(str(logo_path))
+        suffix = build_logo_prompt_suffix(logo_position)
+        base_prompt = payload.get("prompt") or ""
+        payload["prompt"] = f"{base_prompt}。{suffix}" if base_prompt else suffix
+
     payload["image_paths"] = image_paths
+    payload["logo_path"] = str(logo_path) if logo_path else None
+    payload["logo_position"] = logo_position
     payload["input_filename"] = input_filename
     payload["mode"] = "img2img" if image_paths else "text2img"
     return payload
@@ -1570,7 +1653,18 @@ def execute_generation_job(job: dict) -> None:
             output_path = OUTPUT_DIR / output_filename
             try:
                 download_image(image_url, output_path)
-                variants.append({"filename": output_filename, "error": None})
+                logo_file = payload.get("logo_path")
+                if logo_file and pathlib.Path(logo_file).is_file():
+                    try:
+                        apply_logo_overlay(
+                            output_path,
+                            logo_file,
+                            payload.get("logo_position") or "top_left",
+                        )
+                    except Exception as logo_err:
+                        print(f"[LOGO] overlay failed: {logo_err}")
+                finalize_generation_output(output_path, output_width, output_height)
+                variants.append(variant_entry_from_path(output_filename, output_path))
             except Exception as e:
                 variants.append({"filename": None, "error": format_url_error(e)})
         else:
@@ -1665,6 +1759,64 @@ def composite_image_pil(base_path, overlay_path, output_path, x, y):
     print(f"[COMPOSITE-PIL] pasted at ({x},{y}) -> {output_path}")
 
 
+LOGO_POSITION_LABELS = {
+    "top_left": "左上角",
+    "top_right": "右上角",
+    "bottom_left": "左下角",
+    "bottom_right": "右下角",
+}
+
+
+def normalize_logo_position(value: str) -> str:
+    raw = (value or "top_left").strip().lower()
+    return raw if raw in LOGO_POSITION_LABELS else "top_left"
+
+
+def build_logo_prompt_suffix(position: str = "top_left") -> str:
+    pos_label = LOGO_POSITION_LABELS.get(normalize_logo_position(position), "左上角")
+    return (
+        f"品牌Logo：最后一张参考附件为官方Logo素材（建议透明底）。"
+        f"若画面中已有Logo或品牌标识，请替换为该Logo；"
+        f"若画面中没有Logo，则在{pos_label}添加该Logo。"
+        f"Logo须清晰完整、比例不变形，不遮挡主标题。"
+    )
+
+
+def apply_logo_overlay(
+    image_path,
+    logo_path,
+    position: str = "top_left",
+    *,
+    margin_ratio: float = 0.03,
+    max_width_ratio: float = 0.18,
+):
+    """将 Logo 叠加到成图指定角落（透明底 PNG 效果最佳）。"""
+    from PIL import Image
+
+    position = normalize_logo_position(position)
+    base = Image.open(image_path).convert("RGBA")
+    logo = Image.open(logo_path).convert("RGBA")
+    bw, bh = base.size
+    max_lw = max(1, int(bw * max_width_ratio))
+    lw, lh = logo.size
+    scale = min(1.0, max_lw / max(lw, 1))
+    new_lw = max(1, int(lw * scale))
+    new_lh = max(1, int(lh * scale))
+    if logo.size != (new_lw, new_lh):
+        logo = logo.resize((new_lw, new_lh), Image.LANCZOS)
+    margin = max(4, int(min(bw, bh) * margin_ratio))
+    coords = {
+        "top_left": (margin, margin),
+        "top_right": (bw - new_lw - margin, margin),
+        "bottom_left": (margin, bh - new_lh - margin),
+        "bottom_right": (bw - new_lw - margin, bh - new_lh - margin),
+    }
+    x, y = coords[position]
+    base.paste(logo, (x, y), logo)
+    base.convert("RGB").save(image_path)
+    print(f"[LOGO] overlay {position} ({x},{y}) {new_lw}x{new_lh} -> {image_path}")
+
+
 def crop_image(src_path, dst_path, x, y, w, h):
     try:
         crop_image_pil(src_path, dst_path, x, y, w, h)
@@ -1738,6 +1890,25 @@ def composite_image(base_path, overlay_path, output_path, x, y):
         print(f"[COMPOSITE] Pasted overlay at ({x},{y}) -> {output_path}")
 
 
+def _save_base64_image(data_url: str, prefix: str = "edit") -> pathlib.Path | None:
+    """将 base64 data URL 保存为本地图片文件。"""
+    import base64
+
+    if not data_url or not isinstance(data_url, str):
+        return None
+    try:
+        if "," in data_url:
+            _, data_part = data_url.split(",", 1)
+            raw = base64.b64decode(data_part)
+        else:
+            raw = base64.b64decode(data_url)
+    except Exception:
+        return None
+    ref_path = UPLOAD_DIR / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
+    ref_path.write_bytes(raw)
+    return ref_path
+
+
 def _save_edit_reference_images_from_payload(data: dict, max_count: int = 3) -> list[pathlib.Path]:
     """解析修图请求中的参考图（base64 data URL），保存到 uploads/。"""
     import base64
@@ -1776,8 +1947,9 @@ def build_edit_prompt(
     if region_only:
         prompt = (
             f"{prompt}。"
-            "【局部修改】只改选区内的指定内容；严格保持与原图相同的画风、配色、光影、质感与排版；"
-            "不要整体重绘，不要改变图片尺寸、比例和选区外的任何内容。"
+            "【局部修改】只改选区内的指定内容；严格保持与原图相同的画风、配色、光影、质感、文字字号与排版；"
+            "不要整体重绘，不要添加白色背景、遮罩、描边或留白边；"
+            "输出必须铺满整张图并与输入图尺寸、比例完全一致，选区外内容不得出现。"
         )
     if keep_elements:
         prompt = f"{prompt} 保留: {keep_elements}"
@@ -1803,6 +1975,48 @@ def resize_image_file(path, target_w, target_h):
         img.resize((target_w, target_h), Image.LANCZOS).save(path)
 
 
+def resize_image_cover(path, target_w, target_h):
+    """等比放大后居中裁切，避免拉伸导致文字变形。"""
+    from PIL import Image
+
+    target_w, target_h = int(target_w), int(target_h)
+    with Image.open(path) as img:
+        sw, sh = img.size
+        if sw == target_w and sh == target_h:
+            return
+        scale = max(target_w / max(sw, 1), target_h / max(sh, 1))
+        nw = max(1, int(round(sw * scale)))
+        nh = max(1, int(round(sh * scale)))
+        resized = img.resize((nw, nh), Image.LANCZOS)
+        left = max(0, (nw - target_w) // 2)
+        top = max(0, (nh - target_h) // 2)
+        resized.crop((left, top, left + target_w, top + target_h)).save(path)
+
+
+def finalize_generation_output(
+    output_path: pathlib.Path,
+    output_width=None,
+    output_height=None,
+) -> None:
+    """将生图结果裁切/缩放到用户指定的目标像素。"""
+    w = _parse_positive_int(output_width)
+    h = _parse_positive_int(output_height)
+    if w and h:
+        resize_image_cover(output_path, w, h)
+
+
+def compute_context_crop(x, y, w, h, img_w, img_h, margin_ratio=0.12):
+    """扩大选区裁剪范围，让 img2img 看到周边背景，减少白边与遮罩感。"""
+    mx = max(4, int(w * margin_ratio))
+    my = max(4, int(h * margin_ratio))
+    cx = max(0, int(x) - mx)
+    cy = max(0, int(y) - my)
+    cx2 = min(int(img_w), int(x) + int(w) + mx)
+    cy2 = min(int(img_h), int(y) + int(h) + my)
+    cw, ch = cx2 - cx, cy2 - cy
+    return cx, cy, cw, ch, int(x) - cx, int(y) - cy, int(w), int(h)
+
+
 def ensure_image_dimensions(path, target_w, target_h):
     from PIL import Image
 
@@ -1812,11 +2026,71 @@ def ensure_image_dimensions(path, target_w, target_h):
         img.resize((target_w, target_h), Image.LANCZOS).save(path)
 
 
-def composite_region_blend(base_path, overlay_path, output_path, x, y, w, h, feather=12):
-    """将修图结果仅粘贴回选区，边缘与原图羽化融合，选区外像素不变"""
-    from PIL import Image, ImageDraw, ImageFilter
+def _rounded_rect_mask(size, radius):
+    from PIL import Image, ImageDraw
 
-    base = Image.open(base_path).convert("RGBA")
+    w, h = size
+    mask = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(mask)
+    r = min(int(radius), w // 2, h // 2)
+    if r > 0:
+        draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=r, fill=255)
+    else:
+        draw.rectangle((0, 0, w - 1, h - 1), fill=255)
+    return mask
+
+
+def prepare_replacement_overlay(replacement_path, target_w, target_h, corner_radius=None):
+    """将替换图等比缩放居中到选区，并套用圆角蒙版。"""
+    from PIL import Image
+
+    target_w, target_h = int(target_w), int(target_h)
+    with Image.open(replacement_path) as repl:
+        repl = repl.convert("RGBA")
+    sw, sh = repl.size
+    scale = min(target_w / max(sw, 1), target_h / max(sh, 1))
+    nw = max(1, int(round(sw * scale)))
+    nh = max(1, int(round(sh * scale)))
+    fitted = repl.resize((nw, nh), Image.LANCZOS)
+    overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    ox = (target_w - nw) // 2
+    oy = (target_h - nh) // 2
+    overlay.paste(fitted, (ox, oy), fitted)
+    if corner_radius is None:
+        corner_radius = max(4, int(min(target_w, target_h) * 0.06))
+    corner_mask = _rounded_rect_mask((target_w, target_h), corner_radius)
+    alpha = overlay.split()[3]
+    overlay.putalpha(Image.composite(alpha, Image.new("L", (target_w, target_h), 0), corner_mask))
+    return overlay
+
+
+def composite_replacement_region(
+    base_path, replacement_path, output_path, x, y, w, h, corner_radius=None
+):
+    """仅替换选区内画面：等比贴合、居中、圆角，选区外原图不变。"""
+    from PIL import Image
+
+    with Image.open(base_path) as orig:
+        orig_mode = orig.mode
+        base = orig.convert("RGBA")
+    overlay = prepare_replacement_overlay(replacement_path, w, h, corner_radius)
+    x1 = max(0, int(x))
+    y1 = max(0, int(y))
+    base.paste(overlay, (x1, y1), overlay)
+    if orig_mode == "RGB":
+        base.convert("RGB").save(output_path)
+    else:
+        base.save(output_path)
+    print(f"[REPLACE] fitted region ({x1},{y1}) {int(w)}x{int(h)} -> {output_path}")
+
+
+def composite_region_paste(base_path, overlay_path, output_path, x, y, w, h):
+    """将修图结果粘贴回选区；支持带透明通道的替换图。"""
+    from PIL import Image
+
+    with Image.open(base_path) as orig:
+        orig_mode = orig.mode
+        base = orig.convert("RGBA")
     overlay = Image.open(overlay_path).convert("RGBA")
 
     x1 = max(0, int(x))
@@ -1825,29 +2099,17 @@ def composite_region_blend(base_path, overlay_path, output_path, x, y, w, h, fea
     y2 = min(base.height, y1 + int(h))
     actual_w, actual_h = x2 - x1, y2 - y1
     if actual_w <= 0 or actual_h <= 0:
-        base.convert("RGB").save(output_path)
+        base.save(output_path)
         return
 
-    overlay = overlay.resize((actual_w, actual_h), Image.LANCZOS)
-    original_patch = base.crop((x1, y1, x2, y2))
-
-    feather = min(int(feather), actual_w // 4, actual_h // 4, 24)
-    if feather < 2:
-        mask = Image.new("L", (actual_w, actual_h), 255)
+    if overlay.size != (actual_w, actual_h):
+        overlay = overlay.resize((actual_w, actual_h), Image.LANCZOS)
+    base.paste(overlay, (x1, y1), overlay)
+    if orig_mode == "RGB":
+        base.convert("RGB").save(output_path)
     else:
-        mask = Image.new("L", (actual_w, actual_h), 0)
-        draw = ImageDraw.Draw(mask)
-        draw.rectangle(
-            [feather, feather, actual_w - feather - 1, actual_h - feather - 1],
-            fill=255,
-        )
-        mask = mask.filter(ImageFilter.GaussianBlur(radius=max(1, feather // 2)))
-
-    blended = Image.composite(overlay, original_patch, mask)
-    result = base.copy()
-    result.paste(blended, (x1, y1))
-    result.convert("RGB").save(output_path)
-    print(f"[BLEND] region ({x1},{y1}) {actual_w}x{actual_h} -> {output_path}")
+        base.save(output_path)
+    print(f"[PASTE] region ({x1},{y1}) {actual_w}x{actual_h} -> {output_path}")
 
 
 def call_img2img_with_retry(
@@ -1859,6 +2121,9 @@ def call_img2img_with_retry(
     image_backend=None,
     queue_priority=PRIORITY_LOW,
     reference_paths=None,
+    output_width=None,
+    output_height=None,
+    lovart_task_kind=None,
 ):
     backend = normalize_image_backend(image_backend)
     gpt_model = resolve_gpt_model(image_backend) if backend == "gpt" else None
@@ -1877,6 +2142,9 @@ def call_img2img_with_retry(
                     local_project=local_project,
                     image_backend=backend,
                     gpt_model=gpt_model,
+                    output_width=output_width,
+                    output_height=output_height,
+                    lovart_task_kind=lovart_task_kind,
                 )
                 if image_url:
                     return image_url, None
@@ -2067,15 +2335,39 @@ def edit_image_regions(
         y = int(region.get("y", 0))
         w = int(region.get("w", 0))
         h = int(region.get("h", 0))
-        desc = (region.get("description") or "").strip()
-        if w < 8 or h < 8 or not desc:
+        if w < 8 or h < 8:
             continue
 
-        crop_path = UPLOAD_DIR / f"edit_crop_{uuid.uuid4().hex}.png"
-        crop_image(work_path, crop_path, x, y, w, h)
+        replacement_data = (
+            region.get("replacement_image") or region.get("replacementImage") or ""
+        ).strip()
+        repl_path = None
+        if replacement_data:
+            repl_path = _save_base64_image(replacement_data, "edit_replace")
+            if not repl_path:
+                return None, f"选区 {idx + 1} 替换图解码失败"
 
-        with Image.open(crop_path) as cropped:
-            cw, ch = cropped.size
+        desc = (region.get("description") or "").strip()
+
+        # 上传替换图：本地等比贴合进选区，保留选区外原图与圆角，不走 AI 重绘
+        if repl_path:
+            merged_path = OUTPUT_DIR / f"edit_merged_{uuid.uuid4().hex}.png"
+            composite_replacement_region(work_path, repl_path, merged_path, x, y, w, h)
+            shutil.move(merged_path, work_path)
+            try:
+                repl_path.unlink()
+            except OSError:
+                pass
+            continue
+
+        if not desc:
+            continue
+
+        cx, cy, cw, ch, ix, iy, iw, ih = compute_context_crop(
+            x, y, w, h, orig_w, orig_h
+        )
+        crop_path = UPLOAD_DIR / f"edit_crop_{uuid.uuid4().hex}.png"
+        crop_image(work_path, crop_path, cx, cy, cw, ch)
 
         crop_ratio = bbox_to_ratio(cw, ch)
         region_prompt = build_edit_prompt(
@@ -2092,19 +2384,31 @@ def edit_image_regions(
             local_project=local_project,
             reference_paths=reference_paths,
             image_backend=image_backend,
+            output_width=cw,
+            output_height=ch,
         )
         if not image_url:
             return None, f"选区 {idx + 1} 修图失败: {error or '未知错误'}"
 
         edited_crop = UPLOAD_DIR / f"edit_crop_out_{uuid.uuid4().hex}.png"
         download_image(image_url, edited_crop)
-        resize_image_file(edited_crop, cw, ch)
+        resize_image_cover(edited_crop, cw, ch)
+
+        paste_path = edited_crop
+        inner_crop = None
+        if ix or iy or iw != cw or ih != ch:
+            inner_crop = UPLOAD_DIR / f"edit_inner_{uuid.uuid4().hex}.png"
+            with Image.open(edited_crop) as expanded:
+                expanded.crop((ix, iy, ix + iw, iy + ih)).save(inner_crop)
+            paste_path = inner_crop
 
         merged_path = OUTPUT_DIR / f"edit_merged_{uuid.uuid4().hex}.png"
-        composite_region_blend(work_path, edited_crop, merged_path, x, y, cw, ch)
+        composite_region_paste(work_path, paste_path, merged_path, x, y, iw, ih)
         shutil.move(merged_path, work_path)
 
-        for tmp in (crop_path, edited_crop):
+        for tmp in (crop_path, edited_crop, inner_crop):
+            if not tmp:
+                continue
             try:
                 tmp.unlink()
             except OSError:
@@ -2849,17 +3153,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         image_paths = _build_image_paths_from_selection(fields, project)
-
-        # 处理用户上传的参考图（最多3张）
-        for i in range(3):
-            ref_key = f'ref_image_{i}'
-            ref_data = fields.get(ref_key)
-            if ref_data and isinstance(ref_data, dict):
-                file_ext = pathlib.Path(ref_data.get('filename', '.png')).suffix or '.png'
-                ref_filename = f"ref_{uuid.uuid4().hex}{file_ext}"
-                ref_path = UPLOAD_DIR / ref_filename
-                ref_path.write_bytes(ref_data['data'])
-                image_paths.append(ref_path)
+        user_ref_paths = _save_ref_images_from_fields(fields)
+        image_paths.extend(user_ref_paths)
+        if user_ref_paths:
+            prompt = f"{prompt}。{GENERATION_REF_PROMPT_SUFFIX}" if prompt else GENERATION_REF_PROMPT_SUFFIX
 
         mode = "img2img" if image_paths else "text2img"
 
@@ -2965,17 +3262,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             image_paths.append(input_path)
 
         image_paths.extend(_build_image_paths_from_selection(fields, project))
-
-        # 处理用户上传的参考图（最多3张）
-        for i in range(3):
-            ref_key = f'ref_image_{i}'
-            ref_data = fields.get(ref_key)
-            if ref_data and isinstance(ref_data, dict):
-                file_ext = pathlib.Path(ref_data.get('filename', '.png')).suffix or '.png'
-                ref_filename = f"ref_{uuid.uuid4().hex}{file_ext}"
-                ref_path = UPLOAD_DIR / ref_filename
-                ref_path.write_bytes(ref_data['data'])
-                image_paths.append(ref_path)
+        user_ref_paths = _save_ref_images_from_fields(fields)
+        image_paths.extend(user_ref_paths)
+        if user_ref_paths:
+            prompt = f"{prompt}。{GENERATION_REF_PROMPT_SUFFIX}"
 
         mode = "img2img" if image_paths else "text2img"
 
@@ -3386,8 +3676,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             prompt=layout_background_extend_prompt(tw, th),
                             ratio=bbox_to_ratio(tw, th),
                             upload_dir=UPLOAD_DIR,
-                            img2img=lambda p, pr, r: call_img2img_with_retry(
-                                p, pr, ratio=r, max_retries=1, local_project=local_project
+                            img2img=lambda p, pr, r, _tw=tw, _th=th: call_img2img_with_retry(
+                                p,
+                                pr,
+                                ratio=r,
+                                max_retries=1,
+                                local_project=local_project,
+                                lovart_task_kind="outpaint",
+                                output_width=_tw,
+                                output_height=_th,
                             ),
                             download_image=download_image,
                         )
@@ -3455,6 +3752,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             input_path.write_bytes(img_field["data"])
             source_raw = fields.get("source_name", "") or img_field.get("filename", "")
             use_ai = str(fields.get("use_ai", "1")).strip().lower() in ("1", "true", "yes")
+            use_crop = str(fields.get("use_crop", "0")).strip().lower() in ("1", "true", "yes")
+            fit_mode = "crop" if use_crop else "extend"
             ai_canvas_fn = None
             if use_ai:
                 _reload_runtime_env()
@@ -3470,21 +3769,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             prompt=splash_extend_prompt(tw, th),
                             ratio=bbox_to_ratio(tw, th),
                             upload_dir=UPLOAD_DIR,
-                            img2img=lambda p, pr, r: call_img2img_with_retry(
-                                p, pr, ratio=r, max_retries=1, local_project=local_project
+                            img2img=lambda p, pr, r, _tw=tw, _th=th: call_img2img_with_retry(
+                                p,
+                                pr,
+                                ratio=r,
+                                max_retries=1,
+                                local_project=local_project,
+                                lovart_task_kind="outpaint",
+                                output_width=_tw,
+                                output_height=_th,
                             ),
                             download_image=download_image,
                         )
                 else:
                     print("[MULTI-SIZE] 未配置 Lovart，将使用裁切满图")
 
+            sizes_raw = fields.get("sizes", "")
+            if isinstance(sizes_raw, bytes):
+                sizes_raw = sizes_raw.decode("utf-8", errors="ignore")
+            if sizes_raw:
+                import json as _json
+                requested_sizes = normalize_export_sizes(_json.loads(sizes_raw))
+            else:
+                self._send_json({"error": "请至少选择一个导出尺寸"})
+                return
+
             result = export_multi_sizes(
                 input_path,
                 OUTPUT_DIR,
                 job_id,
                 config_path=sizes_config_path(ptype),
+                sizes=requested_sizes,
                 source_basename=str(source_raw),
                 use_ai=bool(ai_canvas_fn),
+                fit_mode=fit_mode,
                 ai_canvas_fn=ai_canvas_fn,
             )
             try:
@@ -3672,13 +3990,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": f"保存图片失败: {str(e)}"})
             return
 
-        # 获取原图尺寸
+        # 获取原图尺寸（客户端可传原始分辨率，避免上传压缩后输出变模糊）
         try:
             from PIL import Image
             with Image.open(input_path) as orig_img:
                 orig_w, orig_h = orig_img.size
         except:
             orig_w, orig_h = 1024, 1024  # 默认尺寸
+
+        client_orig_w = _parse_positive_int(data.get("original_width"))
+        client_orig_h = _parse_positive_int(data.get("original_height"))
+        target_w = client_orig_w if client_orig_w else orig_w
+        target_h = client_orig_h if client_orig_h else orig_h
 
         # 计算原始比例，用于保持原图尺寸
         import math
@@ -3738,22 +4061,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": f"下载图片失败: {str(e)}"})
                 return
 
-        # 确保输出与原图尺寸一致（局部修图已在合成时保持，整图修图需缩放对齐）
+        # 确保输出与原始分辨率一致
         try:
             if regions:
-                ensure_image_dimensions(output_path, orig_w, orig_h)
+                ensure_image_dimensions(output_path, target_w, target_h)
             else:
                 from PIL import Image
                 with Image.open(output_path) as result_img:
                     result_w, result_h = result_img.size
-                    if (result_w, result_h) != (orig_w, orig_h):
-                        scale = max(orig_w / result_w, orig_h / result_h)
+                    if (result_w, result_h) != (target_w, target_h):
+                        scale = max(target_w / result_w, target_h / result_h)
                         new_w = int(result_w * scale)
                         new_h = int(result_h * scale)
                         temp = result_img.resize((new_w, new_h), Image.LANCZOS)
-                        left = (new_w - orig_w) // 2
-                        top = (new_h - orig_h) // 2
-                        temp.crop((left, top, left + orig_w, top + orig_h)).save(output_path)
+                        left = (new_w - target_w) // 2
+                        top = (new_h - target_h) // 2
+                        temp.crop((left, top, left + target_w, top + target_h)).save(output_path)
         except Exception as e:
             print(f"[EDIT] 尺寸恢复失败: {str(e)}")
 

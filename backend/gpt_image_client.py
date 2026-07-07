@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import mimetypes
 import os
 import time
@@ -28,8 +29,6 @@ GPT_SIZE_PRESETS = (
     (1024, 1024),
     (1536, 1024),
     (1024, 1536),
-    (1792, 1024),
-    (1024, 1792),
 )
 
 GPT_MAX_REFERENCE_IMAGES = 4
@@ -157,10 +156,14 @@ def resolve_gpt_image_model(model: str | None = None, tier: str | None = None) -
 
 
 def map_dimensions_to_size(width: int, height: int) -> str:
+    """按宽高比匹配 GPT 支持的固定尺寸，避免宽扁图误映射成正方形。"""
+    width = max(1, int(width))
+    height = max(1, int(height))
+    target_log_ratio = math.log(width / height)
     best = GPT_SIZE_PRESETS[0]
     best_dist = float("inf")
     for w, h in GPT_SIZE_PRESETS:
-        dist = abs(w - width) + abs(h - height)
+        dist = abs(math.log(w / h) - target_log_ratio)
         if dist < best_dist:
             best_dist = dist
             best = (w, h)
@@ -549,8 +552,12 @@ class GptImageClient:
         if not self.auth.bearer and not self.auth.api_key_header:
             return None, "未配置 OPENAI_API_KEY（或 OPENAI_APP_KEY）"
 
-        size = map_dimensions_to_size(width, height)
         refs = _normalize_image_paths(image_paths)
+        if refs:
+            # img2img：网关仅支持固定尺寸或 auto；用 auto 后由下游裁回目标像素
+            size = "auto"
+        else:
+            size = map_dimensions_to_size(width, height)
         if refs:
             result = self._generate_with_edits(prompt, model, size, refs, retries)
             if result[0]:
@@ -565,6 +572,44 @@ class GptImageClient:
         return self._generate_text_to_image(prompt, model, size, retries)
 
 
+def model_uses_max_completion_tokens(model: str) -> bool:
+    m = (model or "").lower().strip()
+    return m.startswith("gpt-5") or (len(m) >= 2 and m[0] == "o" and m[1].isdigit())
+
+
+def chat_completion_token_param(model: str, max_tokens: int) -> dict[str, int]:
+    """GPT-5 / o-series 使用 max_completion_tokens，旧模型使用 max_tokens。"""
+    if model_uses_max_completion_tokens(model):
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens}
+
+
+def model_supports_temperature(model: str) -> bool:
+    """GPT-5 / o-series 不支持自定义 temperature。"""
+    return not model_uses_max_completion_tokens(model)
+
+
+def build_chat_completion_payload(
+    model: str,
+    messages: list,
+    *,
+    temperature: float = 0.7,
+    max_tokens: int = 1000,
+) -> dict:
+    payload: dict = {"model": model, "messages": messages}
+    if model_supports_temperature(model):
+        payload["temperature"] = temperature
+    payload.update(chat_completion_token_param(model, max_tokens))
+    return payload
+
+
+def _chat_retryable_status(status: int, err_text: str) -> bool:
+    if status in (524, 502, 503, 504, 429):
+        return True
+    lower = (err_text or "").lower()
+    return "timeout" in lower or "524" in lower
+
+
 def call_gpt_chat(
     messages: list,
     *,
@@ -575,7 +620,8 @@ def call_gpt_chat(
     fallback_bearer_key: str = "",
     temperature: float = 0.7,
     max_tokens: int = 1000,
-    timeout: int = 60,
+    timeout: int = 120,
+    max_retries: int = 2,
 ) -> tuple[Optional[str], Optional[str]]:
     """GPT 润色 / chat：Azure=api-key；AgentHub=Bearer；official=Bearer+代理。"""
     auth = resolve_gpt_image_auth(api_key, fallback_bearer_key, base_url, provider)
@@ -585,18 +631,24 @@ def call_gpt_chat(
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
     if provider == "agenthub":
         url = append_auth_query(url, auth)
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    status, result = _request_json("POST", url, auth, payload, timeout, use_proxy=use_proxy)
-    if status >= 400:
-        return None, _friendly_error(status, result)
-    if not isinstance(result, dict):
-        return None, str(result)
-    try:
-        return result["choices"][0]["message"]["content"], None
-    except (KeyError, IndexError, TypeError):
-        return None, "GPT chat 返回格式异常"
+
+    payload = build_chat_completion_payload(
+        model, messages, temperature=temperature, max_tokens=max_tokens
+    )
+    last_error = "GPT chat 失败"
+    for attempt in range(max(1, max_retries)):
+        status, result = _request_json(
+            "POST", url, auth, payload, timeout, use_proxy=use_proxy
+        )
+        if status < 400:
+            if not isinstance(result, dict):
+                return None, str(result)
+            try:
+                return result["choices"][0]["message"]["content"], None
+            except (KeyError, IndexError, TypeError):
+                return None, "GPT chat 返回格式异常"
+        last_error = _friendly_error(status, result)
+        if attempt + 1 >= max_retries or not _chat_retryable_status(status, last_error):
+            break
+        time.sleep(2 * (attempt + 1))
+    return None, last_error

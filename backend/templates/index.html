@@ -171,17 +171,36 @@
             background: rgba(255,255,255,0.15); color: #fff; }
         .ref-preview-close:hover { background: rgba(167,139,250,0.8); }
         
-        /* 上传参考图 */
+        /* 上传参考图 + Logo 左右布局 */
+        .upload-assets-row { display: flex; gap: 12px; margin-top: 12px; align-items: stretch; }
+        .upload-assets-row .upload-ref-section { flex: 1; min-width: 0; margin-top: 0; }
+        @media (max-width: 720px) {
+            .upload-assets-row { flex-direction: column; }
+        }
         .upload-ref-section { margin-top: 12px; padding: 14px;
             background: rgba(255,255,255,0.05); border-radius: 12px;
             border: 1px solid rgba(168,85,247,0.3); }
-        .upload-ref-label { display: flex; align-items: center; gap: 6px;
+        .upload-ref-label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
             font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 10px; }
+        .logo-position-row { margin-bottom: 8px; }
+        .logo-position-row label { font-size: 12px; color: rgba(255,255,255,0.55); margin-bottom: 4px; display: block; }
+        .logo-position-row select { width: 100%; padding: 8px 10px; font-size: 13px;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px; color: white; }
         .upload-ref-input { width: 100%; padding: 10px;
             background: rgba(255,255,255,0.08);
             border: 1px dashed rgba(168,85,247,0.5);
             border-radius: 8px; color: rgba(255,255,255,0.8);
             font-size: 13px; }
+        .upload-ref-paste-zone { margin-top: 8px; padding: 10px 8px; text-align: center; cursor: pointer;
+            background: rgba(255,255,255,0.04); border: 1px dashed rgba(168,85,247,0.45);
+            border-radius: 8px; outline: none; transition: 0.2s; user-select: none; }
+        .upload-ref-paste-zone:hover { background: rgba(168,85,247,0.08); border-color: rgba(168,85,247,0.65); }
+        .upload-ref-paste-zone:focus { border-color: rgba(168,85,247,0.75);
+            box-shadow: 0 0 0 2px rgba(168,85,247,0.2); background: rgba(168,85,247,0.1); }
+        .upload-ref-paste-zone .paste-icon { font-size: 16px; margin-bottom: 4px; }
+        .upload-ref-paste-zone .paste-hint { font-size: 12px; color: rgba(255,255,255,0.65); line-height: 1.4; }
+        .upload-ref-paste-zone .paste-shortcut { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
         .uploaded-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         .uploaded-thumb-wrap { position: relative; }
         .uploaded-thumb { width: 60px; height: 60px; border-radius: 8px;
@@ -276,6 +295,36 @@
         .variant-card img { width: 100%; height: 180px; object-fit: cover; display: block; cursor: zoom-in; }
         .variant-card .label { padding: 8px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.5); }
         .variant-card.selected .label { color: #a78bfa; font-weight: 600; }
+        .variant-card .variant-img-wrap { position: relative; }
+        .variant-card .variant-edit-btn {
+            position: absolute; left: 8px; bottom: 8px; padding: 5px 12px; border: none; border-radius: 8px;
+            font-size: 12px; font-weight: 600; cursor: pointer; color: white;
+            background: rgba(15,12,41,0.72); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.2);
+            transition: 0.2s; z-index: 2;
+        }
+        .variant-card .variant-edit-btn:hover { background: rgba(139,92,246,0.85); border-color: rgba(167,139,250,0.6); }
+
+        /* 迭代编辑面板 */
+        .refine-section { display: none; margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.05);
+            border-radius: 12px; border: 1px solid rgba(167,139,250,0.2); }
+        .refine-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .refine-header h4 { margin: 0; font-size: 15px; color: rgba(255,255,255,0.85); }
+        .refine-close { background: none; border: none; color: rgba(255,255,255,0.45); font-size: 20px; cursor: pointer; padding: 4px 8px; }
+        .refine-close:hover { color: white; }
+        .refine-preview { text-align: center; margin-bottom: 16px; }
+        .refine-preview img { max-width: 100%; max-height: 360px; border-radius: 10px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1); }
+        .refine-history { max-height: 200px; overflow-y: auto; margin-bottom: 14px; }
+        .refine-msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+        .refine-msg.user { background: rgba(99,102,241,0.15); color: rgba(255,255,255,0.85); border: 1px solid rgba(99,102,241,0.25); }
+        .refine-msg.system { background: rgba(52,211,153,0.1); color: rgba(255,255,255,0.65); font-size: 12px; border: 1px solid rgba(52,211,153,0.2); }
+        .refine-input-row { display: flex; gap: 10px; align-items: flex-end; }
+        .refine-input-row textarea { flex: 1; min-height: 72px; padding: 12px; background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; color: white; font-size: 14px;
+            resize: vertical; font-family: inherit; }
+        .refine-input-row textarea:focus { outline: none; border-color: #667eea; }
+        .refine-input-row textarea::placeholder { color: rgba(255,255,255,0.35); }
+        .refine-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
         
         /* 操作按钮 */
         .actions { display: none; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
@@ -351,8 +400,9 @@
         .edit-result-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
         
         /* 选区工具 */
-        .edit-canvas-wrap { position: relative; display: inline-block; margin-top: 16px; }
-        .edit-canvas-wrap img { display: block; max-width: 100%; max-height: 350px; border-radius: 8px; }
+        .edit-canvas-stage { width: 100%; display: flex; justify-content: center; margin-top: 16px; max-height: 90vh; overflow: auto; }
+        .edit-canvas-wrap { position: relative; display: inline-block; max-width: min(100%, 1440px); }
+        .edit-canvas-wrap img { display: block; width: min(100%, 1440px); height: auto; border-radius: 8px; }
         .edit-canvas-wrap .canvas-overlay { position: absolute; top: 0; left: 0; cursor: crosshair; }
         .edit-canvas-wrap .selection-rect {
             position: absolute; top: 0; left: 0; border: 2px dashed #a78bfa; background: rgba(167,139,250,0.15);
@@ -374,6 +424,14 @@
         .edit-region-item textarea { width: 100%; min-height: 60px; padding: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
             border-radius: 6px; color: white; font-size: 13px; resize: vertical; font-family: inherit; }
         .edit-region-item textarea:focus { outline: none; border-color: #667eea; }
+        .edit-region-item .region-replace-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        .edit-region-item .region-replace-btn { padding: 6px 12px; border: 1px solid rgba(167,139,250,0.4); border-radius: 6px;
+            background: rgba(167,139,250,0.12); color: #c4b5fd; font-size: 12px; cursor: pointer; transition: 0.2s; }
+        .edit-region-item .region-replace-btn:hover { background: rgba(167,139,250,0.25); }
+        .edit-region-item .region-replace-hint { font-size: 11px; color: rgba(255,255,255,0.4); }
+        .edit-region-item .region-replace-preview { max-height: 48px; max-width: 120px; border-radius: 4px; border: 1px solid rgba(167,139,250,0.3); object-fit: contain; }
+        .edit-region-item .region-replace-clear { padding: 4px 8px; border: none; border-radius: 4px; background: rgba(239,68,68,0.2);
+            color: #fca5a5; font-size: 11px; cursor: pointer; }
         .edit-canvas-wrap .edit-remove { position: absolute; top: 8px; right: 8px; z-index: 10; }
 
         .svga-result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
@@ -398,6 +456,25 @@
             background: rgba(0,0,0,0.15); }
         .multi-upload-preview .file-name { margin: 0; color: rgba(255,255,255,0.5); font-size: 13px; }
         .multi-sizes-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+        .multi-size-option { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 6px 10px;
+            border-radius: 8px; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.28);
+            color: rgba(255,255,255,0.8); cursor: pointer; user-select: none; transition: 0.15s; }
+        .multi-size-option:hover { background: rgba(99,102,241,0.2); }
+        .multi-size-option input { accent-color: #818cf8; cursor: pointer; }
+        .multi-size-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: -8px 0 12px; }
+        .multi-size-actions button { padding: 4px 10px; font-size: 11px; border-radius: 6px; border: 1px solid rgba(99,102,241,0.35);
+            background: rgba(99,102,241,0.1); color: rgba(255,255,255,0.75); cursor: pointer; }
+        .multi-size-actions button:hover { background: rgba(99,102,241,0.22); }
+        .multi-custom-size { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 8px; }
+        .multi-custom-size input[type="number"] { width: 88px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(99,102,241,0.35);
+            background: rgba(255,255,255,0.08); color: white; font-size: 13px; }
+        .multi-custom-size input[type="number"]:focus { outline: none; border-color: #818cf8; }
+        .multi-custom-size .multi-custom-sep { color: rgba(255,255,255,0.45); }
+        .multi-custom-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .multi-custom-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 10px;
+            border-radius: 8px; background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.35); color: #6ee7b7; }
+        .multi-custom-chip button { border: none; background: none; color: rgba(255,255,255,0.55); cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
+        .multi-custom-chip button:hover { color: #f87171; }
         .multi-size-tag { font-size: 11px; padding: 6px 10px; border-radius: 8px; background: rgba(99,102,241,0.15);
             border: 1px solid rgba(99,102,241,0.3); color: rgba(255,255,255,0.75); }
         .multi-export-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: 600; color: white;
@@ -662,14 +739,43 @@
                 </div>
             </div>
             
-            <!-- 上传参考图 -->
-            <div class="upload-ref-section">
-                <div class="upload-ref-label">
-                    <span>🖼️ 上传参考图（可选）</span>
-                    <span style="opacity:0.6;font-size:12px;">最多3张，不影响生成</span>
+            <div class="upload-assets-row">
+                <!-- 上传参考图 -->
+                <div class="upload-ref-section" id="refImagesSection">
+                    <div class="upload-ref-label">
+                        <span>🖼️ 参考图（可选）</span>
+                        <span style="opacity:0.6;font-size:12px;">最多3张</span>
+                    </div>
+                    <input type="file" id="refImagesInput" class="upload-ref-input" accept="image/*" multiple>
+                    <div class="upload-ref-paste-zone" id="refImagesPasteZone" tabindex="0">
+                        <div class="paste-icon">📋</div>
+                        <div class="paste-hint">点击后 Ctrl+V 粘贴</div>
+                    </div>
+                    <div class="uploaded-previews" id="uploadedPreviews"></div>
                 </div>
-                <input type="file" id="refImagesInput" class="upload-ref-input" accept="image/*" multiple>
-                <div class="uploaded-previews" id="uploadedPreviews"></div>
+
+                <!-- 品牌 Logo -->
+                <div class="upload-ref-section" id="logoUploadSection">
+                    <div class="upload-ref-label">
+                        <span>🏷️ Logo（可选）</span>
+                        <span style="opacity:0.6;font-size:12px;">透明底 PNG</span>
+                    </div>
+                    <div class="logo-position-row">
+                        <label for="logoPositionSelect">Logo 位置</label>
+                        <select id="logoPositionSelect">
+                            <option value="top_left">左上角</option>
+                            <option value="top_right">右上角</option>
+                            <option value="bottom_left">左下角</option>
+                            <option value="bottom_right">右下角</option>
+                        </select>
+                    </div>
+                    <input type="file" id="logoImageInput" class="upload-ref-input" accept="image/*">
+                    <div class="upload-ref-paste-zone" id="logoPasteZone" tabindex="0">
+                        <div class="paste-icon">📋</div>
+                        <div class="paste-hint">点击后粘贴 Logo</div>
+                    </div>
+                    <div class="uploaded-previews" id="logoPreview"></div>
+                </div>
             </div>
             
             <!-- 需求表单 -->
@@ -742,13 +848,24 @@
                 <div class="form-row" id="onlineSizePanel">
                     <div class="form-item full-width">
                         <label>线上尺寸</label>
-                        <select id="onlineSizeSelect">
+                        <select id="onlineSizeSelect" onchange="onOnlineSizeChange()">
                             <option value="1:1" data-width="1024" data-height="1024">1:1 · 1024×1024</option>
                             <option value="16:9" data-width="1920" data-height="1080">16:9 · 1920×1080</option>
                             <option value="9:16" data-width="1080" data-height="1920">9:16 · 1080×1920</option>
                             <option value="4:3" data-width="1024" data-height="768">4:3 · 1024×768</option>
                             <option value="3:4" data-width="768" data-height="1024">3:4 · 768×1024</option>
+                            <option value="custom">自定义</option>
                         </select>
+                    </div>
+                </div>
+                <div class="form-row" id="onlineCustomSizeRow" style="display:none;">
+                    <div class="form-item">
+                        <label>自定义（px）</label>
+                        <div class="size-inputs">
+                            <input type="number" id="onlineCustomWidthPx" placeholder="宽 px" min="256" max="8192" step="1">
+                            <span>×</span>
+                            <input type="number" id="onlineCustomHeightPx" placeholder="高 px" min="256" max="8192" step="1">
+                        </div>
                     </div>
                 </div>
                 <div class="form-row" id="printSizePanel" style="display:none;">
@@ -849,7 +966,32 @@
             <div class="actions" id="actionsSection">
                 <button class="action-btn btn-primary" onclick="downloadSelected()">💾 下载选中</button>
                 <button class="action-btn btn-green" onclick="upscaleSelected('2k')">🔍 2K 放大</button>
+                <button class="action-btn btn-outline" onclick="openVariantRefine()">✏️ 继续编辑</button>
                 <button class="action-btn btn-outline" onclick="resetAll()">🔄 重新开始</button>
+            </div>
+
+            <!-- 迭代编辑（类似 ChatGPT 多轮修改） -->
+            <div class="refine-section" id="refineSection">
+                <div class="refine-header">
+                    <h4>✏️ 迭代编辑</h4>
+                    <button type="button" class="refine-close" onclick="closeVariantRefine()" title="关闭">×</button>
+                </div>
+                <div class="refine-preview">
+                    <img id="refinePreviewImg" alt="当前编辑中的图片">
+                </div>
+                <div class="refine-history" id="refineHistory"></div>
+                <div class="refine-input-row">
+                    <textarea id="refinePromptInput" placeholder="描述要如何修改，例如：把两行竖图改成一行横图，输出 4:1 横图；不要改变文字和素材比例"></textarea>
+                    <button type="button" class="action-btn btn-primary" id="refineSubmitBtn" onclick="submitVariantRefine()">发送</button>
+                </div>
+                <div class="refine-actions">
+                    <button type="button" class="action-btn btn-green" onclick="acceptVariantRefine()">✓ 采纳此图</button>
+                    <button type="button" class="action-btn btn-outline" onclick="closeVariantRefine()">完成编辑</button>
+                </div>
+                <div class="loading-card" id="refineLoadingCard" style="display:none; padding:16px 0 0;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">AI 正在修改中，约需 1-2 分钟…</p>
+                </div>
             </div>
         </div>
         
@@ -884,18 +1026,20 @@
                 <input type="file" id="editImageInput" accept="image/*" style="display: none;" onchange="previewEditImage(event)">
                 
                 <!-- 图片预览与选区绘制 -->
-                <div class="edit-canvas-wrap" id="editCanvasWrap" style="display: none;">
-                    <img id="editPreviewImg" alt="待修图预览">
-                    <canvas class="canvas-overlay" id="editSelectionCanvas"></canvas>
-                    <div class="selection-rect" id="editSelectionRect"></div>
-                    <button class="edit-remove" type="button" onclick="removeEditImage()" title="移除图片">×</button>
+                <div class="edit-canvas-stage" id="editCanvasStage" style="display: none;">
+                    <div class="edit-canvas-wrap" id="editCanvasWrap">
+                        <img id="editPreviewImg" alt="待修图预览">
+                        <canvas class="canvas-overlay" id="editSelectionCanvas"></canvas>
+                        <div class="selection-rect" id="editSelectionRect"></div>
+                        <button class="edit-remove" type="button" onclick="removeEditImage()" title="移除图片">×</button>
+                    </div>
                 </div>
                 <div class="edit-toolbar" id="editToolbar" style="display: none;">
                     <button type="button" onclick="setDrawMode('rect')" id="btnRect" class="active">▢ 框选区域</button>
                     <button type="button" onclick="confirmCurrentSelection()" id="btnConfirmRegion">✓ 确认选区</button>
                     <button type="button" onclick="clearCurrentSelection()">✕ 清除当前</button>
                 </div>
-                <div class="selection-info" id="selectionInfo" style="display: none;">框选要修改的区域并确认；仅修改选区内内容，原图尺寸与选区外样式保持不变</div>
+                <div class="selection-info" id="selectionInfo" style="display: none;">框选要修改的区域并确认；上传替换图将等比贴合进选区（保留圆角），选区外原图不变；也可填写文字由 AI 修改</div>
                 <div class="edit-regions-list" id="editRegionsList"></div>
                 
                 <!-- 修改描述 -->
@@ -912,12 +1056,17 @@
                            border-radius: 8px; color: white; font-size: 14px;">
                 </div>
 
-                <div class="upload-ref-section" style="margin-top: 16px;">
+                <div class="upload-ref-section" id="editRefImagesSection" style="margin-top: 16px;">
                     <div class="upload-ref-label">
                         <span>🖼️ 上传参考图（可选）</span>
                         <span style="opacity:0.6;font-size:12px;">最多3张，供 AI 参考风格与配色</span>
                     </div>
                     <input type="file" id="editRefImagesInput" class="upload-ref-input" accept="image/*" multiple>
+                    <div class="upload-ref-paste-zone" id="editRefImagesPasteZone" tabindex="0">
+                        <div class="paste-icon">📋</div>
+                        <div class="paste-hint">点击此处，然后按 Ctrl+V 粘贴图片</div>
+                        <div class="paste-shortcut">Mac 用户使用 ⌘V</div>
+                    </div>
                     <div class="uploaded-previews" id="editUploadedPreviews"></div>
                 </div>
 
@@ -944,6 +1093,11 @@
                             <img id="editResultImg" onclick="openEditComparisonFullscreen(1)" title="点击查看大图">
                         </div>
                     </div>
+                    <div class="edit-continue-refine" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                        <label style="font-size:13px;color:rgba(255,255,255,0.7);display:block;margin-bottom:8px;">✏️ 继续修改（多轮迭代）</label>
+                        <textarea id="editContinuePrompt" placeholder="基于上方结果继续修改，例如：把背景调亮一点，文字不要动" style="width:100%;min-height:64px;padding:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:white;font-size:14px;resize:vertical;font-family:inherit;margin-bottom:10px;"></textarea>
+                        <button type="button" class="action-btn btn-primary" onclick="continueEditImage()">发送修改</button>
+                    </div>
                     <div class="edit-result-actions">
                         <button class="action-btn btn-primary" onclick="downloadEditResult()">💾 下载结果</button>
                         <button class="action-btn btn-outline" onclick="resetEdit()">🔄 重新修图</button>
@@ -956,8 +1110,20 @@
         <div class="card tab-content" id="multiTab">
             <div class="multi-section">
                 <h3>📐 开屏导出</h3>
-                <p class="multi-hint" id="multiHint">上传一张图片，按当前产品版本预设的开屏尺寸输出。默认勾选 <strong>AI 阔图</strong>（Lovart）向四周自然补边；<strong>不勾选</strong>时按各尺寸<strong>等比放大并居中裁切满图</strong>（无留白）。导出 JPEG。</p>
+                <p class="multi-hint" id="multiHint">勾选需要导出的开屏尺寸（不必全部生成），也可添加自定义宽高。默认勾选 <strong>AI 阔图</strong>（Lovart）仅向四周延伸背景、完整保留原图内容；不勾选时用本地模糊补边。可选<strong>裁切满图</strong>。导出 JPEG。</p>
+                <div class="multi-size-actions">
+                    <button type="button" onclick="selectAllMultiSizes(true)">全选</button>
+                    <button type="button" onclick="selectAllMultiSizes(false)">全不选</button>
+                </div>
                 <div class="multi-sizes-list" id="multiSizesList"></div>
+                <div class="multi-custom-size">
+                    <span style="font-size:12px;color:rgba(255,255,255,0.55);">自定义尺寸</span>
+                    <input type="number" id="multiCustomW" placeholder="宽" min="1" max="8192" step="1">
+                    <span class="multi-custom-sep">×</span>
+                    <input type="number" id="multiCustomH" placeholder="高" min="1" max="8192" step="1">
+                    <button type="button" class="action-btn btn-outline" onclick="addMultiCustomSize()">添加</button>
+                </div>
+                <div class="multi-custom-list" id="multiCustomSizesList"></div>
                 <div class="multi-upload-zone" id="multiUploadZone" onclick="onMultiUploadZoneClick(event)">
                     <div class="multi-upload-placeholder" id="multiUploadPlaceholder">
                         <p style="color: rgba(255,255,255,0.65);">🖼️ 点击或拖拽上传图片</p>
@@ -971,7 +1137,10 @@
                 </div>
                 <input type="file" id="multiImageInput" accept="image/png,image/jpeg,image/webp" style="display: none;" onchange="onMultiImageSelected(event)">
                 <div class="layout-opt-row" style="margin: 12px 0;">
-                    <label><input type="checkbox" id="multiUseAi" checked> AI 阔图（Lovart，每个尺寸约 1–2 分钟）</label>
+                    <label><input type="checkbox" id="multiUseCrop"> 裁切满图（铺满无留白，可能裁掉边缘）</label>
+                </div>
+                <div class="layout-opt-row" style="margin: 12px 0;">
+                    <label><input type="checkbox" id="multiUseAi" checked> AI 阔图（Lovart，仅扩边不改内容，每个尺寸约 1–2 分钟）</label>
                 </div>
                 <button type="button" class="multi-export-btn" id="multiExportBtn" onclick="exportMultiSizes()" disabled>⚡ 生成开屏图</button>
                 <div class="loading-card" id="multiLoadingCard" style="display: none;">
@@ -981,7 +1150,7 @@
                 <p id="multiErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:16px;"></p>
                 <div id="multiResultsWrap" style="display: none;">
                     <div class="svga-result-actions" style="margin-top: 16px;">
-                        <a class="action-btn btn-primary" id="multiZipDownload" href="#" download>📦 打包下载全部 (ZIP)</a>
+                        <a class="action-btn btn-primary" id="multiZipDownload" href="#" download>📦 打包下载所选尺寸 (ZIP)</a>
                     </div>
                     <div class="multi-grid" id="multiResultsGrid"></div>
                 </div>
@@ -1259,6 +1428,7 @@ var selectedProjectImages = [];
 var selectedVariant = null;
 var variants = [];
 var editImageData = null;
+var variantRefineState = null;
 
 var currentProjectCatalog = '';
 var projectAuthToken = null;
@@ -1413,8 +1583,7 @@ function updateMultiHint(count) {
     var cfg = meta && meta.productType === 'hll'
         ? '<code>backend/output_sizes_hll.json</code>'
         : '<code>backend/output_sizes.json</code>';
-    hint.innerHTML = '上传一张图片，按 <strong>' + name + '</strong> 预设的 <strong>' +
-        n + ' 种开屏尺寸</strong>；默认 <strong>AI 阔图</strong>（Lovart），不勾选则<strong>裁切满图</strong>。尺寸配置见 ' + cfg + '。';
+    hint.innerHTML = '勾选需要导出的开屏尺寸（共 <strong>' + n + ' 种预设</strong>，可自定义）；默认 <strong>AI 阔图</strong>（仅扩边保留原图），不勾选则本地模糊补边，可选裁切满图。预设见 ' + cfg + '。';
 }
 
 function defaultProjectFromUrl() {
@@ -1453,6 +1622,7 @@ window.onload = function() {
     var printDpiSel = document.getElementById('printDpiSelect');
     if (printDpiSel) printDpiSel.addEventListener('change', onPrintSizeChange);
     initMultiUploadZone();
+    initMultiSizeCheckboxes();
     initLayoutExtend();
     initCropUploadZone();
     bindCropInteractions();
@@ -1882,19 +2052,43 @@ var PRINT_PAPER_PRESETS = {
 };
 
 var PRINT_MAX_MM = 420;
+var ONLINE_MAX_PX = 8192;
+var ONLINE_MIN_PX = 256;
 
 function onSizeCategoryChange() {
     var cat = document.getElementById('sizeCategorySelect').value;
     var onlinePanel = document.getElementById('onlineSizePanel');
     var printPanel = document.getElementById('printSizePanel');
     var printCustomRow = document.getElementById('printCustomSizeRow');
+    var onlineCustomRow = document.getElementById('onlineCustomSizeRow');
     var onlineHint = document.getElementById('onlineSizeHint');
     var isOnline = cat === 'online';
     if (onlinePanel) onlinePanel.style.display = isOnline ? '' : 'none';
     if (printPanel) printPanel.style.display = isOnline ? 'none' : '';
     if (printCustomRow) printCustomRow.style.display = isOnline ? 'none' : '';
+    if (onlineCustomRow) onlineCustomRow.style.display = 'none';
     if (onlineHint) onlineHint.style.display = isOnline ? 'block' : 'none';
-    if (!isOnline) onPrintSizeChange();
+    if (isOnline) onOnlineSizeChange();
+    else onPrintSizeChange();
+}
+
+function onOnlineSizeChange() {
+    var sel = document.getElementById('onlineSizeSelect');
+    var row = document.getElementById('onlineCustomSizeRow');
+    if (!sel || !row) return;
+    var cat = document.getElementById('sizeCategorySelect').value;
+    row.style.display = (cat === 'online' && sel.value === 'custom') ? '' : 'none';
+}
+
+function appendOnlineCustomOption(sel) {
+    if (!sel) return;
+    var hasCustom = Array.prototype.some.call(sel.options, function(o) { return o.value === 'custom'; });
+    if (!hasCustom) {
+        var opt = document.createElement('option');
+        opt.value = 'custom';
+        opt.textContent = '自定义';
+        sel.appendChild(opt);
+    }
 }
 
 function onPrintSizeChange() {
@@ -1966,6 +2160,7 @@ function populateOnlineSizeSelect(presets) {
         opt.textContent = w + '×' + h;
         sel.appendChild(opt);
     });
+    appendOnlineCustomOption(sel);
 }
 
 function refreshOnlineSizeOptions(catalog, apiPresets) {
@@ -2002,9 +2197,24 @@ function getGenerationSizeParams() {
     var cat = document.getElementById('sizeCategorySelect').value;
     if (cat === 'online') {
         var sel = document.getElementById('onlineSizeSelect');
-        var opt = sel.options[sel.selectedIndex];
-        var w = parseInt(opt.dataset.width, 10);
-        var h = parseInt(opt.dataset.height, 10);
+        var w;
+        var h;
+        if (sel.value === 'custom') {
+            w = parseInt(document.getElementById('onlineCustomWidthPx').value, 10) || 0;
+            h = parseInt(document.getElementById('onlineCustomHeightPx').value, 10) || 0;
+            if (w < ONLINE_MIN_PX || h < ONLINE_MIN_PX) {
+                alert('请填写自定义尺寸（宽、高，单位 px，至少 ' + ONLINE_MIN_PX + '）');
+                return null;
+            }
+            if (w > ONLINE_MAX_PX || h > ONLINE_MAX_PX) {
+                alert('自定义尺寸单边最大 ' + ONLINE_MAX_PX + ' px');
+                return null;
+            }
+        } else {
+            var opt = sel.options[sel.selectedIndex];
+            w = parseInt(opt.dataset.width, 10);
+            h = parseInt(opt.dataset.height, 10);
+        }
         return {
             size_mode: 'online',
             ratio: ratioFromPixels(w, h),
@@ -2103,11 +2313,115 @@ function onDesignTypeChange() {
     onProjectOrDesignTypeChange();
 }
 
+function clearUploadedRefImages() {
+    // 必须原地清空，不能 uploadedRefImages=[]，否则粘贴回调仍指向旧数组
+    uploadedRefImages.length = 0;
+    var previews = document.getElementById('uploadedPreviews');
+    if (previews) previews.innerHTML = '';
+    var fileInput = document.getElementById('refImagesInput');
+    if (fileInput) fileInput.value = '';
+}
+
+var uploadedLogoFile = null;
+var uploadedLogoDataUrl = null;
+
+function clearUploadedLogo() {
+    uploadedLogoFile = null;
+    uploadedLogoDataUrl = null;
+    var preview = document.getElementById('logoPreview');
+    if (preview) preview.innerHTML = '';
+    var fileInput = document.getElementById('logoImageInput');
+    if (fileInput) fileInput.value = '';
+}
+
+function renderLogoPreview() {
+    var container = document.getElementById('logoPreview');
+    if (!container) return;
+    container.innerHTML = '';
+    var src = uploadedLogoDataUrl;
+    if (!src && uploadedLogoFile) {
+        src = URL.createObjectURL(uploadedLogoFile);
+    }
+    if (!src) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'uploaded-thumb-wrap';
+    var img = document.createElement('img');
+    img.className = 'uploaded-thumb';
+    img.src = src;
+    img.title = 'Logo 预览';
+    img.onclick = function() { openRefImagePreview(src, '品牌 Logo'); };
+    var btn = document.createElement('div');
+    btn.className = 'uploaded-thumb-remove';
+    btn.textContent = '×';
+    btn.onclick = function(ev) {
+        ev.stopPropagation();
+        clearUploadedLogo();
+    };
+    wrap.appendChild(img);
+    wrap.appendChild(btn);
+    container.appendChild(wrap);
+}
+
+function setUploadedLogoFile(file) {
+    if (!file) return;
+    uploadedLogoFile = file;
+    uploadedLogoDataUrl = null;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        uploadedLogoDataUrl = e.target.result;
+        renderLogoPreview();
+    };
+    reader.readAsDataURL(file);
+}
+
+function dataUrlToBlob(dataUrl) {
+    var parts = dataUrl.split(',');
+    var mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/png';
+    var bstr = atob(parts[1]);
+    var n = bstr.length;
+    var u8 = new Uint8Array(n);
+    for (var i = 0; i < n; i++) u8[i] = bstr.charCodeAt(i);
+    return new Blob([u8], { type: mime });
+}
+
+function extFromDataUrl(dataUrl) {
+    var m = (dataUrl || '').match(/^data:image\/([\w.+-]+)/);
+    if (!m) return 'png';
+    var ext = m[1].toLowerCase();
+    if (ext === 'jpeg') return 'jpg';
+    if (ext === 'svg+xml') return 'svg';
+    return ext;
+}
+
+async function appendLogoToFormData(formData) {
+    if (!uploadedLogoFile && !uploadedLogoDataUrl) return;
+    var posEl = document.getElementById('logoPositionSelect');
+    formData.append('logo_position', posEl ? posEl.value : 'top_left');
+    if (uploadedLogoFile) {
+        formData.append('logo_image', uploadedLogoFile, uploadedLogoFile.name || 'logo.png');
+    } else {
+        var blob = dataUrlToBlob(uploadedLogoDataUrl);
+        formData.append('logo_image', blob, 'logo.png');
+    }
+}
+
+function appendGenerationUploads(formData) {
+    for (var i = 0; i < uploadedRefImages.length; i++) {
+        var dataUrl = uploadedRefImages[i];
+        var blob = dataUrlToBlob(dataUrl);
+        var ext = extFromDataUrl(dataUrl);
+        formData.append('ref_image_' + i, blob, 'ref_' + i + '.' + ext);
+    }
+    return appendLogoToFormData(formData);
+}
+
 async function onProjectSelectChange() {
     var project = getSelectedProjectName();
     var designSel = document.getElementById('designType');
     designSel.innerHTML = '<option value="">请选择设计类型</option>';
     selectedProjectImages = [];
+    clearUploadedRefImages();
+    clearUploadedLogo();
     currentProject = null;
     currentProjectCatalog = '';
     clearProjectRefs();
@@ -2368,30 +2682,64 @@ function toggleProjectImage(el, projectName, designType, imgName) {
     }
 }
 
+var REF_IMAGE_MAX = 3;
+
+function addRefImagesFromFiles(files, imagesArr, renderFn, maxFiles) {
+    maxFiles = maxFiles || REF_IMAGE_MAX;
+    if (!files || !files.length) return;
+    var remaining = maxFiles - imagesArr.length;
+    if (remaining <= 0) {
+        alert('最多上传' + maxFiles + '张参考图');
+        return;
+    }
+    if (files.length > remaining) {
+        alert('最多上传' + maxFiles + '张参考图，已选择' + files.length + '张，剩余' + remaining + '张名额');
+    }
+    for (var i = 0; i < Math.min(files.length, remaining); i++) {
+        (function(file) {
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                imagesArr.push(evt.target.result);
+                renderFn();
+            };
+            reader.readAsDataURL(file);
+        })(files[i]);
+    }
+}
+
+function bindRefImagePaste(pasteZoneEl, getImagesArr, renderFn) {
+    if (!pasteZoneEl) return;
+    pasteZoneEl.addEventListener('paste', function(e) {
+        var files = [];
+        var items = e.clipboardData && e.clipboardData.items;
+        if (items) {
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image/') === 0) {
+                    var f = items[i].getAsFile();
+                    if (f) files.push(f);
+                }
+            }
+        }
+        if (!files.length) return;
+        e.preventDefault();
+        var arr = typeof getImagesArr === 'function' ? getImagesArr() : getImagesArr;
+        addRefImagesFromFiles(files, arr, renderFn);
+    });
+    pasteZoneEl.addEventListener('click', function() {
+        pasteZoneEl.focus();
+    });
+}
+
 // 修图参考图
 var editUploadedRefImages = [];
 var editRefImagesInput = document.getElementById('editRefImagesInput');
 if (editRefImagesInput) {
     editRefImagesInput.addEventListener('change', function(e) {
-        var files = e.target.files;
-        var maxFiles = 3;
-        var remaining = maxFiles - editUploadedRefImages.length;
-        if (files.length > remaining) {
-            alert('最多上传' + maxFiles + '张参考图，已选择' + files.length + '张，剩余' + remaining + '张名额');
-        }
-        for (var i = 0; i < Math.min(files.length, remaining); i++) {
-            (function(file) {
-                var reader = new FileReader();
-                reader.onload = function(evt) {
-                    editUploadedRefImages.push(evt.target.result);
-                    renderEditUploadedPreviews();
-                };
-                reader.readAsDataURL(file);
-            })(files[i]);
-        }
+        addRefImagesFromFiles(e.target.files, editUploadedRefImages, renderEditUploadedPreviews);
         e.target.value = '';
     });
 }
+bindRefImagePaste(document.getElementById('editRefImagesPasteZone'), function() { return editUploadedRefImages; }, renderEditUploadedPreviews);
 
 function renderEditUploadedPreviews() {
     var container = document.getElementById('editUploadedPreviews');
@@ -2436,24 +2784,37 @@ function renderEditUploadedPreviews() {
 // 上传参考图处理
 var uploadedRefImages = [];
 document.getElementById('refImagesInput').addEventListener('change', function(e) {
-    var files = e.target.files;
-    var maxFiles = 3;
-    var remaining = maxFiles - uploadedRefImages.length;
-    if (files.length > remaining) {
-        alert('最多上传' + maxFiles + '张参考图，已选择' + files.length + '张，剩余' + remaining + '张名额');
-    }
-    for (var i = 0; i < Math.min(files.length, remaining); i++) {
-        (function(file) {
-            var reader = new FileReader();
-            reader.onload = function(evt) {
-                uploadedRefImages.push(evt.target.result);
-                renderUploadedPreviews();
-            };
-            reader.readAsDataURL(file);
-        })(files[i]);
-    }
+    addRefImagesFromFiles(e.target.files, uploadedRefImages, renderUploadedPreviews);
     e.target.value = '';
 });
+bindRefImagePaste(document.getElementById('refImagesPasteZone'), function() { return uploadedRefImages; }, renderUploadedPreviews);
+
+var logoImageInput = document.getElementById('logoImageInput');
+if (logoImageInput) {
+    logoImageInput.addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) setUploadedLogoFile(e.target.files[0]);
+        e.target.value = '';
+    });
+}
+(function bindLogoPaste() {
+    var zone = document.getElementById('logoPasteZone');
+    if (!zone) return;
+    zone.addEventListener('paste', function(e) {
+        var items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image/') === 0) {
+                var file = items[i].getAsFile();
+                if (file) {
+                    e.preventDefault();
+                    setUploadedLogoFile(file);
+                    return;
+                }
+            }
+        }
+    });
+    zone.addEventListener('click', function() { zone.focus(); });
+})();
 
 function renderUploadedPreviews() {
     var container = document.getElementById('uploadedPreviews');
@@ -2617,9 +2978,7 @@ async function generateWithKeyword() {
         if (e.message !== 'size_cancelled') alert(e.message);
         return;
     }
-    for (var i = 0; i < uploadedRefImages.length; i++) {
-        formData.append('ref_image_' + i, uploadedRefImages[i]);
-    }
+    await appendGenerationUploads(formData);
     
     try {
         await runGenerationFlow(formData, 'with_prompt');
@@ -2663,6 +3022,7 @@ async function generateVariants() {
         if (e.message !== 'size_cancelled') alert(e.message);
         return;
     }
+    await appendGenerationUploads(formData);
     
     try {
         await runGenerationFlow(formData, 'variants');
@@ -2689,7 +3049,10 @@ function renderVariants(vars) {
     var allUrlsEnc = encodeURIComponent(JSON.stringify(allFilenames));
     grid.innerHTML = valid.map(function(v, i) {
         return '<div class="variant-card" onclick="selectVariant(' + i + ')" id="variant-' + i + '">' +
+            '<div class="variant-img-wrap">' +
             '<img src="/outputs/' + v.filename + '" loading="lazy" data-images="' + allUrlsEnc + '" data-index="' + i + '" onclick="event.stopPropagation(); openHistoryThumb(this)">' +
+            '<button type="button" class="variant-edit-btn" onclick="event.stopPropagation(); openVariantRefine(' + i + ')">✏️ 编辑</button>' +
+            '</div>' +
             '<div class="label">魔法图 ' + (i + 1) + '</div>' +
             '</div>';
     }).join('');
@@ -2702,6 +3065,139 @@ function selectVariant(idx) {
     document.querySelectorAll('.variant-card').forEach(function(el, i) {
         el.classList.toggle('selected', i === idx);
     });
+}
+
+async function urlToDataUrl(url) {
+    var resp = await authFetch(url);
+    if (!resp.ok) throw new Error('图片加载失败');
+    var blob = await resp.blob();
+    return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function() { resolve(reader.result); };
+        reader.onerror = function() { reject(new Error('图片读取失败')); };
+        reader.readAsDataURL(blob);
+    });
+}
+
+function renderRefineHistory() {
+    var el = document.getElementById('refineHistory');
+    if (!el || !variantRefineState) return;
+    el.innerHTML = variantRefineState.messages.map(function(m) {
+        return '<div class="refine-msg ' + m.role + '">' + _escapeHtml(m.text) + '</div>';
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+async function openVariantRefine(idx) {
+    if (idx == null) {
+        if (selectedVariant === null) {
+            alert('请先选择一张图片');
+            return;
+        }
+        idx = selectedVariant;
+    }
+    selectVariant(idx);
+    var v = variants[idx];
+    if (!v || !v.filename) return;
+    if (!getSelectedProjectName()) {
+        alert('请先选择项目组');
+        return;
+    }
+    if (!getSelectedImageBackend()) {
+        alert('请先选择生图模型');
+        return;
+    }
+    try {
+        var dataUrl = await urlToDataUrl('/outputs/' + v.filename);
+        variantRefineState = {
+            baseIdx: idx,
+            currentFilename: v.filename,
+            currentDataUrl: dataUrl,
+            messages: [{ role: 'system', text: '已载入「魔法图 ' + (idx + 1) + '」，输入修改要求后可多轮迭代。' }]
+        };
+        document.getElementById('refinePreviewImg').src = '/outputs/' + v.filename + '?t=' + Date.now();
+        document.getElementById('refinePromptInput').value = '';
+        renderRefineHistory();
+        document.getElementById('refineSection').style.display = 'block';
+        document.getElementById('refineSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (e) {
+        alert('加载图片失败: ' + e.message);
+    }
+}
+
+function closeVariantRefine() {
+    document.getElementById('refineSection').style.display = 'none';
+    variantRefineState = null;
+}
+
+async function submitVariantRefine() {
+    if (!variantRefineState) {
+        openVariantRefine();
+        return;
+    }
+    var prompt = document.getElementById('refinePromptInput').value.trim();
+    if (!prompt) {
+        alert('请描述要如何修改');
+        return;
+    }
+    var loading = document.getElementById('refineLoadingCard');
+    var submitBtn = document.getElementById('refineSubmitBtn');
+    loading.style.display = 'block';
+    submitBtn.disabled = true;
+    variantRefineState.messages.push({ role: 'user', text: prompt });
+    renderRefineHistory();
+    document.getElementById('refinePromptInput').value = '';
+    try {
+        var imageToSend = variantRefineState.currentDataUrl;
+        var fullPrompt = prompt + '。在现有图片基础上修改，不要改变未提及的部分，文字和素材不要变形。';
+        var prepared = await prepareEditImageForUpload(imageToSend);
+        imageToSend = prepared.dataUrl;
+        var payload = {
+            image: imageToSend,
+            original_width: prepared.origDims.w,
+            original_height: prepared.origDims.h,
+            editType: '迭代修改',
+            description: fullPrompt,
+            keepElements: '未提及的文字、Logo、配色与构图',
+            image_backend: getSelectedImageBackend(),
+            project: getSelectedProjectName()
+        };
+        var response = await authFetch('/api/edit-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        var data = await response.json();
+        if (!data.success) {
+            variantRefineState.messages.push({ role: 'system', text: '修改失败：' + (data.error || '未知错误') });
+            renderRefineHistory();
+            return;
+        }
+        variantRefineState.currentFilename = data.output_image;
+        variantRefineState.currentDataUrl = await urlToDataUrl('/outputs/' + data.output_image);
+        document.getElementById('refinePreviewImg').src = '/outputs/' + data.output_image + '?t=' + Date.now();
+        variantRefineState.messages.push({ role: 'system', text: '修改完成，可继续输入新要求或点击「采纳此图」。' });
+        renderRefineHistory();
+        loadHistory();
+    } catch (e) {
+        variantRefineState.messages.push({ role: 'system', text: '请求失败：' + e.message });
+        renderRefineHistory();
+    } finally {
+        loading.style.display = 'none';
+        submitBtn.disabled = false;
+    }
+}
+
+function acceptVariantRefine() {
+    if (!variantRefineState) return;
+    var idx = variantRefineState.baseIdx;
+    if (variants[idx] && variantRefineState.currentFilename) {
+        variants[idx].filename = variantRefineState.currentFilename;
+        renderVariants(variants);
+        selectVariant(idx);
+        variantRefineState.messages.push({ role: 'system', text: '已采纳为「魔法图 ' + (idx + 1) + '」。' });
+        renderRefineHistory();
+    }
 }
 
 // 下载选中
@@ -2765,7 +3261,7 @@ function previewEditImage(event) {
         const img = document.getElementById('editPreviewImg');
         img.onload = function() { initEditCanvas(); };
         img.src = e.target.result;
-        document.getElementById('editCanvasWrap').style.display = 'inline-block';
+        document.getElementById('editCanvasStage').style.display = 'flex';
         document.getElementById('editUploadZone').style.display = 'none';
         document.getElementById('editToolbar').style.display = 'flex';
         document.getElementById('selectionInfo').style.display = 'block';
@@ -2793,6 +3289,13 @@ function initEditCanvas() {
     canvas.onmouseleave = endSelection;
     renderConfirmedRegions();
 }
+
+var editCanvasResizeTimer = null;
+window.addEventListener('resize', function() {
+    if (!document.getElementById('editCanvasStage') || document.getElementById('editCanvasStage').style.display === 'none') return;
+    clearTimeout(editCanvasResizeTimer);
+    editCanvasResizeTimer = setTimeout(initEditCanvas, 150);
+});
 
 function getEventPos(e) {
     const canvas = document.getElementById('editSelectionCanvas');
@@ -2849,31 +3352,62 @@ function updateSelectionInfo(x, y, w, h) {
     if (w > 0 && h > 0) {
         info.textContent = '当前选区: ' + Math.round(x) + ',' + Math.round(y) + ' ' + Math.round(w) + 'x' + Math.round(h) + ' — 点击「确认选区」添加';
     } else {
-        info.textContent = '框选要修改的区域并确认；仅修改选区内内容，原图尺寸与选区外样式保持不变';
+        info.textContent = '框选要修改的区域并确认；上传替换图将等比贴合进选区（保留圆角），选区外原图不变；也可填写文字由 AI 修改';
     }
+}
+
+function getEditImageRenderBounds(img) {
+    if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+    var elW = img.clientWidth;
+    var elH = img.clientHeight;
+    var natW = img.naturalWidth;
+    var natH = img.naturalHeight;
+    if (!elW || !elH) return null;
+    var elRatio = elW / elH;
+    var natRatio = natW / natH;
+    var drawW, drawH, offsetX, offsetY;
+    if (natRatio > elRatio) {
+        drawW = elW;
+        drawH = elW / natRatio;
+        offsetX = 0;
+        offsetY = (elH - drawH) / 2;
+    } else {
+        drawH = elH;
+        drawW = elH * natRatio;
+        offsetX = (elW - drawW) / 2;
+        offsetY = 0;
+    }
+    return {
+        offsetX: offsetX,
+        offsetY: offsetY,
+        drawW: drawW,
+        drawH: drawH,
+        scaleX: natW / drawW,
+        scaleY: natH / drawH
+    };
 }
 
 function displayToNaturalCoords(rect) {
     const img = document.getElementById('editPreviewImg');
-    const scaleX = img.naturalWidth / img.clientWidth;
-    const scaleY = img.naturalHeight / img.clientHeight;
+    const bounds = getEditImageRenderBounds(img);
+    if (!bounds) return rect;
     return {
-        x: Math.round(rect.x * scaleX),
-        y: Math.round(rect.y * scaleY),
-        w: Math.round(rect.w * scaleX),
-        h: Math.round(rect.h * scaleY)
+        x: Math.round((rect.x - bounds.offsetX) * bounds.scaleX),
+        y: Math.round((rect.y - bounds.offsetY) * bounds.scaleY),
+        w: Math.round(rect.w * bounds.scaleX),
+        h: Math.round(rect.h * bounds.scaleY)
     };
 }
 
 function naturalToDisplayCoords(coords) {
     const img = document.getElementById('editPreviewImg');
-    const scaleX = img.clientWidth / img.naturalWidth;
-    const scaleY = img.clientHeight / img.naturalHeight;
+    const bounds = getEditImageRenderBounds(img);
+    if (!bounds) return coords;
     return {
-        x: coords.x * scaleX,
-        y: coords.y * scaleY,
-        w: coords.w * scaleX,
-        h: coords.h * scaleY
+        x: coords.x / bounds.scaleX + bounds.offsetX,
+        y: coords.y / bounds.scaleY + bounds.offsetY,
+        w: coords.w / bounds.scaleX,
+        h: coords.h / bounds.scaleY
     };
 }
 
@@ -2890,7 +3424,8 @@ function confirmCurrentSelection() {
         y: natural.y,
         w: natural.w,
         h: natural.h,
-        description: ''
+        description: '',
+        replacementImage: null
     });
     renderConfirmedRegions();
     clearCurrentSelection();
@@ -2918,14 +3453,55 @@ function renderConfirmedRegions() {
     editRegions.forEach(function(region, idx) {
         const item = document.createElement('div');
         item.className = 'edit-region-item';
+        const hasReplace = !!region.replacementImage;
         item.innerHTML = '<div class="region-header"><span class="region-label">选区 ' + (idx + 1) + ' (' + region.w + '×' + region.h + ')</span>' +
             '<button type="button" class="region-remove" onclick="removeEditRegion(\'' + region.id + '\')" title="删除选区">×</button></div>' +
-            '<textarea id="desc_' + region.id + '" placeholder="描述此区域的修改要求，例如：把文字改成「欢庆六一」"></textarea>';
+            '<div class="region-replace-row">' +
+            '<input type="file" accept="image/*" id="replace_' + region.id + '" style="display:none" onchange="uploadRegionReplacement(\'' + region.id + '\', event)">' +
+            '<button type="button" class="region-replace-btn" onclick="document.getElementById(\'replace_' + region.id + '\').click()">📷 上传替换图</button>' +
+            '<span class="region-replace-hint">等比贴合进选区（自动圆角），选区外不变</span>' +
+            '<img class="region-replace-preview" id="replacePreview_' + region.id + '" style="' + (hasReplace ? '' : 'display:none;') + '" alt="替换图预览">' +
+            '<button type="button" class="region-replace-clear" id="replaceClear_' + region.id + '" style="' + (hasReplace ? '' : 'display:none;') + '" onclick="clearRegionReplacement(\'' + region.id + '\')">清除替换图</button>' +
+            '</div>' +
+            '<textarea id="desc_' + region.id + '" placeholder="上传替换图时无需填写；纯文字修改请描述要求，如：把文字改成「欢庆六一」"></textarea>';
         list.appendChild(item);
         const ta = item.querySelector('textarea');
         ta.value = region.description || '';
         ta.oninput = function() { region.description = ta.value; };
+        if (hasReplace) {
+            const preview = document.getElementById('replacePreview_' + region.id);
+            if (preview) preview.src = region.replacementImage;
+        }
     });
+}
+
+function uploadRegionReplacement(regionId, event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const region = editRegions.find(function(r) { return r.id === regionId; });
+    if (!region) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        region.replacementImage = e.target.result;
+        const preview = document.getElementById('replacePreview_' + region.id);
+        const clearBtn = document.getElementById('replaceClear_' + region.id);
+        if (preview) { preview.src = e.target.result; preview.style.display = ''; }
+        if (clearBtn) clearBtn.style.display = '';
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+}
+
+function clearRegionReplacement(regionId) {
+    const region = editRegions.find(function(r) { return r.id === regionId; });
+    if (!region) return;
+    region.replacementImage = null;
+    const preview = document.getElementById('replacePreview_' + regionId);
+    const clearBtn = document.getElementById('replaceClear_' + regionId);
+    const input = document.getElementById('replace_' + regionId);
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (input) input.value = '';
 }
 
 function removeEditRegion(id) {
@@ -2943,8 +3519,10 @@ function getEditPayloadRegions() {
         return editRegions.map(function(r) {
             var descEl = document.getElementById('desc_' + r.id);
             var desc = (descEl ? descEl.value : r.description || '').trim() || globalDesc;
-            return { x: r.x, y: r.y, w: r.w, h: r.h, description: desc };
-        }).filter(function(r) { return r.description; });
+            var entry = { x: r.x, y: r.y, w: r.w, h: r.h, description: desc };
+            if (r.replacementImage) entry.replacement_image = r.replacementImage;
+            return entry;
+        }).filter(function(r) { return r.description || r.replacement_image; });
     }
     if (selectionRect && selectionRect.w >= 10 && selectionRect.h >= 10) {
         const natural = displayToNaturalCoords(selectionRect);
@@ -2958,7 +3536,7 @@ function getEditPayloadRegions() {
 function removeEditImage() {
     editImageData = null;
     editRegions = [];
-    document.getElementById('editCanvasWrap').style.display = 'none';
+    document.getElementById('editCanvasStage').style.display = 'none';
     document.getElementById('editToolbar').style.display = 'none';
     document.getElementById('selectionInfo').style.display = 'none';
     document.getElementById('editRegionsList').innerHTML = '';
@@ -2969,23 +3547,78 @@ function removeEditImage() {
 }
 
 function compressImageDataUrl(dataUrl, maxDim, quality) {
+    return resizeImageDataUrl(dataUrl, maxDim, false, quality);
+}
+
+var EDIT_UPLOAD_MAX_DIM = 16384;
+
+function resizeImageDataUrl(dataUrl, maxDim, asPng, quality) {
     return new Promise(function(resolve, reject) {
         var img = new Image();
         img.onload = function() {
             var w = img.naturalWidth || img.width;
             var h = img.naturalHeight || img.height;
             var scale = Math.min(1, maxDim / Math.max(w, h, 1));
+            if (scale >= 1) {
+                resolve(dataUrl);
+                return;
+            }
             var cw = Math.max(1, Math.round(w * scale));
             var ch = Math.max(1, Math.round(h * scale));
             var canvas = document.createElement('canvas');
             canvas.width = cw;
             canvas.height = ch;
             canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
-            resolve(canvas.toDataURL('image/jpeg', quality));
+            resolve(canvas.toDataURL(asPng ? 'image/png' : 'image/jpeg', quality || 0.92));
         };
         img.onerror = function() { reject(new Error('图片加载失败')); };
         img.src = dataUrl;
     });
+}
+
+function prepareEditImageForUpload(dataUrl, maxDim) {
+    maxDim = maxDim || EDIT_UPLOAD_MAX_DIM;
+    return measureImageDataUrl(dataUrl).then(function(origDims) {
+        var maxSide = Math.max(origDims.w, origDims.h);
+        if (maxSide <= maxDim) {
+            return { dataUrl: dataUrl, origDims: origDims, scaleX: 1, scaleY: 1 };
+        }
+        return resizeImageDataUrl(dataUrl, maxDim, true).then(function(resized) {
+            return measureImageDataUrl(resized).then(function(sentDims) {
+                return {
+                    dataUrl: resized,
+                    origDims: origDims,
+                    scaleX: sentDims.w / origDims.w,
+                    scaleY: sentDims.h / origDims.h
+                };
+            });
+        });
+    });
+}
+
+function measureImageDataUrl(dataUrl) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        img.onload = function() {
+            resolve({
+                w: img.naturalWidth || img.width,
+                h: img.naturalHeight || img.height
+            });
+        };
+        img.onerror = function() { reject(new Error('图片加载失败')); };
+        img.src = dataUrl;
+    });
+}
+
+function scaleEditRegionCoords(region, scaleX, scaleY) {
+    return {
+        x: Math.round(region.x * scaleX),
+        y: Math.round(region.y * scaleY),
+        w: Math.max(1, Math.round(region.w * scaleX)),
+        h: Math.max(1, Math.round(region.h * scaleY)),
+        description: region.description || '',
+        replacement_image: region.replacement_image || null
+    };
 }
 
 // 开始修图
@@ -3009,7 +3642,7 @@ async function startEditImage() {
     const regions = getEditPayloadRegions();
     
     if (regions.length === 0 && !editDesc) {
-        alert('请框选要修改的区域并填写修改要求，或在下方填写全局修改描述');
+        alert('请框选要修改的区域并填写修改要求或上传替换图，或在下方填写全局修改描述');
         return;
     }
     
@@ -3020,14 +3653,14 @@ async function startEditImage() {
     if (editBtn) editBtn.disabled = true;
     
     try {
-        var imageToSend = editImageData;
-        try {
-            imageToSend = await compressImageDataUrl(editImageData, 2048, 0.88);
-        } catch (e) {
-            console.warn('图片压缩跳过', e);
-        }
+        var prepared = await prepareEditImageForUpload(editImageData);
+        var imageToSend = prepared.dataUrl;
+        var coordScaleX = prepared.scaleX;
+        var coordScaleY = prepared.scaleY;
         const payload = {
             image: imageToSend,
+            original_width: prepared.origDims.w,
+            original_height: prepared.origDims.h,
             editType: editType,
             description: editDesc,
             keepElements: keepElements,
@@ -3035,7 +3668,20 @@ async function startEditImage() {
             project: getSelectedProjectName()
         };
         if (regions.length > 0) {
-            payload.regions = regions;
+            payload.regions = regions.map(function(r) {
+                var scaled = scaleEditRegionCoords(r, coordScaleX, coordScaleY);
+                var entry = {
+                    x: scaled.x,
+                    y: scaled.y,
+                    w: scaled.w,
+                    h: scaled.h,
+                    description: scaled.description
+                };
+                if (scaled.replacement_image) {
+                    entry.replacement_image = scaled.replacement_image;
+                }
+                return entry;
+            });
         }
         if (editUploadedRefImages.length > 0) {
             payload.reference_images = editUploadedRefImages.slice(0, 3);
@@ -3071,6 +3717,25 @@ async function startEditImage() {
 
 var currentEditResult = null;
 
+async function continueEditImage() {
+    var prompt = document.getElementById('editContinuePrompt').value.trim();
+    if (!prompt) {
+        alert('请描述要如何修改');
+        return;
+    }
+    if (!editImageData) {
+        alert('没有可继续编辑的图片');
+        return;
+    }
+    document.getElementById('editDescription').value = prompt + '。在现有图片基础上修改，不要改变未提及的部分，文字和素材不要变形。';
+    var typeSel = document.getElementById('editType');
+    var prevType = typeSel ? typeSel.value : '';
+    if (typeSel) typeSel.value = '布局调整';
+    await startEditImage();
+    if (typeSel) typeSel.value = prevType;
+    document.getElementById('editContinuePrompt').value = '';
+}
+
 // 下载修图结果
 function downloadEditResult() {
     if (!currentEditResult) return;
@@ -3092,6 +3757,7 @@ function resetEdit() {
 
 // 重置
 function resetAll() {
+    closeVariantRefine();
     document.getElementById('variantsSection').style.display = 'none';
     document.getElementById('actionsSection').style.display = 'none';
     document.getElementById('mainTitle').value = '';
@@ -3566,17 +4232,134 @@ function renderHistory(items) {
 // ─── 开屏导出 ───────────────────────────────────────
 var multiImageFile = null;
 var multiSourceBaseName = '开屏';
+var multiSizePresets = [];
+var multiCustomSizes = [];
 
 function loadMultiSizePresets() {
     var q = apiProjectQuery();
     authFetch('/api/output-sizes' + (q ? '?' + q : '')).then(function(r) { return r.json(); }).then(function(data) {
         var list = document.getElementById('multiSizesList');
         if (!list || !data.sizes) return;
-        list.innerHTML = data.sizes.map(function(s) {
-            return '<span class="multi-size-tag">' + s.width + 'x' + s.height + '</span>';
+        multiSizePresets = data.sizes;
+        multiCustomSizes = [];
+        renderMultiCustomSizes();
+        list.innerHTML = data.sizes.map(function(s, i) {
+            return '<label class="multi-size-option">' +
+                '<input type="checkbox" class="multi-size-cb" data-index="' + i + '">' +
+                '<span>' + s.width + '×' + s.height + '</span></label>';
         }).join('');
         updateMultiHint(data.sizes.length);
+        updateMultiExportButtonState();
     }).catch(function() {});
+}
+
+function selectAllMultiSizes(checked) {
+    document.querySelectorAll('.multi-size-cb').forEach(function(cb) { cb.checked = !!checked; });
+    updateMultiExportButtonState();
+}
+
+function addMultiCustomSize() {
+    var w = parseInt(document.getElementById('multiCustomW').value, 10);
+    var h = parseInt(document.getElementById('multiCustomH').value, 10);
+    if (!w || !h || w < 1 || h < 1) {
+        alert('请输入有效的自定义宽高');
+        return;
+    }
+    if (w > 8192 || h > 8192) {
+        alert('单边尺寸不能超过 8192');
+        return;
+    }
+    var dup = multiCustomSizes.some(function(s) { return s.width === w && s.height === h; });
+    if (!dup) {
+        var presetIdx = -1;
+        for (var i = 0; i < multiSizePresets.length; i++) {
+            if (multiSizePresets[i].width === w && multiSizePresets[i].height === h) {
+                presetIdx = i;
+                break;
+            }
+        }
+        if (presetIdx >= 0) {
+            var cb = document.querySelector('.multi-size-cb[data-index="' + presetIdx + '"]');
+            if (cb) cb.checked = true;
+        } else {
+            multiCustomSizes.push({
+                id: 'custom_' + w + 'x' + h,
+                name: w + '×' + h,
+                width: w,
+                height: h
+            });
+        }
+    }
+    document.getElementById('multiCustomW').value = '';
+    document.getElementById('multiCustomH').value = '';
+    renderMultiCustomSizes();
+    updateMultiExportButtonState();
+}
+
+function removeMultiCustomSize(index) {
+    multiCustomSizes.splice(index, 1);
+    renderMultiCustomSizes();
+    updateMultiExportButtonState();
+}
+
+function renderMultiCustomSizes() {
+    var list = document.getElementById('multiCustomSizesList');
+    if (!list) return;
+    if (!multiCustomSizes.length) {
+        list.innerHTML = '';
+        return;
+    }
+    list.innerHTML = multiCustomSizes.map(function(s, i) {
+        return '<span class="multi-custom-chip">' + s.width + '×' + s.height +
+            '<button type="button" title="移除" onclick="removeMultiCustomSize(' + i + ')">×</button></span>';
+    }).join('');
+}
+
+function getSelectedMultiSizes() {
+    var selected = [];
+    document.querySelectorAll('.multi-size-cb:checked').forEach(function(cb) {
+        var s = multiSizePresets[parseInt(cb.getAttribute('data-index'), 10)];
+        if (s) {
+            selected.push({ id: s.id, name: s.name, width: s.width, height: s.height });
+        }
+    });
+    multiCustomSizes.forEach(function(s) {
+        selected.push({ id: s.id, name: s.name, width: s.width, height: s.height });
+    });
+    var seen = {};
+    return selected.filter(function(s) {
+        var key = s.width + 'x' + s.height;
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+    });
+}
+
+function updateMultiExportButtonState() {
+    var btn = document.getElementById('multiExportBtn');
+    if (!btn) return;
+    var hasSizes = getSelectedMultiSizes().length > 0;
+    btn.disabled = !multiImageFile || !hasSizes;
+}
+
+function initMultiSizeCheckboxes() {
+    var list = document.getElementById('multiSizesList');
+    if (!list) return;
+    list.addEventListener('change', function(e) {
+        if (e.target && e.target.classList.contains('multi-size-cb')) {
+            updateMultiExportButtonState();
+        }
+    });
+    var aiCb = document.getElementById('multiUseAi');
+    var cropCb = document.getElementById('multiUseCrop');
+    if (aiCb && cropCb) {
+        aiCb.addEventListener('change', function() {
+            if (aiCb.checked) cropCb.checked = false;
+        });
+        cropCb.addEventListener('change', function() {
+            if (cropCb.checked) aiCb.checked = false;
+        });
+    }
 }
 
 function initMultiUploadZone() {
@@ -3614,7 +4397,8 @@ function setMultiImageFile(file) {
     document.getElementById('multiFileName').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
     var img = document.getElementById('multiPreviewImg');
     if (img) img.src = URL.createObjectURL(file);
-    document.getElementById('multiExportBtn').disabled = false;
+    document.getElementById('multiExportBtn').disabled = true;
+    updateMultiExportButtonState();
     document.getElementById('multiResultsWrap').style.display = 'none';
     document.getElementById('multiErrorMsg').style.display = 'none';
 }
@@ -3634,11 +4418,17 @@ function clearMultiImage(ev) {
     if (img) img.removeAttribute('src');
     document.getElementById('multiExportBtn').disabled = true;
     document.getElementById('multiImageInput').value = '';
+    updateMultiExportButtonState();
 }
 
 async function exportMultiSizes() {
     if (!multiImageFile) {
         alert('请先上传图片');
+        return;
+    }
+    var selectedSizes = getSelectedMultiSizes();
+    if (!selectedSizes.length) {
+        alert('请至少勾选一个预设尺寸，或添加自定义尺寸');
         return;
     }
     var btn = document.getElementById('multiExportBtn');
@@ -3654,12 +4444,15 @@ async function exportMultiSizes() {
     form.append('image', multiImageFile);
     form.append('source_name', multiImageFile.name || '开屏');
     var multiUseAi = document.getElementById('multiUseAi');
+    var multiUseCrop = document.getElementById('multiUseCrop');
     form.append('use_ai', multiUseAi && multiUseAi.checked ? '1' : '0');
+    form.append('use_crop', multiUseCrop && multiUseCrop.checked ? '1' : '0');
+    form.append('sizes', JSON.stringify(selectedSizes));
     var loadingText = document.getElementById('multiLoadingText');
     if (loadingText) {
         loadingText.textContent = multiUseAi && multiUseAi.checked
-            ? 'AI 阔图生成中，每个尺寸约 1–2 分钟，请耐心等待…'
-            : '正在生成开屏尺寸图…';
+            ? 'AI 阔图生成中，已选 ' + selectedSizes.length + ' 个尺寸，每个约 1–2 分钟…'
+            : '正在生成已选的 ' + selectedSizes.length + ' 个开屏尺寸…';
     }
     appendProjectContext(form);
     try {
@@ -3684,8 +4477,9 @@ async function exportMultiSizes() {
                 (sanitizeDownloadNamePart(data.sourceBaseName || getMultiSourceBaseName()) + '_全部尺寸.zip');
         }
         if (data.sourceBaseName) multiSourceBaseName = data.sourceBaseName;
-        if (multiUseAi && multiUseAi.checked && data.backgroundMode === 'crop') {
-            errEl.textContent = '未启用 Lovart 或 AI 阔图失败，已改为等比裁切满图。';
+        if (multiUseAi && multiUseAi.checked && data.backgroundMode !== 'ai') {
+            var fallback = data.backgroundMode === 'crop' ? '裁切满图' : '模糊补边延展';
+            errEl.textContent = '未启用 Lovart 或 AI 阔图失败，已改为' + fallback + '。';
             errEl.style.color = 'rgba(252, 211, 77, 0.95)';
             errEl.style.display = 'block';
         }
@@ -3704,7 +4498,7 @@ async function exportMultiSizes() {
         errEl.style.display = 'block';
     } finally {
         loading.style.display = 'none';
-        btn.disabled = !multiImageFile;
+        updateMultiExportButtonState();
     }
 }
 

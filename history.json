@@ -1,5 +1,179 @@
 [
   {
+    "id": "6fa62e0a",
+    "timestamp": "2026-06-24T11:03:09",
+    "mode": "edit",
+    "prompt": "[文案修改] ",
+    "title": "[文案修改]",
+    "description": "",
+    "meta_tags": [
+      "✏️局部修图"
+    ],
+    "source": "edit",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "input_image": "edit_input_bd6b787361b14dc1b7e1cf5be7d2181a.png",
+    "output_image": "edit_output_8c764af242464e398c7257627c8d7971.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "b45ebbc5",
+    "timestamp": "2026-06-24T10:52:00",
+    "mode": "edit",
+    "prompt": "[文案修改] ",
+    "title": "[文案修改]",
+    "description": "",
+    "meta_tags": [
+      "✏️局部修图"
+    ],
+    "source": "edit",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "input_image": "edit_input_8573e967779c4b3bb4d11228be0ad4ec.png",
+    "output_image": "edit_output_cf1a46f0b2714fe990d5ee1f5370bdf7.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "31382b51",
+    "timestamp": "2026-06-24T10:26:57",
+    "mode": "edit",
+    "prompt": "[文案修改] ",
+    "title": "[文案修改]",
+    "description": "",
+    "meta_tags": [
+      "✏️局部修图"
+    ],
+    "source": "edit",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "input_image": "edit_input_7d0c83118760457793e4609a7fd097f7.png",
+    "output_image": "edit_output_478ccdc8b4b5454f86670ca894a2a930.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "64e5370d",
+    "timestamp": "2026-06-24T10:24:58",
+    "mode": "edit",
+    "prompt": "[文案修改] ",
+    "title": "[文案修改]",
+    "description": "",
+    "meta_tags": [
+      "✏️局部修图"
+    ],
+    "source": "edit",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "input_image": "edit_input_1fe56937a04947fdb3b25ef6efd4d918.png",
+    "output_image": "edit_output_79280489776148f9907b1e5b4dfcbefa.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "e147c247",
+    "timestamp": "2026-06-11T15:38:46",
+    "mode": "text2img",
+    "prompt": "悬疑冒险风格,电影海报,标题文字\"福尔摩斯7(下)\",副标题\"侏罗纪生物大冒险\",恐龙元素,古老神秘的丛林环境,侦探与怪兽的对峙,暖金色与深绿色配色,戏剧性光影,紧张刺激的冒险氛围,复古与科幻融合的视觉风格",
+    "title": "悬疑冒险风格,电影海报,标题文字\"福尔摩斯7(下)\",副...",
+    "description": "",
+    "meta_tags": [
+      "✨文字生图"
+    ],
+    "source": "job",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "output_images": [
+      "variant_52fa8c604fa14db6acd87784352d0080.png"
+    ],
+    "variants_count": 1
+  },
+  {
+    "id": "8133f848",
+    "timestamp": "2026-06-11T15:34:22",
+    "mode": "edit",
+    "prompt": "[文案修改] 把圈起来的文案改成’白垩纪恐龙传奇‘",
+    "title": "[文案修改] 把圈起来的文案改成’白垩纪恐龙传奇‘",
+    "description": "把圈起来的文案改成’白垩纪恐龙传奇‘",
+    "meta_tags": [
+      "✏️局部修图"
+    ],
+    "source": "edit",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "input_image": "edit_input_0df856f57a724c829c9df1ab13ab00b7.png",
+    "output_image": "edit_output_841a07a9cb934d82bc76068337079014.png",
+    "edit_type": "文案修改"
+  },
+  {
+    "id": "2992e383",
+    "timestamp": "2026-06-11T15:21:43",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"福尔摩斯7（下）\"，副标题\"侏罗纪生物大冒险\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "title": "清新插画风格，海报设计，标题文字\"福尔摩斯7（下）\"，副...",
+    "description": "",
+    "meta_tags": [
+      "📷图片改图"
+    ],
+    "source": "job",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "output_images": [
+      "variant_39563f2a7d064a3faec633e293a8b84d.png"
+    ],
+    "variants_count": 1
+  },
+  {
+    "id": "d4ffad3b",
+    "timestamp": "2026-06-11T15:03:26",
+    "mode": "edit",
+    "prompt": "[迭代修改] 这只猪要是黑色的猪。在现有图片基础上修改，不要改变未提及的部分，文字和素材不要变形。 保留: 未提及的文字、Logo、配色与构图",
+    "title": "[迭代修改] 这只猪要是黑色的猪。在现有图片基础上修改，...",
+    "description": "这只猪要是黑色的猪。在现有图片基础上修改，不要改变未提及的部分，文字和素材不要变形。",
+    "meta_tags": [
+      "✏️局部修图"
+    ],
+    "source": "edit",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "input_image": "edit_input_70b2bf17f22744be91b69f89c908665e.png",
+    "output_image": "edit_output_5f71bb21867440c6839071676dfac664.png",
+    "edit_type": "迭代修改"
+  },
+  {
+    "id": "f2fe3269",
+    "timestamp": "2026-06-11T15:00:58",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"今年是猪年\"，副标题\"猪年大肥猪\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "title": "清新插画风格，海报设计，标题文字\"今年是猪年\"，副标题\"...",
+    "description": "",
+    "meta_tags": [
+      "📷图片改图"
+    ],
+    "source": "job",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "output_images": [
+      "variant_b8921f19ab24434789243e173556b337.png"
+    ],
+    "variants_count": 1
+  },
+  {
+    "id": "257f576e",
+    "timestamp": "2026-06-11T14:41:55",
+    "mode": "img2img",
+    "prompt": "清新插画风格，海报设计，标题文字\"今年是猪年\"，根据标题文案延展主体、场景与氛围，主标题大字号突出，副标题次级排版，留白清晰",
+    "title": "清新插画风格，海报设计，标题文字\"今年是猪年\"，根据标题...",
+    "description": "",
+    "meta_tags": [
+      "📷图片改图"
+    ],
+    "source": "job",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "output_images": [
+      "variant_43e776214e64405a82bdbdd79f789b18.png"
+    ],
+    "variants_count": 1
+  },
+  {
     "id": "852e1f8e",
     "timestamp": "2026-06-09T13:44:09",
     "mode": "img2img",

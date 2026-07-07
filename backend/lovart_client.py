@@ -360,6 +360,7 @@ class LovartClient:
         quality_hint: str = "",
         project_id: Optional[str] = None,
         project_title: str = "",
+        task_kind: str = "generate",
     ) -> Tuple[Optional[str], Optional[str]]:
         resolved_id = (project_id or "").strip()
         if not resolved_id:
@@ -376,9 +377,16 @@ class LovartClient:
             "LOVART_QUALITY_HINT",
             "适合手机屏幕与网页展示，宽度约1200到1536像素，细节清晰但不必4K",
         )
-        full_prompt = f"请生成一张{quality}，比例为 {ratio} 的设计图。{prompt}"
-        if attachments:
-            full_prompt = f"请参考附件图片的风格与构图，{full_prompt}"
+        kind = (task_kind or "generate").strip().lower()
+        if attachments and kind == "outpaint":
+            full_prompt = (
+                f"【Lovart Outpainting】附件为唯一基准原图，比例 {ratio}。"
+                f"{prompt}"
+            )
+        elif attachments:
+            full_prompt = f"请参考附件图片的风格与构图，请生成一张{quality}，比例为 {ratio} 的设计图。{prompt}"
+        else:
+            full_prompt = f"请生成一张{quality}，比例为 {ratio} 的设计图。{prompt}"
 
         last_error = None
         unlimited_attempts = _lovart_unlimited_attempts()
