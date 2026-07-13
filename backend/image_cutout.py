@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import io
-from collections import Counter
+from collections import Counter, deque
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageFilter
 
 try:
     from rembg import new_session, remove
-except Exception:  # pragma: no cover - 依赖缺失时走运行时提示
+except BaseException:  # pragma: no cover - rembg 缺失或 onnxruntime 不可用时走运行时提示
     new_session = None
     remove = None
 
@@ -97,10 +97,8 @@ def preferred_cutout_backend() -> str:
 
 
 def _refine_alpha_edges(alpha: Image.Image) -> Image.Image:
-    alpha = ImageOps.autocontrast(alpha)
-    alpha = alpha.filter(ImageFilter.GaussianBlur(radius=0.4))
-    alpha = alpha.point(lambda v: 0 if v <= 4 else 255 if v >= 251 else int(v))
-    return alpha
+    alpha = alpha.filter(ImageFilter.GaussianBlur(radius=0.45))
+    return alpha.point(lambda v: 0 if v <= 4 else 255 if v >= 251 else int(v))
 
 
 def _decontaminate_white_fringe(im: Image.Image) -> Image.Image:
@@ -170,32 +168,276 @@ def _nearest_palette_distance(r: int, g: int, b: int, palette: list[tuple[int, i
     )
 
 
-def _extract_subject_cutout_local(src_path: Path, dst_path: Path, trim: bool = True) -> tuple[int, int]:
-    im = Image.open(src_path).convert("RGBA")
-    border = max(2, min(im.size) // 36)
-    palette = _build_border_palette(_collect_border_samples(im, border))
-    px = im.load()
-    alpha = Image.new("L", im.size, 0)
+def _mark_edge_connected_background(
+    im: Image.Image,
+    palette: list[tuple[int, int, int]],
+    bg_threshold: float,
+) -> tuple[bytearray, int, int]:
+    """从画布四边泛洪，仅标记与边缘连通的背景像素（不穿透主体内部）。"""
+    rgba = im.convert("RGBA")
+    px = rgba.load()
+    w, h = rgba.size
+    bg = bytearray(w * h)
+    visited = bytearray(w * h)
+    q: deque[tuple[int, int]] = deque()
+
+    def is_bg_color(r: int, g: int, b: int, a: int) -> bool:
+        if a <= 0:
+            return True
+        return _nearest_palette_distance(r, g, b, palette) <= bg_threshold
+
+    def try_seed(x: int, y: int) -> None:
+        idx = y * w + x
+        if visited[idx]:
+            return
+        visited[idx] = 1
+        r, g, b, a = px[x, y]
+        if is_bg_color(r, g, b, a):
+            bg[idx] = 1
+            q.append((x, y))
+
+    for x in range(w):
+        try_seed(x, 0)
+        try_seed(x, h - 1)
+    for y in range(1, h - 1):
+        try_seed(0, y)
+        try_seed(w - 1, y)
+
+    while q:
+        x, y = q.popleft()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if nx < 0 or nx >= w or ny < 0 or ny >= h:
+                continue
+            idx = ny * w + nx
+            if visited[idx]:
+                continue
+            visited[idx] = 1
+            r, g, b, a = px[nx, ny]
+            if is_bg_color(r, g, b, a):
+                bg[idx] = 1
+                q.append((nx, ny))
+    return bg, w, h
+
+
+def _neighbor_touches_background(bg: bytearray, w: int, h: int, x: int, y: int) -> bool:
+    for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+        if nx < 0 or nx >= w or ny < 0 or ny >= h:
+            continue
+        if bg[ny * w + nx]:
+            return True
+    return False
+
+
+def _find_foreground_seed(
+    edge_bg: bytearray,
+    w: int,
+    h: int,
+    cx: int,
+    cy: int,
+    roi_x: int = 0,
+    roi_y: int = 0,
+    roi_w: int | None = None,
+    roi_h: int | None = None,
+) -> tuple[int, int] | None:
+    cx = max(0, min(cx, w - 1))
+    cy = max(0, min(cy, h - 1))
+    if not edge_bg[cy * w + cx]:
+        return cx, cy
+    rx1 = max(0, roi_x)
+    ry1 = max(0, roi_y)
+    rx2 = min(w, roi_x + (roi_w if roi_w is not None else w))
+    ry2 = min(h, roi_y + (roi_h if roi_h is not None else h))
+    best: tuple[int, int] | None = None
+    best_dist = 10**9
+    for y in range(ry1, ry2):
+        for x in range(rx1, rx2):
+            if edge_bg[y * w + x]:
+                continue
+            dist = (x - cx) ** 2 + (y - cy) ** 2
+            if dist < best_dist:
+                best_dist = dist
+                best = (x, y)
+    return best
+
+
+def _flood_foreground_from_seed(
+    edge_bg: bytearray,
+    w: int,
+    h: int,
+    seed_x: int,
+    seed_y: int,
+) -> bytearray:
+    fg = bytearray(w * h)
+    idx = seed_y * w + seed_x
+    if edge_bg[idx]:
+        return fg
+    fg[idx] = 1
+    q: deque[tuple[int, int]] = deque([(seed_x, seed_y)])
+    while q:
+        x, y = q.popleft()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if nx < 0 or nx >= w or ny < 0 or ny >= h:
+                continue
+            nidx = ny * w + nx
+            if fg[nidx] or edge_bg[nidx]:
+                continue
+            fg[nidx] = 1
+            q.append((nx, ny))
+    return fg
+
+
+def _fill_foreground_holes(fg: bytearray, w: int, h: int) -> None:
+    """将前景轮廓内的孔洞（如眼睛、镜片）补回前景。"""
+    outside = bytearray(w * h)
+    visited = bytearray(w * h)
+    q: deque[tuple[int, int]] = deque()
+
+    def try_seed(x: int, y: int) -> None:
+        idx = y * w + x
+        if visited[idx] or fg[idx]:
+            return
+        visited[idx] = 1
+        outside[idx] = 1
+        q.append((x, y))
+
+    for x in range(w):
+        try_seed(x, 0)
+        try_seed(x, h - 1)
+    for y in range(1, h - 1):
+        try_seed(0, y)
+        try_seed(w - 1, y)
+
+    while q:
+        x, y = q.popleft()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if nx < 0 or nx >= w or ny < 0 or ny >= h:
+                continue
+            idx = ny * w + nx
+            if visited[idx] or fg[idx]:
+                continue
+            visited[idx] = 1
+            outside[idx] = 1
+            q.append((nx, ny))
+
+    for idx in range(w * h):
+        if not fg[idx] and not outside[idx]:
+            fg[idx] = 1
+
+
+def _build_local_subject_alpha(
+    im: Image.Image,
+    palette: list[tuple[int, int, int]],
+    roi_cx: int,
+    roi_cy: int,
+    roi_x: int = 0,
+    roi_y: int = 0,
+    roi_w: int | None = None,
+    roi_h: int | None = None,
+    bg_threshold: float = 22,
+    fg_threshold: float = 78,
+) -> Image.Image:
+    """从框选中心泛洪主体，仅去除与边缘连通的背景，并填补内部孔洞。"""
+    rgba = im.convert("RGBA")
+    px = rgba.load()
+    edge_bg, w, h = _mark_edge_connected_background(rgba, palette, bg_threshold)
+    seed = _find_foreground_seed(edge_bg, w, h, roi_cx, roi_cy, roi_x, roi_y, roi_w, roi_h)
+    if seed is None:
+        raise ValueError("框选区域内未找到主体，请重新框选后重试")
+    fg = _flood_foreground_from_seed(edge_bg, w, h, seed[0], seed[1])
+    _fill_foreground_holes(fg, w, h)
+
+    alpha = Image.new("L", (w, h), 0)
     apx = alpha.load()
-    bg_threshold = 26
-    fg_threshold = 78
-    for y in range(im.height):
-        for x in range(im.width):
+    for y in range(h):
+        for x in range(w):
+            idx = y * w + x
             r, g, b, a = px[x, y]
-            if a <= 0:
+            if edge_bg[idx]:
+                apx[x, y] = 0
+                continue
+            if fg[idx]:
+                apx[x, y] = a
+                continue
+            if not _neighbor_touches_background(edge_bg, w, h, x, y):
                 apx[x, y] = 0
                 continue
             dist = _nearest_palette_distance(r, g, b, palette)
-            if dist <= bg_threshold:
-                av = 0
-            elif dist >= fg_threshold:
-                av = a
+            if dist >= fg_threshold:
+                apx[x, y] = a
+            elif dist <= bg_threshold:
+                apx[x, y] = 0
             else:
-                av = int(round(a * (dist - bg_threshold) / (fg_threshold - bg_threshold)))
-            apx[x, y] = av
+                apx[x, y] = int(round(a * (dist - bg_threshold) / (fg_threshold - bg_threshold)))
+    return _refine_alpha_edges(alpha)
+
+
+def _mask_image_to_foreground(mask: Image.Image, threshold: int = 128) -> tuple[bytearray, int, int]:
+    gray = mask.convert("L")
+    w, h = gray.size
+    data = gray.load()
+    fg = bytearray(w * h)
+    for y in range(h):
+        for x in range(w):
+            if data[x, y] >= threshold:
+                fg[y * w + x] = 1
+    return fg, w, h
+
+
+def _foreground_mask_to_image(fg: bytearray, w: int, h: int) -> Image.Image:
+    alpha = Image.new("L", (w, h), 0)
+    apx = alpha.load()
+    for y in range(h):
+        for x in range(w):
+            if fg[y * w + x]:
+                apx[x, y] = 255
+    return alpha
+
+
+def _apply_alpha_mask_to_image(src_path: Path, mask: Image.Image) -> Image.Image:
+    """将分割蒙版应用到原图，保留主体内部原始颜色。"""
+    with Image.open(src_path) as im:
+        im = im.convert("RGBA")
+    alpha = mask.convert("L")
+    if alpha.size != im.size:
+        alpha = alpha.resize(im.size, Image.Resampling.LANCZOS)
+    fg, w, h = _mask_image_to_foreground(alpha)
+    _fill_foreground_holes(fg, w, h)
+    alpha = _foreground_mask_to_image(fg, w, h)
     alpha = _refine_alpha_edges(alpha)
     im.putalpha(alpha)
-    im = _decontaminate_white_fringe(im)
+    return _decontaminate_white_fringe(im)
+
+
+def _extract_subject_cutout_local(
+    src_path: Path,
+    dst_path: Path,
+    trim: bool = True,
+    roi_cx: int | None = None,
+    roi_cy: int | None = None,
+    roi_x: int = 0,
+    roi_y: int = 0,
+    roi_w: int | None = None,
+    roi_h: int | None = None,
+) -> tuple[int, int]:
+    im = Image.open(src_path).convert("RGBA")
+    w, h = im.size
+    if roi_cx is None:
+        roi_cx = w // 2
+    if roi_cy is None:
+        roi_cy = h // 2
+    border = max(2, min(im.size) // 36)
+    palette = _build_border_palette(_collect_border_samples(im, border))
+    alpha = _build_local_subject_alpha(
+        im,
+        palette,
+        roi_cx,
+        roi_cy,
+        roi_x=roi_x,
+        roi_y=roi_y,
+        roi_w=roi_w,
+        roi_h=roi_h,
+    )
+    im.putalpha(alpha)
     if trim:
         im = _trim_to_subject(im, padding=0)
     bbox = im.getbbox()
@@ -210,32 +452,46 @@ def _extract_subject_cutout_local(src_path: Path, dst_path: Path, trim: bool = T
     return im.size
 
 
-def extract_subject_cutout(src_path: Path, dst_path: Path, trim: bool = True) -> tuple[int, int, str]:
+def extract_subject_cutout(
+    src_path: Path,
+    dst_path: Path,
+    trim: bool = True,
+    roi_x: int | None = None,
+    roi_y: int | None = None,
+    roi_w: int | None = None,
+    roi_h: int | None = None,
+) -> tuple[int, int, str]:
+    with Image.open(src_path) as probe:
+        crop_w, crop_h = probe.size
+    if roi_x is None or roi_y is None or roi_w is None or roi_h is None:
+        roi_x, roi_y = 0, 0
+        roi_w, roi_h = crop_w, crop_h
+    roi_cx = max(0, min(int(roi_x + roi_w // 2), crop_w - 1))
+    roi_cy = max(0, min(int(roi_y + roi_h // 2), crop_h - 1))
     if not has_rembg():
-        out_w, out_h = _extract_subject_cutout_local(src_path, dst_path, trim=trim)
+        out_w, out_h = _extract_subject_cutout_local(
+            src_path,
+            dst_path,
+            trim=trim,
+            roi_cx=roi_cx,
+            roi_cy=roi_cy,
+            roi_x=roi_x,
+            roi_y=roi_y,
+            roi_w=roi_w,
+            roi_h=roi_h,
+        )
         return out_w, out_h, "local"
     session = _get_rembg_session()
     data = src_path.read_bytes()
-    kwargs = {
-        "session": session,
-        "post_process_mask": True,
-    }
+    kwargs = {"session": session, "post_process_mask": True}
     try:
-        out_bytes = remove(
-            data,
-            alpha_matting=True,
-            alpha_matting_foreground_threshold=240,
-            alpha_matting_background_threshold=8,
-            alpha_matting_erode_size=6,
-            **kwargs,
-        )
+        mask_bytes = remove(data, only_mask=True, **kwargs)
+        mask_im = Image.open(io.BytesIO(mask_bytes))
+        im = _apply_alpha_mask_to_image(src_path, mask_im)
     except Exception:
         out_bytes = remove(data, **kwargs)
-
-    im = Image.open(io.BytesIO(out_bytes)).convert("RGBA")
-    alpha = _refine_alpha_edges(im.getchannel("A"))
-    im.putalpha(alpha)
-    im = _decontaminate_white_fringe(im)
+        result = Image.open(io.BytesIO(out_bytes)).convert("RGBA")
+        im = _apply_alpha_mask_to_image(src_path, result.getchannel("A"))
     if trim:
         im = _trim_to_subject(im, padding=0)
     if not im.getbbox():

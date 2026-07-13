@@ -281,6 +281,19 @@ def analyze_model_allowed(project: str, analyze_model: str | None) -> bool:
     return raw in allowed
 
 
+def gpt_image_available_for_project(project: str) -> bool:
+    try:
+        cfg = get_project_llm_config(project)
+    except ProjectCredentialsError:
+        return False
+    image_cfg = get_gpt_image_settings(cfg)
+    if not _gpt_key_usable(image_cfg.api_key, image_cfg.provider):
+        return False
+    if image_cfg.provider in ("azure", "agenthub") and not (image_cfg.base_url or "").strip():
+        return False
+    return True
+
+
 def credentials_status(project: str) -> dict[str, bool]:
     try:
         cfg = get_project_llm_config(project)

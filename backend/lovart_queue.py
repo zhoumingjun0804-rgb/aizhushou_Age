@@ -339,6 +339,7 @@ class LovartQueue:
             "progress": job.get("progress"),
             "eta_seconds": eta,
             "variants": job.get("variants"),
+            "size_notice": job.get("size_notice"),
             "error": job.get("error"),
             "queue_depth": self._queue_depth(),
             "created_at": job.get("created_at"),

@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 from app import finalize_generation_output, resolve_output_dimensions
-from gpt_image_client import map_dimensions_to_size
+from gpt_image_client import map_dimensions_to_gpt_image2_size, map_dimensions_to_size
 
 
 class TestMapDimensionsToSize(unittest.TestCase):
@@ -34,6 +34,27 @@ class TestFinalizeGenerationOutput(unittest.TestCase):
             finalize_generation_output(path, 702, 320)
             with Image.open(path) as img:
                 self.assertEqual(img.size, (702, 320))
+
+    def test_matching_aspect_uses_direct_resize_not_crop(self):
+        api_size = map_dimensions_to_gpt_image2_size(750, 560)
+        aw, ah = [int(part) for part in api_size.split("x")]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "variant.png"
+            Image.new("RGB", (aw, ah), color=(255, 0, 0)).save(path)
+            finalize_generation_output(path, 750, 560)
+            with Image.open(path) as img:
+                self.assertEqual(img.size, (750, 560))
+
+    def test_mismatched_aspect_uses_letterbox_without_crop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "variant.png"
+            Image.new("RGB", (1024, 1024), color=(0, 0, 255)).save(path)
+            finalize_generation_output(path, 750, 560)
+            with Image.open(path) as img:
+                self.assertEqual(img.size, (750, 560))
+                corners = [img.getpixel((0, 0)), img.getpixel((749, 0)), img.getpixel((0, 559)), img.getpixel((749, 559))]
+                self.assertTrue(all(px == (0, 0, 0) for px in corners))
+                self.assertEqual(img.getpixel((375, 280)), (0, 0, 255))
 
 
 if __name__ == "__main__":

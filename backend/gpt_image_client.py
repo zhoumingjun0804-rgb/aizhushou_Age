@@ -31,6 +31,12 @@ GPT_SIZE_PRESETS = (
     (1024, 1536),
 )
 
+GPT_IMAGE2_MIN_PIXELS = 655_360
+GPT_IMAGE2_MAX_PIXELS = 8_294_400
+GPT_IMAGE2_MAX_EDGE = 3840
+GPT_IMAGE2_GRID = 16
+GPT_IMAGE2_OUTPUT_QUALITIES = ("low", "medium", "high", "auto")
+
 GPT_MAX_REFERENCE_IMAGES = 4
 
 
@@ -168,6 +174,92 @@ def map_dimensions_to_size(width: int, height: int) -> str:
             best_dist = dist
             best = (w, h)
     return f"{best[0]}x{best[1]}"
+
+
+def _snap_gpt_image2_dim(value: int) -> int:
+    value = max(GPT_IMAGE2_GRID, int(value))
+    return max(GPT_IMAGE2_GRID, int(round(value / GPT_IMAGE2_GRID)) * GPT_IMAGE2_GRID)
+
+
+def _gpt_image2_size_valid(w: int, h: int) -> bool:
+    if w % GPT_IMAGE2_GRID or h % GPT_IMAGE2_GRID:
+        return False
+    if w > GPT_IMAGE2_MAX_EDGE or h > GPT_IMAGE2_MAX_EDGE:
+        return False
+    pixels = w * h
+    if pixels < GPT_IMAGE2_MIN_PIXELS or pixels > GPT_IMAGE2_MAX_PIXELS:
+        return False
+    long_edge, short_edge = max(w, h), min(w, h)
+    return (long_edge / short_edge) <= 3.0
+
+
+def map_dimensions_to_gpt_image2_size(width: int, height: int) -> str:
+    """gpt-image-2：优先使用用户选的线上尺寸；仅在不满足 API 约束时做最小修正。"""
+    width = max(1, int(width))
+    height = max(1, int(height))
+    # 用户尺寸已合法时原样下发，避免先映射到固定预设再二次裁切
+    if _gpt_image2_size_valid(width, height):
+        return f"{width}x{height}"
+
+    ratio = width / height
+    scale = 1.0
+    if width * height < GPT_IMAGE2_MIN_PIXELS:
+        scale = math.sqrt(GPT_IMAGE2_MIN_PIXELS / (width * height))
+
+    w = _snap_gpt_image2_dim(int(math.ceil(width * scale)))
+    h = _snap_gpt_image2_dim(int(math.ceil(height * scale)))
+    h = _snap_gpt_image2_dim(int(round(w / ratio)))
+
+    for _ in range(64):
+        if _gpt_image2_size_valid(w, h):
+            return f"{w}x{h}"
+        if w * h < GPT_IMAGE2_MIN_PIXELS:
+            w = _snap_gpt_image2_dim(w + GPT_IMAGE2_GRID)
+            h = _snap_gpt_image2_dim(int(round(w / ratio)))
+            continue
+        if w * h > GPT_IMAGE2_MAX_PIXELS or w > GPT_IMAGE2_MAX_EDGE or h > GPT_IMAGE2_MAX_EDGE:
+            w = _snap_gpt_image2_dim(w - GPT_IMAGE2_GRID)
+            h = _snap_gpt_image2_dim(int(round(w / ratio)))
+            continue
+        long_edge, short_edge = max(w, h), min(w, h)
+        if long_edge / short_edge > 3.0:
+            break
+        w = _snap_gpt_image2_dim(w + GPT_IMAGE2_GRID)
+        h = _snap_gpt_image2_dim(int(round(w / ratio)))
+
+    return map_dimensions_to_size(width, height)
+
+
+def is_gpt_image2_model(model: str | None) -> bool:
+    return (model or "").strip() == "gpt-image-2"
+
+
+def resolve_gpt_api_size(target_w: int, target_h: int, model: str | None = None) -> str:
+    if is_gpt_image2_model(model):
+        return map_dimensions_to_gpt_image2_size(target_w, target_h)
+    return map_dimensions_to_size(target_w, target_h)
+
+
+def resolve_gpt_image_output_quality(model: str | None = None) -> str | None:
+    if not is_gpt_image2_model(model):
+        return None
+    raw = (os.environ.get("OPENAI_IMAGE_OUTPUT_QUALITY") or "high").strip().lower()
+    if raw in GPT_IMAGE2_OUTPUT_QUALITIES:
+        return raw
+    return "high"
+
+
+def parse_gpt_size_preset(size: str) -> tuple[int, int]:
+    """'1024x1536' → (1024, 1536)。"""
+    parts = (size or "").lower().split("x")
+    if len(parts) != 2:
+        return GPT_SIZE_PRESETS[0]
+    return max(1, int(parts[0])), max(1, int(parts[1]))
+
+
+def resolve_gpt_work_size(target_w: int, target_h: int, model: str | None = None) -> tuple[int, int]:
+    """目标像素 → GPT API 实际工作尺寸（与 edits 请求 size 一致）。"""
+    return parse_gpt_size_preset(resolve_gpt_api_size(target_w, target_h, model))
 
 
 def _normalize_image_paths(image_paths) -> list[Path]:
@@ -426,9 +518,15 @@ class GptImageClient:
         self.base_url = base_url.rstrip("/")
         if self.base_url.endswith("/v1"):
             self.base_url = self.base_url[: -len("/v1")]
-        min_timeout = 120 if self.provider == "azure" else 30
+        min_timeout = 300 if self.provider == "azure" else 30
         self.timeout = max(min_timeout, int(timeout))
         self.temp_dir = temp_dir or Path("outputs")
+
+    def _gpt_quality_fields(self, model: str) -> list[tuple[str, str]]:
+        quality = resolve_gpt_image_output_quality(model)
+        if quality:
+            return [("quality", quality)]
+        return []
 
     def _generate_with_edits(
         self,
@@ -437,17 +535,21 @@ class GptImageClient:
         size: str,
         image_paths: list[Path],
         retries: int,
+        mask_path: Path | None = None,
     ) -> tuple[Optional[str], Optional[str]]:
-        """官方 Image API：/v1/images/edits，支持多张参考图。"""
+        """官方 Image API：/v1/images/edits，支持多张参考图与扩边蒙版。"""
         url = f"{self.base_url}/v1/images/edits"
         fields = [
             ("model", model),
             ("prompt", prompt),
             ("size", size),
         ]
+        fields.extend(self._gpt_quality_fields(model))
         files: list[tuple[str, str, bytes, str]] = []
         for path in image_paths:
             files.append(("image[]", path.name, path.read_bytes(), _guess_mime(path)))
+        if mask_path and mask_path.is_file():
+            files.append(("mask", mask_path.name, mask_path.read_bytes(), "image/png"))
 
         last_error = "GPT 参考图生图失败"
         for attempt in range(max(1, retries)):
@@ -510,6 +612,9 @@ class GptImageClient:
             "size": size,
             "n": 1,
         }
+        quality = resolve_gpt_image_output_quality(model)
+        if quality:
+            payload["quality"] = quality
         if self.provider == "azure":
             payload["output_format"] = "png"
             payload["output_compression"] = 100
@@ -547,20 +652,29 @@ class GptImageClient:
         width: int = 1024,
         height: int = 1024,
         image_paths=None,
+        mask_path: Path | None = None,
         retries: int = 3,
+        prefer_responses: bool = False,
     ) -> tuple[Optional[str], Optional[str]]:
         if not self.auth.bearer and not self.auth.api_key_header:
             return None, "未配置 OPENAI_API_KEY（或 OPENAI_APP_KEY）"
 
         refs = _normalize_image_paths(image_paths)
+        # 始终按用户选择的线上尺寸请求 GPT，避免「固定预设生成 + 后台再裁切」
+        size = resolve_gpt_api_size(width, height, model)
+        print(f"[GPT] request size={size} model={model} refs={len(refs)} mask={bool(mask_path)}")
         if refs:
-            # img2img：网关仅支持固定尺寸或 auto；用 auto 后由下游裁回目标像素
-            size = "auto"
-        else:
-            size = map_dimensions_to_size(width, height)
-        if refs:
-            result = self._generate_with_edits(prompt, model, size, refs, retries)
+            if prefer_responses and not mask_path:
+                result = self._generate_with_responses(prompt, model, refs, retries)
+                if result[0]:
+                    return result
+                err_lower = (result[1] or "").lower()
+                if "unsupported" not in err_lower and "404" not in err_lower:
+                    return result
+            result = self._generate_with_edits(prompt, model, size, refs, retries, mask_path=mask_path)
             if result[0]:
+                return result
+            if mask_path:
                 return result
             if "404" in (result[1] or "") or "not configured" in (result[1] or "").lower():
                 fallback = self._generate_with_responses(prompt, model, refs, retries)

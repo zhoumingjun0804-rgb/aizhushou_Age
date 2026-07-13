@@ -41,6 +41,7 @@ from project_credentials import (
     get_available_models,
     get_gpt_chat_settings,
     get_gpt_image_settings,
+    gpt_image_available_for_project,
     image_backend_allowed,
     load_lovart_credentials_for_project,
     require_project_llm_config,
@@ -69,11 +70,17 @@ from gif_to_svga.converter import (
 )
 from ai_outpaint import (
     layout_background_extend_prompt,
-    run_ai_extend_to_size,
+    run_lovart_extend_to_size,
+    run_gpt_extend_to_size,
     splash_extend_prompt,
+    splash_subframe_extend_prompt,
 )
 from multi_size_export import (
     export_multi_sizes,
+    export_splash_subframe_sizes,
+    export_manual_splash_uploads,
+    merge_multi_size_export_results,
+    build_manual_only_export_result,
     load_output_sizes,
     normalize_export_sizes,
     normalize_product_type,
@@ -103,7 +110,7 @@ from image_cutout import (
     postprocess_ai_cutout_png,
     save_extract_crop,
 )
-from gif_maker import make_breathing_gif
+from gif_maker import make_animated_gif, make_breathing_gif
 
 
 def _resolve_dreamina_bin():
@@ -174,7 +181,7 @@ def _reload_runtime_env():
     COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
     COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
     SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
-    LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
+    LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "300"))
     DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
     QIANWEN_BASE_URL = os.environ.get("QIANWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
@@ -212,7 +219,7 @@ SMART_CUTOUT_JOB_DIR = UPLOAD_DIR / "smart_cutout_jobs"
 COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
 COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
 SD_API_URL = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").strip()
-LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "180"))
+LOCAL_GENERATION_TIMEOUT = int(os.environ.get("LOCAL_GENERATION_TIMEOUT", "300"))
 IMAGE_BACKEND = os.environ.get("IMAGE_BACKEND", "lovart").strip().lower()
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -530,26 +537,27 @@ def filter_history_items(items):
 
 # ─── 项目组管理 ──────────────────────────────────────────────────
 def list_projects():
-    """列出所有项目组"""
+    """列出允许的项目组（画啦啦、小灯塔）"""
     if not PROJECTS_DIR.exists():
         return []
-    projects = []
-    for p in sorted(PROJECTS_DIR.iterdir()):
-        if p.is_dir() and not p.name.startswith('.'):
-            meta = read_project_meta(p.name)
-            assets = count_project_assets(p.name)
-            projects.append({
-                "name": p.name,
-                "display_name": meta.get("display_name", p.name),
-                "style_tags": meta.get("style_tags", []),
-                "description": meta.get("description", ""),
-                "lovart_project_id": meta.get("lovart_project_id", ""),
-                "catalog": assets["catalog"],
-                "product_type": project_product_type(p.name),
-                "count": assets["imageCount"],
-                "typeCount": assets["typeCount"],
-            })
-    return projects
+    by_name = {}
+    for p in PROJECTS_DIR.iterdir():
+        if not p.is_dir() or p.name.startswith('.') or p.name not in ALLOWED_PROJECTS:
+            continue
+        meta = read_project_meta(p.name)
+        assets = count_project_assets(p.name)
+        by_name[p.name] = {
+            "name": p.name,
+            "display_name": p.name,
+            "style_tags": meta.get("style_tags", []),
+            "description": meta.get("description", ""),
+            "lovart_project_id": meta.get("lovart_project_id", ""),
+            "catalog": assets["catalog"],
+            "product_type": project_product_type(p.name),
+            "count": assets["imageCount"],
+            "typeCount": assets["typeCount"],
+        }
+    return [by_name[name] for name in ALLOWED_PROJECTS if name in by_name]
 
 def get_project_meta(project_name):
     """获取项目组元数据"""
@@ -1302,6 +1310,8 @@ def call_gpt(
     output_width=None,
     output_height=None,
     gpt_model=None,
+    mask_path=None,
+    prefer_responses=False,
 ):
     if not local_project:
         return None, "GPT 生图请先选择项目组"
@@ -1337,6 +1347,8 @@ def call_gpt(
             width=width,
             height=height,
             image_paths=image_paths if mode == "img2img" else None,
+            mask_path=pathlib.Path(mask_path) if mask_path else None,
+            prefer_responses=bool(prefer_responses),
         )
     except GptImageError as e:
         return None, e.message
@@ -1359,6 +1371,8 @@ def call_image_generator(
     dpi=None,
     gpt_model=None,
     lovart_task_kind=None,
+    mask_path=None,
+    prefer_responses=False,
 ):
     backend = normalize_image_backend(image_backend)
     if backend == "gpt":
@@ -1372,6 +1386,8 @@ def call_image_generator(
             output_width=output_width,
             output_height=output_height,
             gpt_model=gpt_model,
+            mask_path=mask_path,
+            prefer_responses=prefer_responses,
         )
     if backend == "lovart":
         return call_lovart(
@@ -1663,7 +1679,19 @@ def execute_generation_job(job: dict) -> None:
                         )
                     except Exception as logo_err:
                         print(f"[LOGO] overlay failed: {logo_err}")
-                finalize_generation_output(output_path, output_width, output_height)
+                # GPT 已按用户线上尺寸生成：保留原图，不做二次裁切/缩放
+                if backend != "gpt":
+                    finalize_generation_output(output_path, output_width, output_height)
+                else:
+                    try:
+                        from PIL import Image
+                        with Image.open(output_path) as im:
+                            print(
+                                f"[GPT] keep native output {im.size[0]}x{im.size[1]} "
+                                f"(requested {output_width}x{output_height})"
+                            )
+                    except Exception:
+                        pass
                 variants.append(variant_entry_from_path(output_filename, output_path))
             except Exception as e:
                 variants.append({"filename": None, "error": format_url_error(e)})
@@ -1671,12 +1699,28 @@ def execute_generation_job(job: dict) -> None:
             variants.append({"filename": None, "error": error or "生成失败"})
         lovart_queue.set_progress(job_id, idx + 1, count)
 
+    size_notice = None
+    if backend == "gpt":
+        req_w = _parse_positive_int(output_width)
+        req_h = _parse_positive_int(output_height)
+        first_ok = next((v for v in variants if v.get("filename") and v.get("width") and v.get("height")), None)
+        if req_w and req_h and first_ok:
+            aw, ah = int(first_ok["width"]), int(first_ok["height"])
+            if aw != req_w or ah != req_h:
+                size_notice = {
+                    "requested_width": req_w,
+                    "requested_height": req_h,
+                    "actual_width": aw,
+                    "actual_height": ah,
+                }
+
     lovart_queue.set_variants(job_id, variants)
     with lovart_queue._jobs_lock:
         stored = lovart_queue._jobs.get(job_id)
         if stored and stored.get("status") == "running":
             stored["status"] = "done"
             stored["finished_at"] = time.time()
+            stored["size_notice"] = size_notice
 
     if variants and variants[0].get("filename"):
         output_images = [v["filename"] for v in variants if v.get("filename")]
@@ -1975,6 +2019,29 @@ def resize_image_file(path, target_w, target_h):
         img.resize((target_w, target_h), Image.LANCZOS).save(path)
 
 
+def fit_image_letterbox(path, target_w, target_h):
+    """等比缩放进目标画布，不足处留边，不裁切画面内容。"""
+    from PIL import Image
+
+    target_w, target_h = int(target_w), int(target_h)
+    with Image.open(path) as img:
+        if img.size == (target_w, target_h):
+            return
+        src = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+        sw, sh = src.size
+        scale = min(target_w / max(sw, 1), target_h / max(sh, 1))
+        nw = max(1, int(round(sw * scale)))
+        nh = max(1, int(round(sh * scale)))
+        resized = src.resize((nw, nh), Image.LANCZOS)
+        if src.mode == "RGBA":
+            canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+            canvas.paste(resized, ((target_w - nw) // 2, (target_h - nh) // 2), resized)
+        else:
+            canvas = Image.new("RGB", (target_w, target_h), (0, 0, 0))
+            canvas.paste(resized, ((target_w - nw) // 2, (target_h - nh) // 2))
+        canvas.save(path)
+
+
 def resize_image_cover(path, target_w, target_h):
     """等比放大后居中裁切，避免拉伸导致文字变形。"""
     from PIL import Image
@@ -1998,11 +2065,65 @@ def finalize_generation_output(
     output_width=None,
     output_height=None,
 ) -> None:
-    """将生图结果裁切/缩放到用户指定的目标像素。"""
+    """将生图结果适配到目标像素：同比例直接缩放，异比例留边适配，避免裁切或压扁。"""
+    import math
+    from PIL import Image
+
     w = _parse_positive_int(output_width)
     h = _parse_positive_int(output_height)
-    if w and h:
-        resize_image_cover(output_path, w, h)
+    if not w or not h:
+        return
+    with Image.open(output_path) as img:
+        sw, sh = img.size
+        if (sw, sh) == (w, h):
+            return
+        source_ratio = sw / max(sh, 1)
+        target_ratio = w / max(h, 1)
+        if abs(math.log(source_ratio / target_ratio)) <= 0.02:
+            resize_image_file(output_path, w, h)
+        else:
+            fit_image_letterbox(output_path, w, h)
+
+
+def generate_splash_subframe_image(
+    input_path: pathlib.Path,
+    target_w: int,
+    target_h: int,
+    local_project: str,
+    *,
+    remark: str | None = None,
+) -> "Image.Image":
+    """拓展子画面：与普通生图相同的 GPT img2img（edits、无蒙版），后台注入内置提示词。"""
+    from PIL import Image
+
+    prompt = splash_subframe_extend_prompt(target_w, target_h, remark=remark)
+    ratio = bbox_to_ratio(target_w, target_h)
+    image_url, error = call_image_generator(
+        "img2img",
+        prompt,
+        image_paths=[input_path],
+        ratio=ratio,
+        poll_timeout=LOCAL_GENERATION_TIMEOUT,
+        local_project=local_project,
+        image_backend="gpt",
+        gpt_model=resolve_gpt_image_model(model="gpt-image-2"),
+        output_width=target_w,
+        output_height=target_h,
+        mask_path=None,
+    )
+    if not image_url:
+        raise ValueError(error or "GPT 拓展子画面生成失败，请稍后重试")
+    raw = UPLOAD_DIR / f"splash_subframe_{uuid.uuid4().hex[:10]}.png"
+    try:
+        download_image(image_url, raw)
+        finalize_generation_output(raw, target_w, target_h)
+        with Image.open(raw) as im:
+            return im.convert("RGBA")
+    finally:
+        try:
+            raw.unlink()
+        except OSError:
+            pass
 
 
 def compute_context_crop(x, y, w, h, img_w, img_h, margin_ratio=0.12):
@@ -2124,6 +2245,7 @@ def call_img2img_with_retry(
     output_width=None,
     output_height=None,
     lovart_task_kind=None,
+    mask_path=None,
 ):
     backend = normalize_image_backend(image_backend)
     gpt_model = resolve_gpt_model(image_backend) if backend == "gpt" else None
@@ -2145,6 +2267,7 @@ def call_img2img_with_retry(
                     output_width=output_width,
                     output_height=output_height,
                     lovart_task_kind=lovart_task_kind,
+                    mask_path=mask_path,
                 )
                 if image_url:
                     return image_url, None
@@ -2183,9 +2306,21 @@ def run_ai_extract_subject(
     x, y, w, h = compute_extract_crop_bbox(img_w, img_h, roi_x, roi_y, roi_w, roi_h)
     crop_path = UPLOAD_DIR / f"ai_extract_crop_{uuid.uuid4().hex[:12]}.png"
     save_extract_crop(input_path, crop_path, x, y, w, h)
+    local_roi_x = max(0, int(roi_x) - x)
+    local_roi_y = max(0, int(roi_y) - y)
+    local_roi_w = min(int(roi_w), w - local_roi_x)
+    local_roi_h = min(int(roi_h), h - local_roi_y)
     try:
         try:
-            out_w, out_h, cutout_backend = extract_subject_cutout(crop_path, output_path, trim=trim)
+            out_w, out_h, cutout_backend = extract_subject_cutout(
+                crop_path,
+                output_path,
+                trim=trim,
+                roi_x=local_roi_x,
+                roi_y=local_roi_y,
+                roi_w=local_roi_w,
+                roi_h=local_roi_h,
+            )
             return {
                 "width": out_w,
                 "height": out_h,
@@ -2419,6 +2554,61 @@ def edit_image_regions(
 
 
 # ─── 表单解析 ────────────────────────────────────────────────────
+def _parse_button_layout(fields: dict) -> tuple[int | None, int | None, int | None, int | None]:
+    """从 multipart 字段解析按钮摆位（优先 JSON，兼容分散字段）。"""
+    layout_raw = fields.get("button_layout")
+    if layout_raw:
+        try:
+            layout = json.loads(str(layout_raw))
+            if isinstance(layout, dict):
+                w = _parse_positive_int(layout.get("w") or layout.get("width"))
+                h = _parse_positive_int(layout.get("h") or layout.get("height"))
+                if w and h:
+                    x = int(str(layout.get("x", "0")).strip())
+                    y = int(str(layout.get("y", "0")).strip())
+                    return x, y, w, h
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    w = _parse_positive_int(fields.get("button_width"))
+    h = _parse_positive_int(fields.get("button_height"))
+    if not (w and h):
+        return None, None, None, None
+    try:
+        x = int(str(fields.get("button_x", "0")).strip())
+        y = int(str(fields.get("button_y", "0")).strip())
+    except ValueError:
+        return None, None, None, None
+    return x, y, w, h
+
+
+def _parse_layer_layouts(fields: dict) -> dict[str, dict]:
+    """解析各动效图层的独立摆位 JSON。"""
+    raw = fields.get("layer_layouts")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    layouts: dict[str, dict] = {}
+    for key, layout in parsed.items():
+        if not isinstance(layout, dict):
+            continue
+        w = _parse_positive_int(layout.get("w") or layout.get("width"))
+        h = _parse_positive_int(layout.get("h") or layout.get("height"))
+        if not (w and h):
+            continue
+        try:
+            x = int(str(layout.get("x", "0")).strip())
+            y = int(str(layout.get("y", "0")).strip())
+        except ValueError:
+            continue
+        layouts[str(key)] = {"x": x, "y": y, "w": w, "h": h}
+    return layouts
+
+
 def parse_multipart(body, boundary):
     fields = {}
     parts = body.split(b'--' + boundary)
@@ -2528,10 +2718,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send_json({"error": "未登录或登录已失效"}, status=401)
         return False
 
+    def _resolve_project_for_request(
+        self, project_name: str, fields: dict | None = None
+    ) -> Optional[str]:
+        """解析当前请求的项目组；门禁关闭时允许从 type 参数推断小灯塔/画啦啦。"""
+        project_name = (project_name or "").strip()
+        if project_name:
+            return self._auth_project(project_name)
+
+        if is_gate_enabled():
+            return self._auth_project("")
+
+        params = self._query_params()
+        query_project = (params.get("project", [""])[0] or "").strip()
+        if query_project:
+            return self._auth_project(query_project) or query_project
+
+        form_type = ""
+        if fields:
+            raw_type = fields.get("type", "")
+            if isinstance(raw_type, bytes):
+                form_type = raw_type.decode("utf-8", errors="ignore").strip()
+            else:
+                form_type = str(raw_type or "").strip()
+        ptype = normalize_product_type(form_type) if form_type else self._product_type_from_query()
+        default_name = "小灯塔" if ptype == "xdt" else "画啦啦" if ptype == "hll" else ""
+        if default_name:
+            return default_name
+
+        self._send_json({"error": "请先在顶部选择项目组（小灯塔 / 画啦啦）"})
+        return None
+
     def _auth_project(self, project_name: str) -> Optional[str]:
         project_name = (project_name or "").strip()
         if not is_gate_enabled():
-            return project_name or None
+            if not project_name:
+                self._send_json({"error": "请先选择项目组"}, status=400)
+                return None
+            return project_name
         auth = self._token_project()
         if not auth:
             self._send_json({"error": "未登录或登录已失效"}, status=401)
@@ -2885,7 +3109,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send_json({
             "token": token,
             "project": project,
-            "display_name": meta.get("display_name") or project,
+            "display_name": project,
             "catalog": detect_project_catalog(project),
             "product_type": project_product_type(project),
             "credentials_status": credentials_status(project),
@@ -3038,46 +3262,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             payload = build_generation_payload(fields, kind)
             payload["project"] = auth_project
             payload["client_id"] = client_id
-            backend = normalize_image_backend(payload.get("image_backend"))
 
-            if backend != "lovart":
-                job_id = uuid.uuid4().hex[:12]
-                job = {
-                    "job_id": job_id,
-                    "client_id": client_id,
-                    "kind": kind,
-                    "status": "running",
-                    "priority": PRIORITY_HIGH,
-                    "payload": payload,
-                    "progress": {"current": 0, "total": int(payload.get("count") or 3)},
-                    "started_at": time.time(),
-                }
-                with lovart_queue._jobs_lock:
-                    lovart_queue._jobs[job_id] = job
-                execute_generation_job(job)
-                with lovart_queue._jobs_lock:
-                    stored = lovart_queue._jobs.get(job_id, {})
-                variants = stored.get("variants") or []
-                if stored.get("status") == "failed":
-                    self._send_json({"error": stored.get("error") or "生成失败"}, status=500)
-                    return
-                variant_errors = [v.get("error") for v in variants if v.get("error")]
-                if variants and not any(v.get("filename") for v in variants):
-                    self._send_json(
-                        {"error": variant_errors[0] if variant_errors else "生成失败"},
-                        status=500,
-                    )
-                    return
-                self._send_json(
-                    {
-                        "ok": True,
-                        "sync": True,
-                        "variants": variants or [],
-                        "prompt": payload.get("prompt"),
-                    }
-                )
-                return
-
+            # GPT / Lovart 统一走异步队列：GPT Image 2 单张常需 2–3 分钟，
+            # 同步阻塞 HTTP 易超时，导致前端收不到图。
             job_id = lovart_queue.submit_generation(payload, execute_generation_job)
             view = lovart_queue.get_job(job_id)
             self._send_json(
@@ -3338,7 +3525,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     def _handle_make_breathing_gif(self):
-        """静态底图 + 按钮图层 → 呼吸动效 GIF"""
+        """静态底图 + 动效图层 → 循环 GIF（呼吸 / 浮动 / 摇摆 / 旋转，可组合）。"""
         try:
             if not self._auth_any():
                 return
@@ -3350,13 +3537,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
             bg_field = fields.get("background")
-            btn_field = fields.get("button")
             if not bg_field or not isinstance(bg_field, dict):
                 self._send_json({"error": "请上传底图（不动）"})
                 return
-            if not btn_field or not isinstance(btn_field, dict):
-                self._send_json({"error": "请上传按钮图（要动的图层）"})
+
+            layer_field_names = {
+                "breathing": ("layer_breathing", "button"),
+                "float": ("layer_float",),
+                "sway": ("layer_sway",),
+                "rotate": ("layer_rotate",),
+            }
+            layer_specs: list[tuple[str, dict]] = []
+            for effect, names in layer_field_names.items():
+                field = None
+                for name in names:
+                    candidate = fields.get(name)
+                    if candidate and isinstance(candidate, dict) and candidate.get("data"):
+                        field = candidate
+                        break
+                if field:
+                    layer_specs.append((effect, field))
+
+            if not layer_specs:
+                self._send_json({"error": "请至少上传一个动效图层（呼吸 / 上下浮动 / 左右摇摆 / 微旋转）"})
                 return
+
             intensity = str(fields.get("intensity", "medium")).strip() or "medium"
             if intensity not in ("weak", "medium", "strong"):
                 intensity = "medium"
@@ -3364,23 +3569,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 duration_sec = float(str(fields.get("duration_sec", "1.6")).strip())
                 offset_x = int(str(fields.get("offset_x", "0")).strip())
                 offset_y = int(str(fields.get("offset_y", "0")).strip())
+                button_scale = float(str(fields.get("button_scale", "1")).strip())
+                button_x, button_y, button_width, button_height = _parse_button_layout(fields)
             except ValueError:
                 self._send_json({"error": "参数格式无效"})
                 return
+
             job_id = uuid.uuid4().hex[:12]
             bg_path = UPLOAD_DIR / f"gif_bg_{job_id}.png"
-            btn_path = UPLOAD_DIR / f"gif_btn_{job_id}.png"
             output_filename = f"breathing_{job_id}.gif"
             output_path = OUTPUT_DIR / output_filename
             bg_path.write_bytes(bg_field["data"])
-            btn_path.write_bytes(btn_field["data"])
-            meta = make_breathing_gif(
-                bg_path, btn_path, output_path,
+
+            layers: list[tuple[pathlib.Path, list[str], dict | None]] = []
+            layer_layouts = _parse_layer_layouts(fields)
+            for effect, field in layer_specs:
+                layer_path = UPLOAD_DIR / f"gif_layer_{effect}_{job_id}.png"
+                layer_path.write_bytes(field["data"])
+                layers.append((layer_path, [effect], layer_layouts.get(effect)))
+
+            foreground_path: pathlib.Path | None = None
+            fg_field = fields.get("layer_foreground") or fields.get("foreground")
+            if fg_field and isinstance(fg_field, dict) and fg_field.get("data"):
+                foreground_path = UPLOAD_DIR / f"gif_fg_{job_id}.png"
+                foreground_path.write_bytes(fg_field["data"])
+
+            fg_layout = layer_layouts.get("foreground")
+            meta = make_animated_gif(
+                bg_path,
+                layers,
+                output_path,
                 intensity=intensity,
                 duration_sec=duration_sec,
                 offset_x=offset_x,
                 offset_y=offset_y,
+                button_scale=button_scale,
+                button_x=button_x,
+                button_y=button_y,
+                button_width=button_width,
+                button_height=button_height,
+                foreground_path=foreground_path,
+                foreground_layout=fg_layout,
             )
+            if foreground_path:
+                print(
+                    f"[GIF-MAKER] 前景层 layout={fg_layout} "
+                    f"hasForeground={meta.get('hasForeground')}"
+                )
+            if button_width and button_height:
+                print(
+                    f"[GIF-MAKER] 按钮摆位 x={button_x} y={button_y} "
+                    f"w={button_width} h={button_height} layer_layouts={list(layer_layouts.keys())} "
+                    f"effects={meta.get('effects')}"
+                )
             self._send_json({
                 "ok": True,
                 "output_file": output_filename,
@@ -3669,22 +3910,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
                     def ai_background_fn(src_img, meta):
                         tw, th = int(meta["width"]), int(meta["height"])
-                        return run_ai_extend_to_size(
+                        return run_lovart_extend_to_size(
                             src_img,
                             tw,
                             th,
                             prompt=layout_background_extend_prompt(tw, th),
                             ratio=bbox_to_ratio(tw, th),
                             upload_dir=UPLOAD_DIR,
-                            img2img=lambda p, pr, r, _tw=tw, _th=th: call_img2img_with_retry(
+                            img2img=lambda p, pr, r, m=None, aw=0, ah=0, refs=None, _lp=local_project, _tw=tw, _th=th: call_img2img_with_retry(
                                 p,
                                 pr,
                                 ratio=r,
                                 max_retries=1,
-                                local_project=local_project,
+                                local_project=_lp,
                                 lovart_task_kind="outpaint",
-                                output_width=_tw,
-                                output_height=_th,
+                                output_width=aw or _tw,
+                                output_height=ah or _th,
+                                mask_path=m,
+                                reference_paths=[str(x) for x in (refs or [])],
                             ),
                             download_image=download_image,
                         )
@@ -3733,11 +3976,41 @@ class Handler(http.server.BaseHTTPRequestHandler):
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
             project_name = str(fields.get("project", "")).strip()
-            auth_project = self._auth_project(project_name)
+            auth_project = self._resolve_project_for_request(project_name, fields)
             if not auth_project:
                 return
             project_name = auth_project
             ptype = project_product_type(project_name)
+            splash_subframe = str(fields.get("splash_subframe", "0")).strip().lower() in ("1", "true", "yes")
+            splash_manual_only = str(fields.get("splash_manual_only", "0")).strip().lower() in ("1", "true", "yes")
+            job_id = uuid.uuid4().hex[:12]
+            source_raw = str(fields.get("source_name", "") or "").strip() or "开屏"
+
+            if splash_manual_only:
+                if normalize_product_type(ptype) != "xdt":
+                    self._send_json({"error": "固定尺寸上传仅适用于小灯塔开屏延展"})
+                    return
+                manual_outputs, manual_sources = export_manual_splash_uploads(
+                    fields,
+                    UPLOAD_DIR,
+                    OUTPUT_DIR,
+                    job_id,
+                    source_basename=source_raw,
+                    product_type=ptype,
+                )
+                if not manual_outputs:
+                    self._send_json({"error": "请至少上传一个固定尺寸图片"})
+                    return
+                result = build_manual_only_export_result(
+                    manual_outputs,
+                    OUTPUT_DIR,
+                    job_id,
+                    source_basename=source_raw,
+                    source_outputs=manual_sources,
+                )
+                self._send_json({"ok": True, "type": ptype, **result})
+                return
+
             img_field = fields.get("image")
             if not img_field or not isinstance(img_field, dict):
                 self._send_json({"error": "请上传图片"})
@@ -3746,43 +4019,50 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not any(filename.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp")):
                 self._send_json({"error": "仅支持 PNG、JPG、WebP"})
                 return
-            job_id = uuid.uuid4().hex[:12]
             ext = pathlib.Path(filename).suffix or ".png"
             input_path = UPLOAD_DIR / f"multi_src_{job_id}{ext}"
             input_path.write_bytes(img_field["data"])
-            source_raw = fields.get("source_name", "") or img_field.get("filename", "")
+            if not source_raw or source_raw == "开屏":
+                source_raw = fields.get("source_name", "") or img_field.get("filename", "") or source_raw
             use_ai = str(fields.get("use_ai", "1")).strip().lower() in ("1", "true", "yes")
             use_crop = str(fields.get("use_crop", "0")).strip().lower() in ("1", "true", "yes")
             fit_mode = "crop" if use_crop else "extend"
             ai_canvas_fn = None
+            local_project = None
             if use_ai:
                 _reload_runtime_env()
                 auth_project = self._auth_project(project_name)
-                if auth_project and load_lovart_credentials_for_project(auth_project):
-                    local_project = auth_project
+                local_project = auth_project
+                if local_project and gpt_image_available_for_project(local_project) and not splash_subframe:
 
-                    def ai_canvas_fn(src_img, tw, th):
-                        return run_ai_extend_to_size(
+                    def ai_canvas_fn(src_img, tw, th, _lp=local_project):
+                        return run_gpt_extend_to_size(
                             src_img,
                             tw,
                             th,
                             prompt=splash_extend_prompt(tw, th),
                             ratio=bbox_to_ratio(tw, th),
                             upload_dir=UPLOAD_DIR,
-                            img2img=lambda p, pr, r, _tw=tw, _th=th: call_img2img_with_retry(
+                            img2img=lambda p, pr, r, m=None, aw=0, ah=0, refs=None, _lp=local_project: call_img2img_with_retry(
                                 p,
                                 pr,
                                 ratio=r,
-                                max_retries=1,
-                                local_project=local_project,
-                                lovart_task_kind="outpaint",
-                                output_width=_tw,
-                                output_height=_th,
+                                max_retries=3,
+                                local_project=_lp,
+                                image_backend="gpt:gpt-image-2",
+                                output_width=aw,
+                                output_height=ah,
+                                mask_path=m,
+                                reference_paths=[str(x) for x in (refs or [])],
                             ),
                             download_image=download_image,
                         )
-                else:
-                    print("[MULTI-SIZE] 未配置 Lovart，将使用裁切满图")
+
+                    print("[MULTI-SIZE] 开屏扩边使用 GPT Image 2（蒙版 Outpainting）")
+                elif use_ai and not splash_subframe:
+                    print("[MULTI-SIZE] 未配置 GPT 生图 Key，无法扩边")
+                elif splash_subframe and not (local_project and gpt_image_available_for_project(local_project)):
+                    print("[MULTI-SIZE] 未配置 GPT 生图 Key，无法拓展子画面")
 
             sizes_raw = fields.get("sizes", "")
             if isinstance(sizes_raw, bytes):
@@ -3794,17 +4074,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "请至少选择一个导出尺寸"})
                 return
 
-            result = export_multi_sizes(
-                input_path,
-                OUTPUT_DIR,
-                job_id,
-                config_path=sizes_config_path(ptype),
-                sizes=requested_sizes,
-                source_basename=str(source_raw),
-                use_ai=bool(ai_canvas_fn),
-                fit_mode=fit_mode,
-                ai_canvas_fn=ai_canvas_fn,
-            )
+            if splash_subframe:
+                if not (local_project and gpt_image_available_for_project(local_project)):
+                    self._send_json({"error": "未配置 GPT 生图 Key（小灯塔 OPENAI_API_KEY_XDT），无法拓展子画面"})
+                    return
+                subframe_remark = str(
+                    fields.get("splash_subframe_remark", "") or ""
+                ).strip()
+                print("[MULTI-SIZE] 开屏拓展子画面：GPT Image 2 直接生图（内置提示词）")
+                result = export_splash_subframe_sizes(
+                    input_path,
+                    OUTPUT_DIR,
+                    job_id,
+                    sizes=requested_sizes,
+                    source_basename=str(source_raw),
+                    generate_at_size=lambda _src, tw, th, _ip=input_path, _lp=local_project, _rm=subframe_remark: generate_splash_subframe_image(
+                        _ip, tw, th, _lp, remark=_rm or None
+                    ),
+                )
+            else:
+                result = export_multi_sizes(
+                    input_path,
+                    OUTPUT_DIR,
+                    job_id,
+                    config_path=sizes_config_path(ptype),
+                    sizes=requested_sizes,
+                    source_basename=str(source_raw),
+                    use_ai=bool(ai_canvas_fn),
+                    fit_mode=fit_mode,
+                    ai_canvas_fn=ai_canvas_fn,
+                )
+                if not splash_subframe and normalize_product_type(ptype) == "xdt":
+                    manual_outputs, _manual_sources = export_manual_splash_uploads(
+                        fields,
+                        UPLOAD_DIR,
+                        OUTPUT_DIR,
+                        job_id,
+                        source_basename=str(source_raw),
+                    )
+                    if manual_outputs:
+                        result = merge_multi_size_export_results(result, manual_outputs, OUTPUT_DIR)
+                        print(f"[MULTI-SIZE] 并入 {len(manual_outputs)} 个手动上传开屏尺寸")
             try:
                 input_path.unlink()
             except OSError:
@@ -3956,7 +4266,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         image_data = data.get('image', '')
         description = data.get('description', '')
-        edit_type = data.get('editType', '文案修改')
+        edit_type = str(data.get('editType', '') or '').strip()
         keep_elements = data.get('keepElements', '')
         local_project = auth_project
         regions = data.get('regions') or []
@@ -4116,6 +4426,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
+    import sys
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
     socketserver.TCPServer.allow_reuse_address = True
 
     httpd = None
