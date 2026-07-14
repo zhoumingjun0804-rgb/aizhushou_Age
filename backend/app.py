@@ -1504,7 +1504,8 @@ def _normalize_reference_upload(path: pathlib.Path) -> pathlib.Path:
 
 def _save_ref_images_from_fields(fields: dict) -> list:
     paths = []
-    for i in range(3):
+    # 落地页头图可达 排版1+原型1+风格3；其它流程仍通常 ≤3
+    for i in range(8):
         ref_key = f"ref_image_{i}"
         ref_data = fields.get(ref_key)
         if ref_data and isinstance(ref_data, dict):

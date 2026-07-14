@@ -81,7 +81,8 @@
         .fullscreen-stage { display: flex; flex-direction: column; align-items: center; max-width: min(920px, 96vw);
                             width: 100%; cursor: default; }
         .fullscreen-img { max-width: 96vw; max-height: none; width: auto; height: auto; object-fit: contain;
-                          border-radius: 12px; box-shadow: 0 0 60px rgba(167,139,250,0.15); flex-shrink: 0; }
+                          border-radius: 12px; box-shadow: 0 0 60px rgba(167,139,250,0.15); flex-shrink: 0;
+                          -webkit-user-drag: auto; user-select: auto; }
         .fullscreen-img.tall-preview { max-height: none; max-width: min(750px, 96vw); width: auto; height: auto; }
         .fullscreen-overlay.tall-scroll { align-items: flex-start; }
         .fullscreen-details { display: none; width: 100%; margin-top: 14px; padding: 14px 16px;
@@ -112,6 +113,18 @@
                                padding: 8px 16px; border-radius: 20px; text-decoration: none;
                                border: 1px solid rgba(167,139,250,0.5); }
         .fullscreen-download:hover { background: rgba(167,139,250,0.6); }
+        .fullscreen-copy { position: absolute; top: 20px; right: 180px; color: white;
+                           font-size: 14px; cursor: pointer; background: rgba(167,139,250,0.4);
+                           padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(167,139,250,0.5); }
+        .fullscreen-copy:hover { background: rgba(167,139,250,0.6); }
+        .img-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+            z-index: 3000; padding: 10px 18px; border-radius: 10px; font-size: 13px;
+            background: rgba(26,26,46,0.95); color: #e9d5ff; border: 1px solid rgba(167,139,250,0.45);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35); pointer-events: none; opacity: 0;
+            transition: opacity 0.2s; }
+        .img-toast.show { opacity: 1; }
+        .crop-result img, .cutout-result img, .landing-slice-item img,
+        .gifmaker-preview img, .gifmaker-svga-preview img { cursor: zoom-in; }
         .fullscreen-nav { position: absolute; top: 50%; transform: translateY(-50%);
                           color: white; font-size: 40px; cursor: pointer; background: rgba(0,0,0,0.3);
                           border: none; border-radius: 50%; width: 50px; height: 50px;
@@ -703,15 +716,42 @@
             border-color: rgba(251,191,36,0.65); color: #fff; box-shadow: 0 4px 14px rgba(245,158,11,0.2); }
         .landing-panel { display: none; }
         .landing-panel.active { display: block; }
-        .landing-module-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-        .landing-module-row select { flex: 1; min-width: 160px; padding: 8px 10px; border-radius: 8px;
-            border: 1px solid rgba(251,191,36,0.35); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
-        .landing-module-size-tag { font-size: 12px; padding: 6px 12px; border-radius: 8px;
-            border: 1px solid rgba(251,191,36,0.3); color: rgba(255,255,255,0.7); background: rgba(251,191,36,0.08); }
+        .landing-module-type-block { margin: 12px 0 14px; }
+        .landing-module-type-label { font-size: 12px; color: rgba(255,255,255,0.65); display: block; margin-bottom: 8px; }
+        .landing-module-type-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+        .landing-module-type-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(251,191,36,0.35);
+            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.78); font-size: 13px; cursor: pointer; transition: 0.2s; }
+        .landing-module-type-btn:hover { background: rgba(251,191,36,0.12); }
+        .landing-module-type-btn.active { background: linear-gradient(135deg, rgba(245,158,11,0.45), rgba(251,191,36,0.28));
+            border-color: rgba(251,191,36,0.7); color: #fff; font-weight: 600; }
+        .landing-module-size-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .landing-module-size-row label { font-size: 12px; color: rgba(255,255,255,0.55); }
+        .landing-module-size-row input[type="number"] { width: 88px; padding: 6px 8px; border-radius: 8px;
+            border: 1px solid rgba(251,191,36,0.35); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); font-size: 13px; }
+        .landing-module-size-row .landing-size-sep { color: rgba(255,255,255,0.4); font-size: 13px; }
+        .landing-module-size-hint { font-size: 11px; color: rgba(255,255,255,0.4); }
+        .landing-module-size-reset { padding: 4px 10px; font-size: 12px; }
         .landing-gen-ref-zone { border: 2px dashed rgba(251,191,36,0.35); border-radius: 12px; padding: 16px; text-align: center;
-            cursor: pointer; margin-bottom: 12px; transition: 0.2s; }
+            cursor: pointer; margin-bottom: 12px; transition: 0.2s; outline: none; }
         .landing-gen-ref-zone:hover, .landing-gen-ref-zone:focus { border-color: rgba(251,191,36,0.7); background: rgba(251,191,36,0.06); }
+        .landing-gen-ref-zone:focus { box-shadow: 0 0 0 2px rgba(251,191,36,0.25); }
         .landing-gen-ref-zone.has-image { border-style: solid; }
+        .landing-gen-ref-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+        .landing-gen-head-refs { display: none; gap: 8px; margin-bottom: 12px;
+            flex-direction: row; align-items: stretch; flex-wrap: nowrap; }
+        .landing-gen-head-refs.visible { display: flex; }
+        .landing-gen-head-refs .landing-gen-ref-zone { flex: 1 1 0; min-width: 0; margin-bottom: 0;
+            padding: 8px 8px 10px; min-height: 0; }
+        .landing-gen-head-refs .landing-gen-ref-title { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.88); margin-bottom: 2px; }
+        .landing-gen-head-refs .landing-gen-ref-sub { font-size: 10px; color: rgba(255,255,255,0.4); margin-bottom: 4px; line-height: 1.3; }
+        .landing-gen-head-refs .landing-gen-ref-actions { margin-top: 6px; gap: 4px; }
+        .landing-gen-head-refs .landing-gen-ref-actions .action-btn { padding: 2px 8px; font-size: 11px; }
+        .landing-gen-head-refs .splash-hero-ref-previews { margin-top: 4px; gap: 4px; min-height: 44px; }
+        .landing-gen-head-refs .uploaded-thumb { width: 40px; height: 40px; }
+        @media (max-width: 520px) {
+            .landing-gen-head-refs.visible { flex-wrap: wrap; }
+            .landing-gen-head-refs .landing-gen-ref-zone { flex: 1 1 100%; }
+        }
         .landing-gen-prompt { width: 100%; min-height: 88px; padding: 12px 14px; border-radius: 10px; resize: vertical;
             border: 1px solid rgba(251,191,36,0.3); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.88); font-size: 13px; }
         .landing-gen-prompt:focus { outline: none; border-color: #fbbf24; }
@@ -731,11 +771,16 @@
             box-shadow: 0 4px 14px rgba(245,158,11,0.22); transform: translateY(-1px); }
         .landing-download-btn:active { transform: translateY(0); box-shadow: none; }
         .landing-variants { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 14px; }
-        .landing-variant { border: 2px solid rgba(255,255,255,0.12); border-radius: 10px; overflow: hidden; cursor: pointer; transition: 0.2s; }
+        .landing-variant { border: 2px solid rgba(255,255,255,0.12); border-radius: 10px; overflow: hidden; cursor: zoom-in; transition: 0.2s; }
         .landing-variant:hover { border-color: rgba(251,191,36,0.55); }
         .landing-variant.selected { border-color: #fbbf24; box-shadow: 0 0 0 2px rgba(251,191,36,0.35); }
         .landing-variant img { width: 100%; display: block; aspect-ratio: 75/56; object-fit: contain; background: rgba(0,0,0,0.2); }
-        .landing-variant .label { font-size: 11px; text-align: center; padding: 6px; color: rgba(255,255,255,0.65); }
+        .landing-variant .label { font-size: 11px; text-align: center; padding: 6px 6px 2px; color: rgba(255,255,255,0.65); }
+        .landing-variant-as-ref { display: block; width: calc(100% - 12px); margin: 0 6px 8px; padding: 5px 8px;
+            font-size: 11px; border-radius: 6px; border: 1px solid rgba(251,191,36,0.4);
+            background: rgba(251,191,36,0.12); color: #fde68a; cursor: pointer; transition: 0.15s; }
+        .landing-variant-as-ref:hover { background: rgba(251,191,36,0.22); border-color: rgba(251,191,36,0.7); color: #fff; }
+        .landing-variant-as-ref:disabled { opacity: 0.45; cursor: not-allowed; }
         .landing-modules-title { font-size: 13px; color: rgba(255,255,255,0.7); margin: 18px 0 10px; }
         .landing-modules-list { display: flex; flex-direction: column; gap: 8px; }
         .landing-module-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
@@ -1677,25 +1722,66 @@
 
                 <!-- 第一步：生图模块 -->
                 <div class="landing-panel active" id="landingGeneratePanel">
-                    <p class="multi-hint">第一步：用 <strong>GPT Image 2</strong> 分块生成落地页模块（头图、卖点区、价格区、底栏等），生成后加入下方模块列表。</p>
-                    <div class="landing-module-row">
-                        <label style="font-size:12px;color:rgba(255,255,255,0.65);">模块类型</label>
-                        <select id="landingModuleType" onchange="onLandingModuleTypeChange()">
-                            <option value="头图" data-w="750" data-h="560">头图</option>
-                            <option value="卖点区" data-w="750" data-h="400">卖点区</option>
-                            <option value="价格区" data-w="750" data-h="360">价格区</option>
-                            <option value="底栏" data-w="750" data-h="280">底栏</option>
-                            <option value="自定义" data-w="750" data-h="800">自定义模块</option>
-                        </select>
-                        <span class="landing-module-size-tag" id="landingModuleSizeTag">750×560</span>
+                    <p class="multi-hint">第一步：选择模块类型并描述画面，用 <strong>GPT Image 2</strong> 分块生成落地页模块，生成后加入下方模块列表。</p>
+                    <div class="landing-module-type-block">
+                        <span class="landing-module-type-label">模块类型</span>
+                        <div class="landing-module-type-btns" id="landingModuleTypeBtns" role="group" aria-label="模块类型">
+                            <button type="button" class="landing-module-type-btn active" data-type="横板头图" onclick="selectLandingModuleType('横板头图', this)">横板头图</button>
+                            <button type="button" class="landing-module-type-btn" data-type="竖版头图" onclick="selectLandingModuleType('竖版头图', this)">竖版头图</button>
+                            <button type="button" class="landing-module-type-btn" data-type="详情内容" onclick="selectLandingModuleType('详情内容', this)">详情内容</button>
+                            <button type="button" class="landing-module-type-btn" data-type="课程目录" onclick="selectLandingModuleType('课程目录', this)">课程目录</button>
+                        </div>
+                        <div class="landing-module-size-row">
+                            <label for="landingModuleWidth">生图尺寸</label>
+                            <input type="number" id="landingModuleWidth" min="64" max="4096" step="1" value="750" oninput="onLandingModuleSizeInput()">
+                            <span class="landing-size-sep">×</span>
+                            <input type="number" id="landingModuleHeight" min="64" max="4096" step="1" value="500" oninput="onLandingModuleSizeInput()">
+                            <span class="landing-module-size-hint" id="landingModuleSizeHint">默认 750×500（可改）</span>
+                            <button type="button" class="action-btn btn-outline landing-module-size-reset" id="landingModuleSizeResetBtn" onclick="resetLandingModuleSizeToPreset()" style="display:none;">恢复默认</button>
+                        </div>
                     </div>
-                    <div class="landing-gen-ref-zone" id="landingGenRefZone" onclick="onLandingGenRefZoneClick(event)" tabindex="0">
-                        <p class="splash-hero-ref-placeholder" id="landingGenRefPlaceholder">📎 参考图（选填，最多 3 张）</p>
-                        <p style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:4px;">点击、拖拽或粘贴上传</p>
-                        <div class="splash-hero-ref-previews" id="landingGenRefPreviews"></div>
-                        <button type="button" class="action-btn btn-outline" id="landingGenRefClearBtn" onclick="clearLandingGenRefs(event)" style="display:none;margin-top:10px;font-size:12px;padding:4px 10px;">清空参考图</button>
+                    <div id="landingGenSimpleRefWrap" style="display:none;">
+                        <div class="landing-gen-ref-zone" id="landingGenRefZone" onclick="onLandingGenRefZoneClick(event)" tabindex="0">
+                            <p class="splash-hero-ref-placeholder" id="landingGenRefPlaceholder">📎 参考图（选填，最多 3 张）</p>
+                            <p style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:4px;" id="landingGenRefHint">点击此处后 Ctrl+V 可连续粘贴；也可拖拽上传</p>
+                            <div class="splash-hero-ref-previews" id="landingGenRefPreviews"></div>
+                            <div class="landing-gen-ref-actions">
+                                <button type="button" class="action-btn btn-outline" id="landingGenRefPickBtn" onclick="onLandingGenRefPickClick(event)" style="font-size:12px;padding:4px 10px;">选择文件</button>
+                                <button type="button" class="action-btn btn-outline" id="landingGenRefClearBtn" onclick="clearLandingGenRefs(event)" style="display:none;font-size:12px;padding:4px 10px;">清空参考图</button>
+                            </div>
+                        </div>
+                        <input type="file" id="landingGenRefInput" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="onLandingGenRefSelected(event)">
                     </div>
-                    <input type="file" id="landingGenRefInput" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="onLandingGenRefSelected(event)">
+                    <div class="landing-gen-head-refs visible" id="landingGenHeadRefWrap" aria-label="模块参考图分区">
+                        <div class="landing-gen-ref-zone" id="landingGenHeadRefZoneLayout" data-ref-slot="layout" onclick="onLandingGenHeadRefZoneClick(event, 'layout')" tabindex="0">
+                            <p class="landing-gen-ref-title">排版参考</p>
+                            <p class="landing-gen-ref-sub">最多 1 张</p>
+                            <div class="splash-hero-ref-previews" id="landingGenHeadRefPreviewsLayout"></div>
+                            <div class="landing-gen-ref-actions">
+                                <button type="button" class="action-btn btn-outline" onclick="onLandingGenHeadRefPickClick(event, 'layout')">选择文件</button>
+                                <button type="button" class="action-btn btn-outline" id="landingGenHeadRefClearLayout" onclick="clearLandingGenHeadRefs(event, 'layout')" style="display:none;">清空</button>
+                            </div>
+                        </div>
+                        <div class="landing-gen-ref-zone" id="landingGenHeadRefZonePrototype" data-ref-slot="prototype" onclick="onLandingGenHeadRefZoneClick(event, 'prototype')" tabindex="0">
+                            <p class="landing-gen-ref-title">原型图参考</p>
+                            <p class="landing-gen-ref-sub">最多 1 张</p>
+                            <div class="splash-hero-ref-previews" id="landingGenHeadRefPreviewsPrototype"></div>
+                            <div class="landing-gen-ref-actions">
+                                <button type="button" class="action-btn btn-outline" onclick="onLandingGenHeadRefPickClick(event, 'prototype')">选择文件</button>
+                                <button type="button" class="action-btn btn-outline" id="landingGenHeadRefClearPrototype" onclick="clearLandingGenHeadRefs(event, 'prototype')" style="display:none;">清空</button>
+                            </div>
+                        </div>
+                        <div class="landing-gen-ref-zone" id="landingGenHeadRefZoneStyle" data-ref-slot="style" onclick="onLandingGenHeadRefZoneClick(event, 'style')" tabindex="0">
+                            <p class="landing-gen-ref-title">风格参考</p>
+                            <p class="landing-gen-ref-sub">最多 3 张</p>
+                            <div class="splash-hero-ref-previews" id="landingGenHeadRefPreviewsStyle"></div>
+                            <div class="landing-gen-ref-actions">
+                                <button type="button" class="action-btn btn-outline" onclick="onLandingGenHeadRefPickClick(event, 'style')">选择文件</button>
+                                <button type="button" class="action-btn btn-outline" id="landingGenHeadRefClearStyle" onclick="clearLandingGenHeadRefs(event, 'style')" style="display:none;">清空</button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="landingGenHeadRefInput" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="onLandingGenHeadRefSelected(event)">
                     <textarea id="landingGenPrompt" class="landing-gen-prompt" placeholder="描述本模块画面，例如：618 大促头图，红色喜庆背景，主标题「限时特惠」，卡通 IP 居中…"></textarea>
                     <button type="button" class="landing-gen-btn" id="landingGenBtn" onclick="generateLandingModule()">✨ 生成当前模块</button>
                     <div class="loading-card" id="landingGenLoading" style="display:none;">
@@ -1951,15 +2037,17 @@
     <!-- 全屏图片查看 -->
     <div class="fullscreen-overlay" id="fullscreenOverlay" onclick="closeFullscreen()">
         <button class="fullscreen-close" onclick="event.stopPropagation(); closeFullscreen()">×</button>
+        <button type="button" class="fullscreen-copy" id="fullscreenCopyBtn" onclick="event.stopPropagation(); copyCurrentFullscreenImage()">📋 复制图片</button>
         <a class="fullscreen-download" id="fullscreenDownload" download href="#" onclick="event.stopPropagation()">⬇ 下载图片</a>
         <button class="fullscreen-nav fullscreen-prev" onclick="event.stopPropagation(); prevImage()">‹</button>
         <button class="fullscreen-nav fullscreen-next" onclick="event.stopPropagation(); nextImage()">›</button>
         <div class="fullscreen-stage" onclick="event.stopPropagation()">
-            <img class="fullscreen-img" id="fullscreenImg">
+            <img class="fullscreen-img" id="fullscreenImg" title="右键可复制图片">
             <div class="fullscreen-details" id="fullscreenDetails"></div>
             <div class="fullscreen-counter" id="fullscreenCounter"></div>
         </div>
     </div>
+    <div class="img-toast" id="imgToast" role="status" aria-live="polite"></div>
     
 <script>
 var currentProject = null;
@@ -3401,8 +3489,9 @@ function addRefImagesFromFiles(files, imagesArr, renderFn, maxFiles) {
     }
 }
 
-function bindRefImagePaste(pasteZoneEl, getImagesArr, renderFn) {
-    if (!pasteZoneEl) return;
+function bindRefImagePaste(pasteZoneEl, getImagesArr, renderFn, maxFiles) {
+    if (!pasteZoneEl || pasteZoneEl.dataset.refPasteBound === '1') return;
+    pasteZoneEl.dataset.refPasteBound = '1';
     pasteZoneEl.addEventListener('paste', function(e) {
         var files = [];
         var items = e.clipboardData && e.clipboardData.items;
@@ -3416,10 +3505,16 @@ function bindRefImagePaste(pasteZoneEl, getImagesArr, renderFn) {
         }
         if (!files.length) return;
         e.preventDefault();
+        e.stopPropagation();
         var arr = typeof getImagesArr === 'function' ? getImagesArr() : getImagesArr;
-        addRefImagesFromFiles(files, arr, renderFn);
+        addRefImagesFromFiles(files, arr, renderFn, maxFiles);
+        // 粘贴后保持焦点，方便连续粘贴多张
+        setTimeout(function() {
+            try { pasteZoneEl.focus(); } catch (err) {}
+        }, 0);
     });
-    pasteZoneEl.addEventListener('click', function() {
+    pasteZoneEl.addEventListener('click', function(e) {
+        if (e.target && e.target.closest('button, a, input, .uploaded-thumb-wrap')) return;
         pasteZoneEl.focus();
     });
 }
@@ -4704,6 +4799,152 @@ function openFullscreen(images, startIndex, labels) {
     document.addEventListener('keydown', handleFullscreenKey);
 }
 
+var _imgToastTimer = null;
+function showImgToast(msg) {
+    var el = document.getElementById('imgToast');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.add('show');
+    if (_imgToastTimer) clearTimeout(_imgToastTimer);
+    _imgToastTimer = setTimeout(function() { el.classList.remove('show'); }, 1800);
+}
+
+function blobToPngBlob(blob) {
+    return new Promise(function(resolve, reject) {
+        var url = URL.createObjectURL(blob);
+        var img = new Image();
+        img.onload = function() {
+            try {
+                var canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                canvas.toBlob(function(out) {
+                    URL.revokeObjectURL(url);
+                    if (out) resolve(out);
+                    else reject(new Error('图片转换失败'));
+                }, 'image/png');
+            } catch (err) {
+                URL.revokeObjectURL(url);
+                reject(err);
+            }
+        };
+        img.onerror = function() {
+            URL.revokeObjectURL(url);
+            reject(new Error('图片加载失败'));
+        };
+        img.src = url;
+    });
+}
+
+async function fetchImageBlob(url) {
+    if (!url) throw new Error('无图片地址');
+    if (url.indexOf('data:') === 0) {
+        var res = await fetch(url);
+        return res.blob();
+    }
+    var resp;
+    if (url.indexOf('blob:') === 0 || url.indexOf('http://') === 0 || url.indexOf('https://') === 0) {
+        resp = await fetch(url);
+    } else {
+        resp = await authFetch(url);
+    }
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return resp.blob();
+}
+
+async function copyImageToClipboard(url) {
+    if (!navigator.clipboard || !window.ClipboardItem) {
+        throw new Error('当前浏览器不支持复制图片，请改用下载');
+    }
+    var blob = await fetchImageBlob(url);
+    var type = (blob.type || '').toLowerCase();
+    if (type !== 'image/png' && type !== 'image/gif' && type !== 'image/jpeg' && type !== 'image/jpg') {
+        blob = await blobToPngBlob(blob);
+        type = 'image/png';
+    } else if (type === 'image/jpg') {
+        type = 'image/jpeg';
+    }
+    // 部分环境仅稳定支持 image/png
+    if (type !== 'image/png' && type !== 'image/gif') {
+        blob = await blobToPngBlob(blob);
+        type = 'image/png';
+    }
+    try {
+        await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+    } catch (err) {
+        if (type === 'image/png') throw err;
+        blob = await blobToPngBlob(blob);
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    }
+}
+
+async function copyCurrentFullscreenImage() {
+    var url = fullscreenImages[fullscreenIndex];
+    if (!url) {
+        showImgToast('当前没有可复制的图片');
+        return;
+    }
+    try {
+        await copyImageToClipboard(url);
+        showImgToast('图片已复制到剪贴板');
+    } catch (err) {
+        showImgToast('复制失败: ' + (err.message || String(err)));
+    }
+}
+
+function isToolResultCopyableImage(img) {
+    if (!img || img.tagName !== 'IMG') return false;
+    if (!img.src || img.src.indexOf('about:') === 0) return false;
+    // 工作画布上的交互图不拦截右键
+    if (img.closest('.crop-canvas-wrap, .cutout-canvas-wrap, .layout-canvas-wrap, .gifmaker-canvas-wrap, .landing-crop-wrap')) {
+        return false;
+    }
+    if (img.id === 'fullscreenImg' || img.id === 'refImagePreviewImg') return true;
+    if (img.id === 'cropResultImg' || img.id === 'cutoutResultImg') return true;
+    if (img.id === 'landingStitchPreviewImg' || img.id === 'landingModulePreviewImg') return true;
+    if (img.id === 'gifmakerResultImg' || img.id === 'gifSvgaUploadResultPreview' || img.id === 'gifSvgaUploadPreview') return true;
+    if (img.closest('.variant-card, .multi-card, .landing-variant, .landing-module-item, .landing-slice-item, .crop-result, .cutout-result, .history-item, .edit-side, .gifmaker-preview, .gifmaker-svga-preview, .uploaded-thumb-wrap, .splash-hero-ref-previews, .landing-gen-ref-previews')) {
+        return true;
+    }
+    return false;
+}
+
+function bindToolImageCopyAndPreview() {
+    document.addEventListener('contextmenu', function(e) {
+        var img = e.target && e.target.closest ? e.target.closest('img') : null;
+        if (!isToolResultCopyableImage(img)) return;
+        e.preventDefault();
+        var url = img.currentSrc || img.src;
+        copyImageToClipboard(url).then(function() {
+            showImgToast('图片已复制到剪贴板');
+        }).catch(function(err) {
+            showImgToast('复制失败: ' + (err.message || String(err)));
+        });
+    });
+
+    function bindClickPreview(imgId, label) {
+        var img = document.getElementById(imgId);
+        if (!img || img.dataset.previewBound === '1') return;
+        img.dataset.previewBound = '1';
+        img.style.cursor = 'zoom-in';
+        img.title = (img.title ? img.title + ' · ' : '') + '点击放大 · 右键复制';
+        img.addEventListener('click', function() {
+            var url = img.currentSrc || img.src;
+            if (!url) return;
+            openFullscreen([url], 0, [label || img.alt || '预览']);
+        });
+    }
+    bindClickPreview('cropResultImg', '裁切结果');
+    bindClickPreview('cutoutResultImg', '抠图结果');
+    bindClickPreview('gifSvgaUploadResultPreview', 'GIF 预览');
+    var gifResult = document.getElementById('gifmakerResultImg');
+    if (gifResult) bindClickPreview('gifmakerResultImg', '动图预览');
+}
+
+bindToolImageCopyAndPreview();
+
 function updateFullscreenNav() {
     var multi = fullscreenImages.length > 1;
     var prevBtn = document.querySelector('.fullscreen-prev');
@@ -4750,6 +4991,9 @@ function updateFullscreenImage() {
             (label ? ' · ' + label : '');
     }
     updateFullscreenNav();
+    if (landingGenFullscreenActive && landingGenVariants.length) {
+        selectLandingGenVariant(fullscreenIndex);
+    }
 }
 
 function handleFullscreenKey(e) {
@@ -4769,6 +5013,7 @@ function closeFullscreen() {
     document.getElementById('fullscreenOverlay').classList.remove('tall-scroll');
     var fsImg = document.getElementById('fullscreenImg');
     if (fsImg) fsImg.classList.remove('tall-preview');
+    landingGenFullscreenActive = false;
     document.removeEventListener('keydown', handleFullscreenKey);
     fullscreenHistoryItem = null;
     _fullscreenDetailsCopyText = '';
@@ -5382,10 +5627,30 @@ async function generateSplashHero() {
 // ─── 落地页三步流程 ─────────────────────────────────
 var LANDING_PANEL_IDS = { generate: 'landingGeneratePanel', stitch: 'landingStitchPanel', crop: 'landingCropPanel' };
 var LANDING_STITCH_WIDTH = 750;
+/**
+ * 落地页模块类型 → 默认生图尺寸（占位，正式数值后续替换）。
+ * 切换类型会写入宽高输入框；用户可再改成自定义尺寸。
+ */
+var LANDING_MODULE_TYPE_PRESETS = {
+    '横板头图': { w: 750, h: 500 },
+    '竖版头图': { w: 750, h: 1000 },
+    '详情内容': { w: 750, h: 800 },
+    '课程目录': { w: 750, h: 600 }
+};
+var landingSelectedModuleType = '横板头图';
 var landingModules = [];
 var landingGenRefImages = [];
+/** 横板/竖版头图三区参考：排版 1、原型 1、风格 3 */
+var LANDING_HEAD_REF_SLOTS = {
+    layout: { max: 1, label: '排版参考', zoneId: 'landingGenHeadRefZoneLayout', previewId: 'landingGenHeadRefPreviewsLayout', clearId: 'landingGenHeadRefClearLayout' },
+    prototype: { max: 1, label: '原型图参考', zoneId: 'landingGenHeadRefZonePrototype', previewId: 'landingGenHeadRefPreviewsPrototype', clearId: 'landingGenHeadRefClearPrototype' },
+    style: { max: 3, label: '风格参考', zoneId: 'landingGenHeadRefZoneStyle', previewId: 'landingGenHeadRefPreviewsStyle', clearId: 'landingGenHeadRefClearStyle' }
+};
+var landingGenHeadRefs = { layout: [], prototype: [], style: [] };
+var landingGenHeadRefPickSlot = 'style';
 var landingGenVariants = [];
 var landingGenSelectedVariant = -1;
+var landingGenFullscreenActive = false;
 var landingStitchedUrl = null;
 var landingStitchedFile = null;
 var landingUploadedCropUrl = null;
@@ -5435,31 +5700,107 @@ function switchLandingMode(mode, btnEl) {
     }
 }
 
+function getLandingModuleTypePreset(type) {
+    var key = type || landingSelectedModuleType;
+    return LANDING_MODULE_TYPE_PRESETS[key] || LANDING_MODULE_TYPE_PRESETS['横板头图'];
+}
+
+function parseLandingModuleDim(elId, fallback) {
+    var el = document.getElementById(elId);
+    var n = el ? parseInt(el.value, 10) : NaN;
+    if (!isFinite(n) || n < 64) return fallback;
+    return Math.min(4096, n);
+}
+
 function getLandingModuleSize() {
-    var sel = document.getElementById('landingModuleType');
-    var opt = sel && sel.selectedOptions[0];
-    if (!opt) return { label: '自定义模块', w: 750, h: 800 };
+    var preset = getLandingModuleTypePreset(landingSelectedModuleType);
     return {
-        label: opt.value,
-        w: parseInt(opt.getAttribute('data-w') || '750', 10),
-        h: parseInt(opt.getAttribute('data-h') || '800', 10)
+        label: landingSelectedModuleType || '模块',
+        w: parseLandingModuleDim('landingModuleWidth', preset.w),
+        h: parseLandingModuleDim('landingModuleHeight', preset.h)
     };
 }
 
-function onLandingModuleTypeChange() {
+function isLandingModuleSizeCustom() {
+    var preset = getLandingModuleTypePreset(landingSelectedModuleType);
     var size = getLandingModuleSize();
-    var tag = document.getElementById('landingModuleSizeTag');
-    if (tag) tag.textContent = size.w + '×' + size.h;
+    return size.w !== preset.w || size.h !== preset.h;
+}
+
+function updateLandingModuleSizeHint() {
+    var preset = getLandingModuleTypePreset(landingSelectedModuleType);
+    var hint = document.getElementById('landingModuleSizeHint');
+    var resetBtn = document.getElementById('landingModuleSizeResetBtn');
+    var custom = isLandingModuleSizeCustom();
+    if (hint) {
+        hint.textContent = custom
+            ? ('自定义 · 类型默认 ' + preset.w + '×' + preset.h)
+            : ('默认 ' + preset.w + '×' + preset.h + '（可改）');
+    }
+    if (resetBtn) resetBtn.style.display = custom ? '' : 'none';
+}
+
+function applyLandingModuleTypePreset(type) {
+    var preset = getLandingModuleTypePreset(type);
+    var wEl = document.getElementById('landingModuleWidth');
+    var hEl = document.getElementById('landingModuleHeight');
+    if (wEl) wEl.value = String(preset.w);
+    if (hEl) hEl.value = String(preset.h);
+    updateLandingModuleSizeHint();
+}
+
+function selectLandingModuleType(type, btnEl) {
+    if (!LANDING_MODULE_TYPE_PRESETS[type]) return;
+    landingSelectedModuleType = type;
+    document.querySelectorAll('.landing-module-type-btn').forEach(function(b) {
+        b.classList.toggle('active', b.getAttribute('data-type') === type);
+    });
+    if (btnEl) btnEl.classList.add('active');
+    applyLandingModuleTypePreset(type);
+    updateLandingGenRefModeUi();
+}
+
+function isLandingHeadModuleType(type) {
+    // 横板/竖版头图、详情内容、课程目录统一使用三区参考图
+    var t = type || landingSelectedModuleType;
+    return !!LANDING_MODULE_TYPE_PRESETS[t];
+}
+
+function updateLandingGenRefModeUi() {
+    var simple = document.getElementById('landingGenSimpleRefWrap');
+    var head = document.getElementById('landingGenHeadRefWrap');
+    if (simple) simple.style.display = 'none';
+    if (head) head.classList.add('visible');
+}
+
+function onLandingModuleSizeInput() {
+    updateLandingModuleSizeHint();
+}
+
+function resetLandingModuleSizeToPreset() {
+    applyLandingModuleTypePreset(landingSelectedModuleType);
 }
 
 function onLandingGenRefZoneClick(ev) {
-    if (ev.target && (ev.target.closest('.uploaded-thumb-wrap') || ev.target.closest('#landingGenRefClearBtn'))) return;
-    document.getElementById('landingGenRefInput').click();
+    if (ev.target && (ev.target.closest('.uploaded-thumb-wrap') ||
+        ev.target.closest('#landingGenRefClearBtn') ||
+        ev.target.closest('#landingGenRefPickBtn'))) return;
+    // 仅聚焦以便 Ctrl+V 连续粘贴，不打开系统文件框（会抢走焦点）
+    var zone = document.getElementById('landingGenRefZone');
+    if (zone) zone.focus();
+}
+
+function onLandingGenRefPickClick(ev) {
+    if (ev) ev.stopPropagation();
+    var input = document.getElementById('landingGenRefInput');
+    if (input) input.click();
 }
 
 function onLandingGenRefSelected(ev) {
     addRefImagesFromFiles(ev.target.files, landingGenRefImages, renderLandingGenRefPreviews);
     ev.target.value = '';
+    var zone = document.getElementById('landingGenRefZone');
+    if (zone) setTimeout(function() { try { zone.focus(); } catch (e) {} }, 0);
 }
 
 function clearLandingGenRefs(ev) {
@@ -5494,6 +5835,109 @@ function renderLandingGenRefPreviews() {
     }
 }
 
+function getLandingGenHeadRefArr(slot) {
+    if (!landingGenHeadRefs[slot]) landingGenHeadRefs[slot] = [];
+    return landingGenHeadRefs[slot];
+}
+
+function renderLandingGenHeadRefSlot(slot) {
+    var meta = LANDING_HEAD_REF_SLOTS[slot];
+    if (!meta) return;
+    var arr = getLandingGenHeadRefArr(slot);
+    var container = document.getElementById(meta.previewId);
+    var zone = document.getElementById(meta.zoneId);
+    var clearBtn = document.getElementById(meta.clearId);
+    if (!container) return;
+    if (zone) zone.classList.toggle('has-image', arr.length > 0);
+    if (clearBtn) clearBtn.style.display = arr.length ? '' : 'none';
+    container.innerHTML = '';
+    for (var i = 0; i < arr.length; i++) {
+        (function(s, idx, src) {
+            var wrap = document.createElement('div');
+            wrap.className = 'uploaded-thumb-wrap';
+            wrap.innerHTML = '<img class="uploaded-thumb" src="' + src + '" alt="' + (LANDING_HEAD_REF_SLOTS[s].label || '参考图') + '">' +
+                '<button type="button" class="uploaded-thumb-remove" title="移除">×</button>';
+            wrap.querySelector('.uploaded-thumb-remove').onclick = function(e) {
+                e.stopPropagation();
+                getLandingGenHeadRefArr(s).splice(idx, 1);
+                renderLandingGenHeadRefSlot(s);
+            };
+            container.appendChild(wrap);
+        })(slot, i, arr[i]);
+    }
+}
+
+function renderAllLandingGenHeadRefs() {
+    Object.keys(LANDING_HEAD_REF_SLOTS).forEach(renderLandingGenHeadRefSlot);
+}
+
+function onLandingGenHeadRefZoneClick(ev, slot) {
+    if (ev.target && (ev.target.closest('.uploaded-thumb-wrap') || ev.target.closest('button'))) return;
+    var meta = LANDING_HEAD_REF_SLOTS[slot];
+    var zone = meta && document.getElementById(meta.zoneId);
+    if (zone) zone.focus();
+}
+
+function onLandingGenHeadRefPickClick(ev, slot) {
+    if (ev) ev.stopPropagation();
+    landingGenHeadRefPickSlot = slot || 'style';
+    var input = document.getElementById('landingGenHeadRefInput');
+    if (!input) return;
+    var meta = LANDING_HEAD_REF_SLOTS[landingGenHeadRefPickSlot];
+    input.multiple = !!(meta && meta.max > 1);
+    input.click();
+}
+
+function onLandingGenHeadRefSelected(ev) {
+    var slot = landingGenHeadRefPickSlot || 'style';
+    var meta = LANDING_HEAD_REF_SLOTS[slot];
+    var arr = getLandingGenHeadRefArr(slot);
+    addRefImagesFromFiles(ev.target.files, arr, function() { renderLandingGenHeadRefSlot(slot); }, meta ? meta.max : 1);
+    ev.target.value = '';
+    var zone = meta && document.getElementById(meta.zoneId);
+    if (zone) setTimeout(function() { try { zone.focus(); } catch (e) {} }, 0);
+}
+
+function clearLandingGenHeadRefs(ev, slot) {
+    if (ev) ev.stopPropagation();
+    if (!LANDING_HEAD_REF_SLOTS[slot]) return;
+    landingGenHeadRefs[slot] = [];
+    renderLandingGenHeadRefSlot(slot);
+}
+
+function collectLandingGenRefDataUrls() {
+    if (!isLandingHeadModuleType(landingSelectedModuleType)) {
+        return landingGenRefImages.slice();
+    }
+    return []
+        .concat(getLandingGenHeadRefArr('layout'))
+        .concat(getLandingGenHeadRefArr('prototype'))
+        .concat(getLandingGenHeadRefArr('style'));
+}
+
+function buildLandingHeadRefPromptNote() {
+    if (!isLandingHeadModuleType(landingSelectedModuleType)) return '';
+    var parts = [];
+    var n = 0;
+    if (getLandingGenHeadRefArr('layout').length) {
+        n += 1;
+        parts.push('第' + n + '张为排版参考（请遵循其版式结构）');
+    }
+    if (getLandingGenHeadRefArr('prototype').length) {
+        n += 1;
+        parts.push('第' + n + '张为原型图参考（请参考其内容构图）');
+    }
+    var styleCount = getLandingGenHeadRefArr('style').length;
+    if (styleCount === 1) {
+        n += 1;
+        parts.push('第' + n + '张为风格参考（请对齐画风与配色）');
+    } else if (styleCount > 1) {
+        parts.push('第' + (n + 1) + '–' + (n + styleCount) + '张为风格参考（请对齐画风与配色）');
+    }
+    if (!parts.length) return '';
+    return '【参考图说明】' + parts.join('；') + '。';
+}
+
 function appendLandingGenSize(formData) {
     var size = getLandingModuleSize();
     formData.append('ratio', size.w + ':' + size.h);
@@ -5503,8 +5947,9 @@ function appendLandingGenSize(formData) {
 }
 
 function appendLandingGenRefs(formData) {
-    for (var i = 0; i < landingGenRefImages.length; i++) {
-        var dataUrl = landingGenRefImages[i];
+    var refs = collectLandingGenRefDataUrls();
+    for (var i = 0; i < refs.length; i++) {
+        var dataUrl = refs[i];
         var blob = dataUrlToBlob(dataUrl);
         formData.append('ref_image_' + i, blob, 'ref_' + i + '.' + extFromDataUrl(dataUrl));
     }
@@ -5523,9 +5968,11 @@ function renderLandingGenVariants(vars) {
         return;
     }
     grid.innerHTML = landingGenVariants.map(function(v, i) {
-        return '<div class="landing-variant" id="landingVariant-' + i + '" onclick="selectLandingGenVariant(' + i + ')">' +
+        return '<div class="landing-variant" id="landingVariant-' + i + '" title="点击放大查看" onclick="openLandingGenVariantFullscreen(' + i + ')">' +
             '<img src="/outputs/' + v.filename + '?t=' + Date.now() + '" alt="候选 ' + (i + 1) + '">' +
-            '<div class="label">候选 ' + (i + 1) + '</div></div>';
+            '<div class="label">候选 ' + (i + 1) + ' · 点击放大</div>' +
+            '<button type="button" class="landing-variant-as-ref" onclick="useLandingVariantAsRef(event, ' + i + ')">作为参考图</button>' +
+            '</div>';
     }).join('');
     selectLandingGenVariant(0);
     if (addBtn) addBtn.style.display = '';
@@ -5538,6 +5985,75 @@ function selectLandingGenVariant(idx) {
     });
 }
 
+function openLandingGenVariantFullscreen(idx) {
+    selectLandingGenVariant(idx);
+    if (!landingGenVariants.length) return;
+    var images = landingGenVariants.map(function(v) {
+        return '/outputs/' + v.filename;
+    });
+    var labels = landingGenVariants.map(function(_, i) {
+        return '候选 ' + (i + 1);
+    });
+    var start = Math.max(0, Math.min(idx, images.length - 1));
+    landingGenFullscreenActive = true;
+    openFullscreen(images, start, labels);
+}
+
+async function useLandingVariantAsRef(ev, idx) {
+    if (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
+    var v = landingGenVariants[idx];
+    if (!v || !v.filename) {
+        alert('图片不可用');
+        return;
+    }
+    var headMode = isLandingHeadModuleType(landingSelectedModuleType);
+    var targetArr = headMode ? getLandingGenHeadRefArr('style') : landingGenRefImages;
+    var maxFiles = headMode ? LANDING_HEAD_REF_SLOTS.style.max : REF_IMAGE_MAX;
+    if (targetArr.length >= maxFiles) {
+        alert(headMode
+            ? ('风格参考最多 ' + maxFiles + ' 张，请先移除后再添加')
+            : ('最多上传' + maxFiles + '张参考图，请先移除后再添加'));
+        return;
+    }
+    selectLandingGenVariant(idx);
+    var btn = ev && ev.currentTarget;
+    if (btn) btn.disabled = true;
+    try {
+        var resp = await authFetch('/outputs/' + v.filename);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var dataUrl = await new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function() { resolve(reader.result); };
+            reader.onerror = function() { reject(new Error('读取图片失败')); };
+            reader.readAsDataURL(blob);
+        });
+        targetArr.push(dataUrl);
+        if (headMode) {
+            renderLandingGenHeadRefSlot('style');
+            var zone = document.getElementById(LANDING_HEAD_REF_SLOTS.style.zoneId);
+            if (zone) {
+                try { zone.focus(); } catch (e) {}
+                zone.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        } else {
+            renderLandingGenRefPreviews();
+            var simpleZone = document.getElementById('landingGenRefZone');
+            if (simpleZone) {
+                try { simpleZone.focus(); } catch (e2) {}
+                simpleZone.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+    } catch (err) {
+        alert('加入参考图失败: ' + (err.message || String(err)));
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 async function addLandingVariantToList() {
     var v = landingGenVariants[landingGenSelectedVariant];
     if (!v || !v.filename) {
@@ -5545,6 +6061,8 @@ async function addLandingVariantToList() {
         return;
     }
     var size = getLandingModuleSize();
+    var w = parseInt(v.width, 10) || size.w;
+    var h = parseInt(v.height, 10) || size.h;
     try {
         var resp = await authFetch('/outputs/' + v.filename);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -5556,8 +6074,8 @@ async function addLandingVariantToList() {
             label: size.label,
             file: file,
             url: URL.createObjectURL(blob),
-            width: size.w,
-            height: size.h
+            width: w,
+            height: h
         });
         invalidateLandingStitch();
         renderLandingModulesList();
@@ -6092,13 +6610,23 @@ function renderLandingSliceList() {
     list.innerHTML = landingSliceResults.map(function(slice, i) {
         var fname = 'landing_' + (i + 1) + '_' + sanitizeDownloadNamePart(slice.label) + '.png';
         return '<div class="landing-slice-item">' +
-            '<img src="' + slice.url + '" alt="' + slice.label + '">' +
+            '<img src="' + slice.url + '" alt="' + slice.label + '" title="点击放大 · 右键复制" onclick="openLandingSlicePreview(' + i + ')">' +
             '<div class="meta" style="flex:1;"><strong>' + (i + 1) + '. ' + slice.label + '</strong>' +
             '<span style="font-size:11px;color:rgba(255,255,255,0.45);">' + (slice.width || LANDING_STITCH_WIDTH) + '×' + (slice.height || '?') + '</span></div>' +
             '<a class="action-btn btn-outline" href="' + slice.url + '" download="' + fname + '">下载</a>' +
             '</div>';
     }).join('');
     updateLandingAllSlicesDownloadBtn();
+}
+
+function openLandingSlicePreview(index) {
+    if (!landingSliceResults.length) return;
+    var images = landingSliceResults.map(function(s) { return s.url; });
+    var labels = landingSliceResults.map(function(s, i) {
+        return (i + 1) + '. ' + (s.label || '切片');
+    });
+    var start = Math.max(0, Math.min(index || 0, images.length - 1));
+    openFullscreen(images, start, labels);
 }
 
 async function extractLandingSlices(slices, replace) {
@@ -6687,7 +7215,8 @@ async function generateLandingModule() {
     if (errEl) errEl.style.display = 'none';
     if (btn) btn.disabled = true;
     var formData = new FormData();
-    formData.append('prompt', prompt);
+    var refNote = buildLandingHeadRefPromptNote();
+    formData.append('prompt', refNote ? (prompt + '。' + refNote) : prompt);
     formData.append('count', '2');
     formData.append('image_backend', backend);
     appendLandingGenSize(formData);
@@ -6734,13 +7263,34 @@ function initLandingUploadZones() {
     bindLandingModuleListDrag();
     var genZone = document.getElementById('landingGenRefZone');
     if (genZone) {
-        bindRefImagePaste(genZone, function() { return landingGenRefImages; }, renderLandingGenRefPreviews);
+        bindRefImagePaste(genZone, function() { return landingGenRefImages; }, renderLandingGenRefPreviews, REF_IMAGE_MAX);
         genZone.addEventListener('dragover', function(e) { e.preventDefault(); });
         genZone.addEventListener('drop', function(e) {
             e.preventDefault();
-            addRefImagesFromFiles(e.dataTransfer.files, landingGenRefImages, renderLandingGenRefPreviews);
+            addRefImagesFromFiles(e.dataTransfer.files, landingGenRefImages, renderLandingGenRefPreviews, REF_IMAGE_MAX);
         });
     }
+    Object.keys(LANDING_HEAD_REF_SLOTS).forEach(function(slot) {
+        var meta = LANDING_HEAD_REF_SLOTS[slot];
+        var zone = document.getElementById(meta.zoneId);
+        if (!zone) return;
+        bindRefImagePaste(
+            zone,
+            function() { return getLandingGenHeadRefArr(slot); },
+            function() { renderLandingGenHeadRefSlot(slot); },
+            meta.max
+        );
+        zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+        zone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            addRefImagesFromFiles(
+                e.dataTransfer.files,
+                getLandingGenHeadRefArr(slot),
+                function() { renderLandingGenHeadRefSlot(slot); },
+                meta.max
+            );
+        });
+    });
     var stitchZone = document.getElementById('landingStitchUploadZone');
     if (stitchZone) {
         stitchZone.addEventListener('dragover', function(e) { e.preventDefault(); });
@@ -6759,7 +7309,9 @@ function initLandingUploadZones() {
             if (f && f.type.startsWith('image/')) setLandingCropUploadFile(f);
         });
     }
-    onLandingModuleTypeChange();
+    applyLandingModuleTypePreset(landingSelectedModuleType);
+    updateLandingGenRefModeUi();
+    renderAllLandingGenHeadRefs();
 }
 
 function loadSplashSizePresets() {
