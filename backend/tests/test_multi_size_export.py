@@ -233,6 +233,26 @@ class TestSplashSubframePrompt(unittest.TestCase):
         base = splash_subframe_extend_prompt(1125, 2436)
         self.assertEqual(base, splash_subframe_extend_prompt(1125, 2436, remark="   "))
 
+    def test_splash_subframe_prompt_400x400_fixed_vertical_layout(self):
+        prompt = splash_subframe_extend_prompt(400, 400)
+        self.assertIn("400×400", prompt)
+        self.assertIn("顶部是标题", prompt)
+        self.assertIn("底部是角色", prompt)
+        self.assertIn("上下排版", prompt)
+        # 横版尺寸不注入上下布局
+        other = splash_subframe_extend_prompt(750, 280)
+        self.assertNotIn("顶部是标题", other)
+
+    def test_splash_subframe_prompt_horizontal_sizes_fixed_layout(self):
+        for w, h in ((690, 320), (750, 280), (750, 422)):
+            prompt = splash_subframe_extend_prompt(w, h)
+            self.assertIn(f"{w}×{h}", prompt)
+            self.assertIn("左边是标题", prompt)
+            self.assertIn("右边是角色", prompt)
+            self.assertIn("左右排版", prompt)
+        square = splash_subframe_extend_prompt(400, 400)
+        self.assertNotIn("左边是标题", square)
+
 
 class TestSplashSubframeExport(unittest.TestCase):
     def test_skips_ai_for_hero_size_when_source_is_hero(self):

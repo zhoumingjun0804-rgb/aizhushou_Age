@@ -69,14 +69,8 @@ def save_extract_crop(input_path: Path, crop_path: Path, x: int, y: int, w: int,
 
 
 def build_ai_extract_prompt(user_prompt: str) -> str:
-    subject = (user_prompt or "").strip() or "框选区域中的主体"
-    return (
-        f"【抠图素材】从参考图中仅提取：{subject}。"
-        "输出该元素单独呈现在完全透明背景上的 PNG 素材。"
-        "不要任何海报背景、场景、装饰或其他文字元素。"
-        "必须保持参考图中该主体的造型、配色、字体与细节一致，禁止改造型或重绘。"
-        "画面里只保留这一个主体，边缘干净，可用于设计合成。"
-    )
+    """直接使用用户填写的提取说明，不再注入透明背景等固定规则。"""
+    return (user_prompt or "").strip() or "根据参考图生成素材"
 
 
 def has_rembg() -> bool:
@@ -528,17 +522,24 @@ def _flood_clear_light_background(im: Image.Image, threshold: int = 235) -> None
         stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)])
 
 
-def postprocess_ai_cutout_png(src_path: Path, dst_path: Path, trim: bool = True) -> tuple[int, int]:
-    """AI 成图常为白底，转为透明并裁切到主体。"""
+def postprocess_ai_cutout_png(
+    src_path: Path,
+    dst_path: Path,
+    trim: bool = True,
+    *,
+    force_transparent: bool = True,
+) -> tuple[int, int]:
+    """后处理 AI 成图。默认把近白底转透明；用户要求白底时保留不透明背景。"""
     im = Image.open(src_path).convert("RGBA")
-    px = im.load()
-    w, h = im.size
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = px[x, y]
-            if a > 0 and min(r, g, b) > 238:
-                px[x, y] = (r, g, b, 0)
-    _flood_clear_light_background(im, threshold=235)
+    if force_transparent:
+        px = im.load()
+        w, h = im.size
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                if a > 0 and min(r, g, b) > 238:
+                    px[x, y] = (r, g, b, 0)
+        _flood_clear_light_background(im, threshold=235)
     if trim:
         bbox = im.getbbox()
         if bbox:

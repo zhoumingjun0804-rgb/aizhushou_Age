@@ -95,6 +95,20 @@ SPLASH_SUBFRAME_PROMPT_CORE = (
     "整张图自然延展为一张完整成品，不要出现拼接缝、贴图层或原图硬贴效果。"
 )
 
+# 落地页头图延展 400×400：固定上下构图，直接注入 AI 提示词
+SPLASH_SUBFRAME_LAYOUT_400x400 = (
+    "本尺寸固定为上下排版布局：顶部是标题文字，底部是角色/人物主体，"
+    "标题在上、角色在下，垂直分层清晰，不要把标题与角色挤在画面中部。"
+)
+
+# 落地页头图延展 690×320 / 750×280 / 750×422：固定左右构图
+SPLASH_SUBFRAME_LAYOUT_HORIZONTAL = (
+    "本尺寸固定为左右排版布局：左边是标题文字，右边是角色/人物主体，"
+    "标题在左、角色在右，水平分层清晰，不要把标题与角色挤在画面中部。"
+)
+
+SPLASH_SUBFRAME_HORIZONTAL_SIZES = frozenset({(690, 320), (750, 280), (750, 422)})
+
 
 def splash_subframe_extend_prompt(
     target_w: int,
@@ -105,6 +119,11 @@ def splash_subframe_extend_prompt(
         f"{SPLASH_SUBFRAME_PROMPT_CORE}"
         f"目标输出尺寸为 {target_w}×{target_h} 像素，输出一张完整可直接使用的成品图。"
     )
+    size = (int(target_w), int(target_h))
+    if size == (400, 400):
+        prompt += SPLASH_SUBFRAME_LAYOUT_400x400
+    elif size in SPLASH_SUBFRAME_HORIZONTAL_SIZES:
+        prompt += SPLASH_SUBFRAME_LAYOUT_HORIZONTAL
     extra = (remark or "").strip()
     if extra:
         prompt += extra

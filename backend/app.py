@@ -104,10 +104,8 @@ from image_cutout import (
     apply_cutout_mask,
     build_ai_extract_prompt,
     compute_extract_crop_bbox,
-    extract_subject_cutout,
     has_rembg,
     preferred_cutout_backend,
-    postprocess_ai_cutout_png,
     save_extract_crop,
 )
 from gif_maker import make_animated_gif, make_breathing_gif
@@ -500,6 +498,75 @@ def build_history_entry(*, mode: str, prompt: str, description: str = "", source
             continue
         entry[key] = value
     return entry
+
+
+def _subframe_history_tool_label(tool: str) -> str:
+    if tool == "landing_extend":
+        return "📄头图延展"
+    if tool == "splash_subframe":
+        return "📐开屏拓展"
+    return "📷多尺寸扩边"
+
+
+def _infer_subframe_history_tool(sizes: list) -> str:
+    ids = [str(spec.get("id", "")) for spec in sizes if isinstance(spec, dict)]
+    if any(i.startswith("lhe_") for i in ids):
+        return "landing_extend"
+    if any(i.startswith("expand_") for i in ids):
+        return "splash_subframe"
+    return "subframe_export"
+
+
+def _subframe_history_prompt(tool: str, sizes: list, remark: str = "") -> str:
+    parts = []
+    for spec in sizes:
+        if not isinstance(spec, dict):
+            continue
+        parts.append(str(spec.get("name") or f"{spec.get('width')}×{spec.get('height')}"))
+    size_text = "、".join(parts)
+    if tool == "landing_extend":
+        prefix = "头图延展"
+    elif tool == "splash_subframe":
+        prefix = "开屏拓展"
+    else:
+        prefix = "多尺寸扩边"
+    prompt = f"{prefix} · {size_text}" if size_text else prefix
+    extra = (remark or "").strip()
+    if extra:
+        prompt += f" · {extra}"
+    return prompt
+
+
+def add_subframe_export_history(
+    *,
+    tool: str,
+    project: str,
+    sizes: list,
+    images: list,
+    remark: str = "",
+) -> None:
+    ai_images = [
+        img["filename"]
+        for img in images
+        if isinstance(img, dict) and img.get("filename") and img.get("source") != "passthrough"
+    ]
+    output_images = ai_images or [
+        img["filename"] for img in images if isinstance(img, dict) and img.get("filename")
+    ]
+    if not output_images:
+        return
+    count = len(output_images)
+    entry = build_history_entry(
+        mode="img2img",
+        prompt=_subframe_history_prompt(tool, sizes, remark),
+        description=(remark or "").strip(),
+        source=tool or "subframe_export",
+        project=project,
+        output_images=output_images,
+        variants_count=count,
+        meta_tags=[_subframe_history_tool_label(tool or ""), f"{count}张"],
+    )
+    add_history(entry)
 
 
 def filter_history_items(items):
@@ -2299,63 +2366,49 @@ def run_ai_extract_subject(
     trim: bool = True,
     local_project: Optional[str] = None,
 ) -> dict:
-    """框选区域优先做真实抠图，失败时回退到 Lovart 兜底。"""
+    """AI 抠图：以参考图（可选框选）走 GPT Image 2 生图，按用户说明输出。"""
     from PIL import Image
+
+    if not local_project or not gpt_image_available_for_project(local_project):
+        raise ValueError("未配置 GPT 生图 Key，无法使用 AI 抠图")
 
     with Image.open(input_path) as im:
         img_w, img_h = im.size
     x, y, w, h = compute_extract_crop_bbox(img_w, img_h, roi_x, roi_y, roi_w, roi_h)
     crop_path = UPLOAD_DIR / f"ai_extract_crop_{uuid.uuid4().hex[:12]}.png"
     save_extract_crop(input_path, crop_path, x, y, w, h)
-    local_roi_x = max(0, int(roi_x) - x)
-    local_roi_y = max(0, int(roi_y) - y)
-    local_roi_w = min(int(roi_w), w - local_roi_x)
-    local_roi_h = min(int(roi_h), h - local_roi_y)
     try:
-        try:
-            out_w, out_h, cutout_backend = extract_subject_cutout(
-                crop_path,
-                output_path,
-                trim=trim,
-                roi_x=local_roi_x,
-                roi_y=local_roi_y,
-                roi_w=local_roi_w,
-                roi_h=local_roi_h,
-            )
-            return {
-                "width": out_w,
-                "height": out_h,
-                "roiX": x,
-                "roiY": y,
-                "roiWidth": w,
-                "roiHeight": h,
-                "extractMode": "cutout",
-                "imageBackend": cutout_backend,
-                "usedPrompt": bool((prompt or "").strip()),
-            }
-        except Exception as cutout_err:
-            if not local_project or not load_lovart_credentials_for_project(local_project):
-                raise ValueError(f"智能抠图失败：{cutout_err}")
-            reachable, reach_err = check_lovart_reachable(local_project, timeout=8)
-            if not reachable:
-                raise ValueError(f"智能抠图失败：{cutout_err}；且无法连接 Lovart 兜底服务：{reach_err or '网络不可用'}")
-
         ai_prompt = build_ai_extract_prompt(prompt)
         ratio = bbox_to_ratio(w, h)
-        image_url, error = call_img2img_with_retry(
-            crop_path,
+        image_url, error = call_image_generator(
+            "img2img",
             ai_prompt,
+            image_paths=[crop_path],
             ratio=ratio,
-            max_retries=2,
+            poll_timeout=LOCAL_GENERATION_TIMEOUT,
             local_project=local_project,
+            image_backend="gpt",
+            gpt_model=resolve_gpt_image_model(model="gpt-image-2"),
+            output_width=w,
+            output_height=h,
+            mask_path=None,
         )
         if not image_url:
-            raise ValueError(error or "智能抠图失败，且 Lovart 兜底未返回结果")
+            raise ValueError(error or "GPT Image 2 生成失败，请稍后重试")
 
         raw_path = UPLOAD_DIR / f"ai_extract_raw_{uuid.uuid4().hex[:12]}.png"
-        download_image(image_url, raw_path)
         try:
-            out_w, out_h = postprocess_ai_cutout_png(raw_path, output_path, trim=trim)
+            download_image(image_url, raw_path)
+            finalize_generation_output(raw_path, w, h)
+            with Image.open(raw_path) as im:
+                out = im.convert("RGBA")
+                if trim:
+                    bbox = out.getbbox()
+                    if bbox:
+                        out = out.crop(bbox)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                out.save(output_path, format="PNG", optimize=True)
+                out_w, out_h = out.size
         finally:
             try:
                 raw_path.unlink()
@@ -2368,8 +2421,8 @@ def run_ai_extract_subject(
             "roiY": y,
             "roiWidth": w,
             "roiHeight": h,
-            "extractMode": "ai_fallback",
-            "imageBackend": "lovart",
+            "extractMode": "gpt_image2",
+            "imageBackend": "gpt-image-2",
             "usedPrompt": bool((prompt or "").strip()),
         }
     finally:
@@ -2431,6 +2484,19 @@ def _run_smart_cutout_job(
             "fileSize": output_path.stat().st_size,
             **meta,
         })
+        try:
+            add_history(build_history_entry(
+                mode="img2img",
+                prompt=f"AI 抠图 · {(prompt or '').strip() or '参考图生成'}",
+                description=(prompt or "").strip(),
+                source="ai_cutout",
+                project=local_project or "",
+                output_images=[output_path.name],
+                variants_count=1,
+                meta_tags=["🪄AI抠图", "GPT Image 2"],
+            ))
+        except Exception as hist_err:
+            print(f"[HISTORY] AI 抠图记录失败: {hist_err}")
     except Exception as e:
         print(f"[SMART-CUTOUT] 任务 {job_id} 失败: {e}")
         import traceback
@@ -3788,13 +3854,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "ok": False,
                         "error": (
                             f"任务超时（已等待 {int(age // 60)} 分钟）。"
-                            "可能是 Lovart 网络不通或生成过慢，请稍后重试。"
+                            "GPT Image 2 生成较慢，请稍后重试。"
                         ),
                     }
         self._send_json(job)
 
     def _handle_smart_cutout(self):
-        """框选区域主体抠图为透明 PNG（优先本地抠图，必要时 Lovart 兜底）。"""
+        """AI 抠图：参考图 + 说明，用 GPT Image 2 生图输出透明素材。"""
         try:
             _reload_runtime_env()
             content_type = self.headers.get("Content-Type", "")
@@ -3826,6 +3892,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
             if not local_project:
                 return
+            if not gpt_image_available_for_project(local_project):
+                self._send_json({"error": "未配置 GPT 生图 Key，无法使用 AI 抠图"})
+                return
             job_id = uuid.uuid4().hex[:12]
             ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()
             if ext not in (".png", ".jpg", ".jpeg", ".webp"):
@@ -3836,7 +3905,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             input_path.write_bytes(img_field["data"])
             _write_smart_cutout_job(job_id, {
                 "status": "running",
-                "message": "正在识别主体并去除背景，通常 5～20 秒…",
+                "message": "GPT Image 2 正在生成，约需 1–3 分钟…",
             })
             thread = threading.Thread(
                 target=_run_smart_cutout_job,
@@ -4093,6 +4162,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         _ip, tw, th, _lp, remark=_rm or None
                     ),
                 )
+                history_tool = str(fields.get("history_tool", "") or "").strip()
+                if not history_tool:
+                    history_tool = _infer_subframe_history_tool(requested_sizes)
+                try:
+                    add_subframe_export_history(
+                        tool=history_tool,
+                        project=project_name,
+                        sizes=requested_sizes,
+                        images=result.get("images") or [],
+                        remark=subframe_remark,
+                    )
+                except Exception as hist_err:
+                    print(f"[HISTORY] 扩边记录失败: {hist_err}")
             else:
                 result = export_multi_sizes(
                     input_path,
