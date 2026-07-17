@@ -913,6 +913,16 @@
         .gifmaker-result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
         .gifmaker-result-actions .action-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
         .gifmaker-svga-meta { font-size: 12px; color: rgba(167,139,250,0.9); margin-top: 8px; display: none; }
+        .svga-preview-result { text-align: center; }
+        .svga-player-stage { display: inline-block; max-width: 100%; border-radius: 10px; padding: 10px;
+            border: 1px solid rgba(167,139,250,0.4);
+            background-color: #2a2440;
+            background-image: linear-gradient(45deg, rgba(255,255,255,0.06) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.06) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.06) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.06) 75%);
+            background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+        .svga-player-stage.bg-white { background-color: #ffffff; background-image: none; }
+        .svga-player-stage canvas { display: block; max-width: 100%; max-height: 360px; margin: 0 auto; }
+        .svga-player-controls { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+        .svga-bg-toggle { font-size: 13px; color: rgba(255,255,255,0.75); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
         .gifmaker-layout { margin-bottom: 16px; display: none; }
         .gifmaker-layout-title { font-size: 13px; color: rgba(255,255,255,0.75); margin-bottom: 10px; line-height: 1.5; }
         .gifmaker-canvas-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0;
@@ -1949,6 +1959,7 @@
                 <div class="gifmaker-mode-tabs">
                     <button type="button" class="gifmaker-mode-btn active" data-gif-mode="breathing" onclick="setGifmakerMode('breathing', this)">✨ 呼吸动图</button>
                     <button type="button" class="gifmaker-mode-btn" data-gif-mode="svga" onclick="setGifmakerMode('svga', this)">🎬 GIF 转 SVGA</button>
+                    <button type="button" class="gifmaker-mode-btn" data-gif-mode="preview" onclick="setGifmakerMode('preview', this)">🔍 SVGA 预览</button>
                 </div>
                 <div class="gifmaker-panel" id="gifPanelBreathing">
                 <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图、可选<strong>前景</strong>与动效图层（建议透明底 PNG）。点击格子后 <strong>Ctrl+V</strong> 可粘贴图片。前景叠在最上层且不动；在下方格子中上传即启用对应动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>。</p>
@@ -2031,6 +2042,7 @@
                     <div class="gifmaker-result-actions" id="gifmakerResultActions" style="display:none;">
                         <a class="action-btn btn-primary" id="gifDownloadBtn" href="#" download>💾 下载 GIF</a>
                         <button type="button" class="action-btn btn-green" id="gifSvgaBtn" onclick="convertBreathingGifToSvga()">🎬 下载 SVGA</button>
+                        <button type="button" class="action-btn btn-primary" id="gifSvgaPreviewBtn" style="display:none;" onclick="previewConvertedSvga({download_url: gifLastResult.svgaDownloadUrl, output_file: gifLastResult.svgaOutputFile})">🔍 在线预览</button>
                     </div>
                     <p class="gifmaker-svga-meta" id="gifSvgaMeta"></p>
                 </div>
@@ -2055,9 +2067,31 @@
                         <img id="gifSvgaUploadResultPreview" alt="GIF 预览">
                         <div class="gifmaker-result-actions" id="gifSvgaUploadResultActions" style="display:none;margin-top:14px;">
                             <button type="button" class="action-btn btn-green" id="gifSvgaUploadDlBtn" onclick="downloadGifSvgaUploadResult()">💾 下载 SVGA</button>
+                            <button type="button" class="action-btn btn-primary" onclick="previewConvertedSvga(gifSvgaUploadResult)">🔍 在线预览</button>
                             <button type="button" class="action-btn btn-outline" onclick="clearGifSvgaUpload()">🔄 重新上传</button>
                         </div>
                         <p class="gifmaker-svga-meta" id="gifSvgaUploadResultMeta"></p>
+                    </div>
+                </div>
+                <div class="gifmaker-panel hidden" id="gifPanelPreview">
+                    <p class="gifmaker-hint">上传或<strong>拖拽</strong> <strong>.svga</strong> 文件，在线预览动画效果（不会上传到服务器，直接在浏览器播放）。也可从「GIF 转 SVGA」结果点「在线预览」自动载入。</p>
+                    <div class="gifmaker-svga-upload" id="svgaPreviewUploadSlot" onclick="document.getElementById('svgaPreviewFileInput').click()">
+                        <span class="gifmaker-slot-title">📁 上传 SVGA</span>
+                        <span class="gifmaker-slot-desc">点击或拖拽 .svga 文件到此处</span>
+                        <p class="gifmaker-slot-desc" id="svgaPreviewName" style="display:none;margin-top:8px;"></p>
+                    </div>
+                    <input type="file" id="svgaPreviewFileInput" accept=".svga" style="display:none" onchange="onSvgaPreviewFileSelected(event)">
+                    <p id="svgaPreviewErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:12px;"></p>
+                    <div class="svga-preview-result" id="svgaPreviewResultWrap" style="display:none;">
+                        <div class="svga-player-stage" id="svgaPreviewStage">
+                            <canvas id="svgaPreviewCanvas"></canvas>
+                        </div>
+                        <div class="svga-player-controls">
+                            <button type="button" class="action-btn btn-outline" id="svgaPreviewPlayBtn" onclick="toggleSvgaPreviewPlay()">⏸ 暂停</button>
+                            <label class="svga-bg-toggle"><input type="checkbox" id="svgaPreviewBgWhite" onchange="onSvgaPreviewBgToggle()"> 白底</label>
+                            <button type="button" class="action-btn btn-outline" onclick="clearSvgaPreview()">🔄 重新上传</button>
+                        </div>
+                        <p class="gifmaker-svga-meta" id="svgaPreviewMeta" style="display:none;"></p>
                     </div>
                 </div>
             </div>
@@ -2096,6 +2130,7 @@
     </div>
     <div class="img-toast" id="imgToast" role="status" aria-live="polite"></div>
     
+<script src="/static/svga.min.js"></script>
 <script>
 var currentProject = null;
 var selectedProjectImages = [];
@@ -10284,8 +10319,10 @@ function setGifmakerMode(mode, btnEl) {
     });
     var breathing = document.getElementById('gifPanelBreathing');
     var svga = document.getElementById('gifPanelSvga');
+    var preview = document.getElementById('gifPanelPreview');
     if (breathing) breathing.classList.toggle('hidden', mode !== 'breathing');
     if (svga) svga.classList.toggle('hidden', mode !== 'svga');
+    if (preview) preview.classList.toggle('hidden', mode !== 'preview');
 }
 
 function updateGifSvgaConvertBtnState() {
@@ -10435,6 +10472,150 @@ async function convertUploadedGifToSvga() {
             if (btn.textContent === '正在转换...') btn.textContent = prevText || '🎬 转换为 SVGA 并下载';
         }
     }
+}
+
+// ─── SVGA 在线预览 ─────────────────────────────────────
+var svgaPlayers = {};
+var svgaPreviewObjectUrl = null;
+
+function svgaEnsurePlayer(canvasId) {
+    if (!window.SVGA || !SVGA.Parser || !SVGA.Player) return null;
+    if (!svgaPlayers[canvasId]) {
+        try {
+            var parser = new SVGA.Parser();
+            var player = new SVGA.Player('#' + canvasId);
+            player.loops = 0;
+            player.clearsAfterStop = false;
+            svgaPlayers[canvasId] = { parser: parser, player: player, playing: false };
+        } catch (e) {
+            return null;
+        }
+    }
+    return svgaPlayers[canvasId];
+}
+
+function svgaLoadUrl(canvasId, url, onOk, onErr) {
+    var p = svgaEnsurePlayer(canvasId);
+    if (!p) { if (onErr) onErr('SVGA 播放器未加载，请刷新页面后重试'); return; }
+    try {
+        p.parser.load(url, function(videoItem) {
+            try {
+                p.player.setVideoItem(videoItem);
+                p.player.startAnimation();
+                p.playing = true;
+                if (onOk) onOk(videoItem);
+            } catch (e) {
+                if (onErr) onErr(e && e.message ? e.message : String(e));
+            }
+        }, function(err) {
+            if (onErr) onErr(err && err.message ? err.message : (typeof err === 'string' ? err : '无法解析该 SVGA 文件'));
+        });
+    } catch (e) {
+        if (onErr) onErr(e && e.message ? e.message : String(e));
+    }
+}
+
+function svgaTogglePlay(canvasId, btn) {
+    var p = svgaPlayers[canvasId];
+    if (!p || !p.player) return;
+    if (p.playing) {
+        p.player.pauseAnimation();
+        p.playing = false;
+        if (btn) btn.textContent = '▶ 播放';
+    } else {
+        p.player.startAnimation();
+        p.playing = true;
+        if (btn) btn.textContent = '⏸ 暂停';
+    }
+}
+
+function svgaFormatMeta(videoItem) {
+    if (!videoItem) return '';
+    var vs = videoItem.videoSize || {};
+    var w = Math.round(vs.width || 0);
+    var h = Math.round(vs.height || 0);
+    var frames = videoItem.frames || 0;
+    var fps = videoItem.FPS || videoItem.fps || 0;
+    var parts = [];
+    if (w && h) parts.push(w + '×' + h);
+    if (frames) parts.push(frames + ' 帧');
+    if (fps) parts.push(fps + ' FPS');
+    return parts.join(' · ');
+}
+
+// 从「GIF 转 SVGA」结果一键在线预览：切到预览页并载入
+function previewConvertedSvga(result) {
+    if (!result || !result.download_url) { alert('没有可预览的 SVGA'); return; }
+    var previewBtn = document.querySelector('.gifmaker-mode-btn[data-gif-mode="preview"]');
+    if (previewBtn) setGifmakerMode('preview', previewBtn);
+    clearSvgaPreview();
+    var nameEl = document.getElementById('svgaPreviewName');
+    if (nameEl) { nameEl.textContent = result.output_file || 'output.svga'; nameEl.style.display = 'block'; }
+    loadSvgaPreviewFromUrl(result.download_url + '?t=' + Date.now(), result.output_file);
+}
+
+function loadSvgaPreviewFromUrl(url, name) {
+    var wrap = document.getElementById('svgaPreviewResultWrap');
+    var errEl = document.getElementById('svgaPreviewErrorMsg');
+    var metaEl = document.getElementById('svgaPreviewMeta');
+    var playBtn = document.getElementById('svgaPreviewPlayBtn');
+    if (errEl) errEl.style.display = 'none';
+    svgaLoadUrl('svgaPreviewCanvas', url, function(videoItem) {
+        if (wrap) wrap.style.display = 'block';
+        if (playBtn) playBtn.textContent = '⏸ 暂停';
+        if (metaEl) {
+            var m = svgaFormatMeta(videoItem);
+            metaEl.textContent = (name ? name + '  ' : '') + m;
+            metaEl.style.display = 'block';
+        }
+    }, function(err) {
+        if (wrap) wrap.style.display = 'none';
+        if (errEl) { errEl.textContent = 'SVGA 预览失败：' + err; errEl.style.display = 'block'; }
+    });
+}
+
+function setSvgaPreviewFile(file) {
+    if (!file) return;
+    if (!/\.svga$/i.test(file.name)) { alert('请上传 .svga 格式的文件'); return; }
+    var slot = document.getElementById('svgaPreviewUploadSlot');
+    var nameEl = document.getElementById('svgaPreviewName');
+    if (slot) slot.classList.add('filled');
+    if (nameEl) { nameEl.textContent = file.name + ' · ' + (file.size / 1024).toFixed(1) + ' KB'; nameEl.style.display = 'block'; }
+    if (svgaPreviewObjectUrl) { URL.revokeObjectURL(svgaPreviewObjectUrl); svgaPreviewObjectUrl = null; }
+    svgaPreviewObjectUrl = URL.createObjectURL(file);
+    loadSvgaPreviewFromUrl(svgaPreviewObjectUrl, file.name);
+}
+
+function onSvgaPreviewFileSelected(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) setSvgaPreviewFile(f);
+    ev.target.value = '';
+}
+
+function toggleSvgaPreviewPlay() {
+    svgaTogglePlay('svgaPreviewCanvas', document.getElementById('svgaPreviewPlayBtn'));
+}
+
+function onSvgaPreviewBgToggle() {
+    var stage = document.getElementById('svgaPreviewStage');
+    var chk = document.getElementById('svgaPreviewBgWhite');
+    if (stage) stage.classList.toggle('bg-white', chk && chk.checked);
+}
+
+function clearSvgaPreview() {
+    var slot = document.getElementById('svgaPreviewUploadSlot');
+    var nameEl = document.getElementById('svgaPreviewName');
+    var wrap = document.getElementById('svgaPreviewResultWrap');
+    var errEl = document.getElementById('svgaPreviewErrorMsg');
+    var metaEl = document.getElementById('svgaPreviewMeta');
+    var p = svgaPlayers['svgaPreviewCanvas'];
+    if (p && p.player) { try { p.player.stopAnimation(true); } catch (e) {} p.playing = false; }
+    if (svgaPreviewObjectUrl) { URL.revokeObjectURL(svgaPreviewObjectUrl); svgaPreviewObjectUrl = null; }
+    if (slot) slot.classList.remove('filled');
+    if (nameEl) { nameEl.style.display = 'none'; nameEl.textContent = ''; }
+    if (wrap) wrap.style.display = 'none';
+    if (errEl) errEl.style.display = 'none';
+    if (metaEl) { metaEl.style.display = 'none'; metaEl.textContent = ''; }
 }
 
 function getGifLayerFile(key) {
@@ -11072,6 +11253,25 @@ function initGifUploadZones() {
             if (f) setGifUploadFile(f);
         });
     }
+    var svgaPvSlot = document.getElementById('svgaPreviewUploadSlot');
+    if (svgaPvSlot) {
+        svgaPvSlot.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            svgaPvSlot.classList.add('dragover');
+        });
+        svgaPvSlot.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            svgaPvSlot.classList.remove('dragover');
+        });
+        svgaPvSlot.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            svgaPvSlot.classList.remove('dragover');
+            var f = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) setSvgaPreviewFile(f);
+        });
+    }
 }
 
 function onGifBgSelected(ev) {
@@ -11091,6 +11291,8 @@ function resetGifSvgaDownload() {
         svgaBtn.disabled = true;
         svgaBtn.textContent = '🎬 下载 SVGA';
     }
+    var svgaPvBtn = document.getElementById('gifSvgaPreviewBtn');
+    if (svgaPvBtn) svgaPvBtn.style.display = 'none';
 }
 
 async function convertBreathingGifToSvga() {
@@ -11151,6 +11353,8 @@ async function convertBreathingGifToSvga() {
         if (btn) btn.textContent = '🎬 再次下载 SVGA';
         gifLastResult.svgaDownloadUrl = data.download_url;
         gifLastResult.svgaOutputFile = data.output_file;
+        var svgaPvBtn = document.getElementById('gifSvgaPreviewBtn');
+        if (svgaPvBtn) svgaPvBtn.style.display = 'inline-flex';
         notifyToolTaskComplete(true);
     } catch (err) {
         if (errEl) {

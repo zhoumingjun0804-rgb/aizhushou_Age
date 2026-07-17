@@ -2708,6 +2708,7 @@ def parse_multipart(body, boundary):
 # ─── HTML 页面 ────────────────────────────────────────────────────
 TEMPLATE_DIR = pathlib.Path(__file__).resolve().parent / "templates"
 HTML_TEMPLATE = TEMPLATE_DIR / "index.html"
+STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _html_cache = {"mtime": 0.0, "content": ""}
 
 
@@ -2861,6 +2862,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             params = urllib.parse.parse_qs(parsed_url.query)
             url = params.get('url', [''])[0]
             self._handle_fetch_url(url)
+        elif path.startswith('/static/'):
+            self._serve_file(STATIC_DIR, path.split('/')[-1])
         elif path.startswith('/outputs/'):
             self._serve_file(OUTPUT_DIR, path.split('/')[-1])
         elif path.startswith('/projects/') and '/images/' in path:
@@ -3581,7 +3584,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             ext = filepath.suffix.lower()
             mime = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                    'gif': 'image/gif', 'webp': 'image/webp', 'svga': 'application/octet-stream'}.get(
+                    'gif': 'image/gif', 'webp': 'image/webp', 'svga': 'application/octet-stream',
+                    'js': 'application/javascript; charset=utf-8', 'css': 'text/css; charset=utf-8',
+                    'html': 'text/html; charset=utf-8', 'htm': 'text/html; charset=utf-8'}.get(
                 ext.lstrip('.'), 'application/octet-stream')
             self.send_header('Content-type', mime)
             self.send_header('Content-Length', str(filepath.stat().st_size))
