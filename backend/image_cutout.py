@@ -69,8 +69,11 @@ def save_extract_crop(input_path: Path, crop_path: Path, x: int, y: int, w: int,
 
 
 def build_ai_extract_prompt(user_prompt: str) -> str:
-    """直接使用用户填写的提取说明，不再注入透明背景等固定规则。"""
-    return (user_prompt or "").strip() or "根据参考图生成素材"
+    """在用户填写的提取说明基础上，固定追加「白色背景」关键词。"""
+    base = (user_prompt or "").strip() or "根据参考图生成素材"
+    if "白色背景" in base:
+        return base
+    return f"{base}，白色背景"
 
 
 def has_rembg() -> bool:

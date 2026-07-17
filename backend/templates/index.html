@@ -1684,10 +1684,7 @@
                         <div class="cutout-opt-extract visible" id="cutoutOptExtract">
                             <label style="font-size:12px;color:rgba(255,255,255,0.85);width:100%;">
                                 提取说明（建议填写，描述要提取的内容）
-                                <input type="text" id="cutoutExtractPrompt" class="cutout-prompt-input" placeholder="例如：提取图中3个角色，透明背景">
-                            </label>
-                            <label style="font-size:12px;color:rgba(255,255,255,0.65);">
-                                <input type="checkbox" id="cutoutTrim" checked> 自动裁切到主体边缘
+                                <input type="text" id="cutoutExtractPrompt" class="cutout-prompt-input" placeholder="例如：提取图中3个角色">
                             </label>
                         </div>
                     </div>
@@ -9779,8 +9776,7 @@ async function applySmartCutout() {
         form.append('roi_w', String(nat.w));
         form.append('roi_h', String(nat.h));
         form.append('prompt', promptText);
-        var trimEl = document.getElementById('cutoutTrim');
-        form.append('trim', trimEl && trimEl.checked ? '1' : '0');
+        form.append('trim', '0');
         var project = getSelectedProjectName();
         if (project) form.append('local_project', project);
         var resp = await fetchWithRetry('/api/smart-cutout', { method: 'POST', body: form }, 2);
