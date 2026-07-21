@@ -189,7 +189,7 @@ class LovartQueue:
                     raise DuplicateHighJobError(j["job_id"])
 
         job_id = uuid.uuid4().hex[:12]
-        total = int(payload.get("count") or 3)
+        total = int(payload.get("count") or 1)
         now = time.time()
         job: dict[str, Any] = {
             "job_id": job_id,

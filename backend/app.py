@@ -1603,7 +1603,7 @@ def _save_logo_from_fields(fields: dict):
 def build_generation_payload(fields: dict, kind: str) -> dict:
     """从 multipart 字段构建生图任务 payload。"""
     project = str(fields.get("project", "") or "").strip()
-    count = int(str(fields.get("count", "3")).strip() or "3")
+    count = int(str(fields.get("count", "1")).strip() or "1")
     client_id = str(fields.get("client_id", "") or "").strip()
     image_backend_raw = str(fields.get("image_backend", "") or "")
     image_backend = normalize_image_backend(image_backend_raw)
@@ -1696,7 +1696,7 @@ def execute_generation_job(job: dict) -> None:
         return
 
     prompt = payload.get("prompt", "")
-    count = int(payload.get("count") or 3)
+    count = int(payload.get("count") or 1)
     ratio = payload.get("ratio", "1:1")
     output_width = payload.get("output_width")
     output_height = payload.get("output_height")
@@ -3397,7 +3397,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not auth_project:
             return
         project = auth_project
-        count = int(fields.get('count', '3'))
+        count = int(fields.get('count', '1'))
         ratio = fields.get('ratio', '1:1')
         if not prompt:
             self._send_json({"error": "请提供关键词"})
@@ -3487,7 +3487,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not auth_project:
             return
         project = auth_project
-        count = int(fields.get('count', '3'))
+        count = int(fields.get('count', '1'))
         ratio = fields.get('ratio', '1:1')
         uploaded_file = fields.get('file')
 

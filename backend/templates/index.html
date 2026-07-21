@@ -278,6 +278,11 @@
         .keyword-header span:first-child { font-size: 14px; font-weight: 600; color: #a78bfa; }
         .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); }
         .keyword-hint.warn { color: #fbbf24; }
+        .design-brief-textarea { width: 100%; min-height: 168px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+            background: rgba(0,0,0,0.2); color: rgba(255,255,255,0.9); font-size: 13px; line-height: 1.55; resize: vertical;
+            font-family: inherit; }
+        .design-brief-textarea:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
+        .design-brief-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 6px; line-height: 1.5; }
         .keyword-textarea { width: 100%; min-height: 80px; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
                             font-size: 14px; line-height: 1.6; resize: vertical; background: rgba(255,255,255,0.04);
                             color: rgba(255,255,255,0.85);
@@ -1088,55 +1093,9 @@
 
                 <div class="form-row">
                     <div class="form-item full-width">
-                        <label>需求名称</label>
-                        <input type="text" id="requirementName" placeholder="用于下载文件名，如：暑期班开屏">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item">
-                        <label>主标题</label>
-                        <input type="text" id="mainTitle" placeholder="如：暑期班火热招生中">
-                    </div>
-                    <div class="form-item">
-                        <label>副标题</label>
-                        <input type="text" id="subTitle" placeholder="如：限时优惠 前50名8折">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>画面描述</label>
-                        <input type="text" id="visualDesc" placeholder="如：蓝天白云，卡通儿童奔跑">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item">
-                        <label>风格</label>
-                        <select id="styleSelect" onchange="toggleCustomStyle()">
-                            <option value="">默认</option>
-                            <option value="简约">简约</option>
-                            <option value="卡通">卡通</option>
-                            <option value="中国风">中国风</option>
-                            <option value="科技感">科技感</option>
-                            <option value="可爱">可爱</option>
-                            <option value="商务">商务</option>
-                            <option value="复古">复古</option>
-                            <option value="潮流">潮流</option>
-                            <option value="custom">自定义</option>
-                        </select>
-                    </div>
-                    <div class="form-item" id="customStyleInput" style="display:none;">
-                        <label>自定义风格</label>
-                        <input type="text" id="customStyle" placeholder="如：赛博朋克、国潮">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>排版参考</label>
-                        <input type="text" id="layoutRef" placeholder="如：标题居中顶部，正文底部左对齐">
+                        <label>设计需求</label>
+                        <textarea id="designBrief" class="design-brief-textarea" placeholder="需求名称：暑期班开屏&#10;主标题：暑期班火热招生中&#10;副标题：限时优惠 前50名8折&#10;画面描述：蓝天白云，卡通儿童奔跑&#10;风格：卡通&#10;排版参考：标题居中顶部，正文底部左对齐&#10;补充备注：品牌色 #FF6B6B，LOGO 左上角"></textarea>
+                        <p class="design-brief-hint">按行填写即可，不需要的项可留空或删掉整行；也可直接写一段话描述画面。</p>
                     </div>
                 </div>
                 
@@ -1211,19 +1170,12 @@
                     <div class="form-item">
                         <label>生成数量</label>
                         <select id="countSelect">
-                            <option value="1">1 张</option>
-                            <option value="3" selected>3 张</option>
+                            <option value="1" selected>1 张</option>
+                            <option value="3">3 张</option>
                         </select>
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-item full-width">
-                        <label>补充备注</label>
-                        <input type="text" id="extraNotes" placeholder="如：品牌色 #FF6B6B，LOGO 左上角">
-                    </div>
-                </div>
-
                 <div class="form-row" id="imageBackendRow" style="display:none">
                     <div class="form-item full-width">
                         <label>生图模型</label>
@@ -2487,8 +2439,57 @@ function sanitizeDownloadNamePart(text) {
 }
 
 function getRequirementName() {
-    var el = document.getElementById('requirementName');
-    return sanitizeDownloadNamePart(el && el.value);
+    var brief = parseDesignBrief(getDesignBriefText());
+    return sanitizeDownloadNamePart(brief.requirementName || brief.mainTitle);
+}
+
+function getDesignBriefText() {
+    var el = document.getElementById('designBrief');
+    return el ? el.value : '';
+}
+
+function parseDesignBrief(text) {
+    var result = {
+        requirementName: '',
+        mainTitle: '',
+        subTitle: '',
+        visualDesc: '',
+        style: '',
+        layoutRef: '',
+        extraNotes: '',
+        raw: (text || '').trim()
+    };
+    if (!result.raw) return result;
+
+    var freeLines = [];
+    var matched = false;
+    result.raw.split(/\r?\n/).forEach(function(line) {
+        var trimmed = line.trim();
+        if (!trimmed) return;
+        var m = trimmed.match(/^(.+?)[：:]\s*(.*)$/);
+        if (!m) {
+            freeLines.push(trimmed);
+            return;
+        }
+        var label = m[1].trim();
+        var value = m[2].trim();
+        if (label === '需求名称') { result.requirementName = value; matched = true; return; }
+        if (label === '主标题') { result.mainTitle = value; matched = true; return; }
+        if (label === '副标题') { result.subTitle = value; matched = true; return; }
+        if (label === '画面描述') { result.visualDesc = value; matched = true; return; }
+        if (label === '风格') { result.style = value; matched = true; return; }
+        if (label === '排版参考') { result.layoutRef = value; matched = true; return; }
+        if (label === '补充备注') { result.extraNotes = value; matched = true; return; }
+        freeLines.push(trimmed);
+    });
+
+    if (!matched) {
+        result.visualDesc = freeLines.join('\n') || result.raw;
+    } else if (freeLines.length) {
+        var extra = freeLines.join('\n');
+        result.visualDesc = result.visualDesc ? (result.visualDesc + '\n' + extra) : extra;
+    }
+    return result;
 }
 
 function getDesignTypeLabel() {
@@ -3162,12 +3163,6 @@ function clearProjectRefs() {
 
 function onDesignTypeChange() {
     applyDefaultSizeForDesignType();
-    var designType = document.getElementById('designType').value;
-    var meta = getSelectedProjectMeta();
-    if (meta && meta.catalog === 'static_types' && designType === '其他') {
-        document.getElementById('styleSelect').value = 'custom';
-        toggleCustomStyle();
-    }
     onProjectOrDesignTypeChange();
 }
 
@@ -3743,39 +3738,21 @@ function renderUploadedPreviews() {
     }
 }
 
-// 自定义风格切换
-function toggleCustomStyle() {
-    var sel = document.getElementById('styleSelect');
-    var customInput = document.getElementById('customStyleInput');
-    if (sel.value === 'custom') {
-        customInput.style.display = 'block';
-    } else {
-        customInput.style.display = 'none';
-    }
-}
-
-// 获取风格值
-function getStyleValue() {
-    var sel = document.getElementById('styleSelect');
-    if (sel.value === 'custom') {
-        return document.getElementById('customStyle').value.trim();
-    }
-    return sel.value;
-}
-
-// 分析关键词（首次分析与「重新分析」共用）
-var keywordAnalysisReady = false;
-var keywordAnalysisSnapshot = '';
-
 function buildDesignSummary() {
+    var brief = parseDesignBrief(getDesignBriefText());
+    var visualDesc = brief.visualDesc;
+    if (!visualDesc && !brief.mainTitle && !brief.subTitle && brief.raw &&
+        !brief.style && !brief.layoutRef && !brief.extraNotes) {
+        visualDesc = brief.raw;
+    }
     return {
         '设计类型': getDesignTypeLabel(),
-        '主标题': document.getElementById('mainTitle').value.trim(),
-        '副标题': document.getElementById('subTitle').value.trim(),
-        '画面描述': document.getElementById('visualDesc').value.trim(),
-        '排版参考': document.getElementById('layoutRef').value.trim(),
-        '风格': getStyleValue(),
-        '补充备注': document.getElementById('extraNotes').value.trim()
+        '主标题': brief.mainTitle,
+        '副标题': brief.subTitle,
+        '画面描述': visualDesc,
+        '排版参考': brief.layoutRef,
+        '风格': brief.style,
+        '补充备注': brief.extraNotes
     };
 }
 
@@ -3808,6 +3785,11 @@ function showKeywordAnalysisResult(prompt, sourceHintText, options) {
 
 function buildPromptFromForm() {
     var summary = buildDesignSummary();
+    var brief = parseDesignBrief(getDesignBriefText());
+    var hasStructured = summary['主标题'] || summary['副标题'] || summary['画面描述'] ||
+        summary['风格'] || summary['排版参考'] || summary['补充备注'];
+    if (!hasStructured && brief.raw) return brief.raw;
+
     var designType = summary['设计类型'] || '海报';
     var mainTitle = summary['主标题'] || '';
     var subTitle = summary['副标题'] || '';
@@ -3842,21 +3824,20 @@ function resolveGenerationPrompt() {
 }
 
 function bindDesignFormChangeReset() {
-    ['mainTitle', 'subTitle', 'visualDesc', 'layoutRef', 'extraNotes', 'styleSelect', 'customStyle'].forEach(function(id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener('input', function() {
-            if (!keywordAnalysisReady) return;
-            var fp = designSummaryFingerprint(buildDesignSummary());
-            if (fp !== keywordAnalysisSnapshot) resetKeywordAnalysis();
-        });
-        el.addEventListener('change', function() {
+    var el = document.getElementById('designBrief');
+    if (!el) return;
+    ['input', 'change'].forEach(function(evt) {
+        el.addEventListener(evt, function() {
             if (!keywordAnalysisReady) return;
             var fp = designSummaryFingerprint(buildDesignSummary());
             if (fp !== keywordAnalysisSnapshot) resetKeywordAnalysis();
         });
     });
 }
+
+// 分析关键词（首次分析与「重新分析」共用）
+var keywordAnalysisReady = false;
+var keywordAnalysisSnapshot = '';
 
 async function analyzeKeyword() {
     var summary = buildDesignSummary();
@@ -3918,7 +3899,7 @@ async function analyzeKeyword() {
 async function generateWithKeyword() {
     var prompt = resolveGenerationPrompt().trim();
     if (!prompt) {
-        alert('请至少填写一项设计需求（如画面描述、主标题等）');
+        alert('请填写设计需求（至少描述画面或标题）');
         return;
     }
     
@@ -3926,7 +3907,7 @@ async function generateWithKeyword() {
     formData.append('prompt', prompt);
     formData.append('project', currentProject ? currentProject.name : '');
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
-    var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '3';
+    var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '1';
     formData.append('count', String(count));
     formData.append('image_backend', getSelectedImageBackend());
     appendProjectContext(formData);
@@ -3948,24 +3929,13 @@ async function generateWithKeyword() {
 
 // 生成变体（保留旧函数兼容）
 async function generateVariants() {
-    var designType = getDesignTypeLabel();
-    var mainTitle = document.getElementById('mainTitle').value.trim();
-    
-    var summary = {
-        '设计类型': designType,
-        '主标题': mainTitle,
-        '副标题': document.getElementById('subTitle').value.trim(),
-        '画面描述': document.getElementById('visualDesc').value.trim(),
-        '排版参考': document.getElementById('layoutRef').value.trim(),
-        '风格': getStyleValue(),
-        '补充备注': document.getElementById('extraNotes').value.trim()
-    };
+    var summary = buildDesignSummary();
     
     var formData = new FormData();
     formData.append('summary', JSON.stringify(summary));
     formData.append('project', currentProject ? currentProject.name : '');
     formData.append('selected_project_images', JSON.stringify(selectedProjectImages));
-    var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '3';
+    var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '1';
     formData.append('count', String(count));
     formData.append('image_backend', getSelectedImageBackend());
     appendProjectContext(formData);
@@ -4806,11 +4776,8 @@ function resetAll() {
     document.getElementById('actionsSection').style.display = 'none';
     hideGenerationSizeNotice();
     resetKeywordAnalysis();
-    document.getElementById('mainTitle').value = '';
-    document.getElementById('subTitle').value = '';
-    document.getElementById('visualDesc').value = '';
-    document.getElementById('layoutRef').value = '';
-    document.getElementById('extraNotes').value = '';
+    var designBrief = document.getElementById('designBrief');
+    if (designBrief) designBrief.value = '';
     selectedVariant = null;
     variants = [];
 }
