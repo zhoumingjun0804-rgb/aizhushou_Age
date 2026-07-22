@@ -9943,6 +9943,18 @@ function applyCropHandle(handle, dx, dy, start, natW, natH) {
     return clampCropRectFree(x, y, w, h, natW, natH);
 }
 
+function syncCropOutputFromSelection() {
+    var w = Math.max(1, Math.round(cropNatural.w || 0));
+    var h = Math.max(1, Math.round(cropNatural.h || 0));
+    if (w < 1 || h < 1) return;
+    var outW = document.getElementById('cropOutW');
+    var outH = document.getElementById('cropOutH');
+    var hint = document.getElementById('cropRatioHint');
+    if (outW) outW.value = String(w);
+    if (outH) outH.value = String(h);
+    if (hint) hint.textContent = '比例 ' + (w / h).toFixed(3);
+}
+
 function onCropDragMove(e) {
     if (!cropDrag.mode || !cropDrag.startBox) return;
     var img = document.getElementById('cropPreviewImg');
@@ -9952,7 +9964,6 @@ function onCropDragMove(e) {
     var dy = (e.clientY - cropDrag.startY) * scaleY;
     var b = cropDrag.startBox;
     var natW = img.naturalWidth, natH = img.naturalHeight;
-    var aspect = getCropAspect();
     if (cropDrag.mode === 'move') {
         cropNatural.x = clamp(b.x + dx, 0, natW - b.w);
         cropNatural.y = clamp(b.y + dy, 0, natH - b.h);
@@ -9964,16 +9975,19 @@ function onCropDragMove(e) {
         cropNatural.y = rect.y;
         cropNatural.w = rect.w;
         cropNatural.h = rect.h;
+        syncCropOutputFromSelection();
     }
     renderCropBox();
 }
 
 function onCropDragEnd() {
+    if (cropDrag.mode === 'resize') syncCropOutputFromSelection();
     cropDrag.mode = null;
     cropDrag.handle = '';
     cropDrag.startBox = null;
     document.removeEventListener('mousemove', onCropDragMove);
     document.removeEventListener('mouseup', onCropDragEnd);
+    renderCropBox();
 }
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
