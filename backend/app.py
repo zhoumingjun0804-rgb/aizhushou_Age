@@ -4499,6 +4499,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _send_html(self, html):
         self.send_response(200)
         self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
 

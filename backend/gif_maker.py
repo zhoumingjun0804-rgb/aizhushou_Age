@@ -27,11 +27,11 @@ def _clamp_button_rect(
     bg_w: int,
     bg_h: int,
 ) -> tuple[int, int, int, int]:
-    width = max(1, min(int(width), bg_w))
-    height = max(1, min(int(height), bg_h))
-    x = max(0, min(int(x), bg_w - width))
-    y = max(0, min(int(y), bg_h - height))
-    return x, y, width, height
+    # 允许图层移出底图；超出部分在合成时由 paste 自然裁掉
+    _ = (bg_w, bg_h)
+    width = max(1, int(width))
+    height = max(1, int(height))
+    return int(x), int(y), width, height
 
 
 def _apply_alpha_mask(palette_img: Image.Image, alpha: Image.Image) -> Image.Image:
@@ -222,6 +222,9 @@ def make_animated_gif(
         with Image.open(path) as raw:
             btn_img = raw.convert("RGBA")
         fallback_rect = None
+        # 多图层各自有摆位时，勿把「当前选中层」的 offset 套到其他层上
+        use_offset_x = 0 if has_per_layer_layout else offset_x
+        use_offset_y = 0 if has_per_layer_layout else offset_y
         if layout is None and not has_per_layer_layout and single_layer:
             fallback_rect = global_rect
         rect = _resolve_layer_rect(
@@ -229,8 +232,8 @@ def make_animated_gif(
             btn_img,
             background.width,
             background.height,
-            offset_x=offset_x,
-            offset_y=offset_y,
+            offset_x=use_offset_x,
+            offset_y=use_offset_y,
             button_scale=button_scale,
             fallback_rect=fallback_rect,
         )
@@ -246,8 +249,8 @@ def make_animated_gif(
             foreground_img,
             background.width,
             background.height,
-            offset_x=offset_x,
-            offset_y=offset_y,
+            offset_x=0 if (foreground_layout or has_per_layer_layout) else offset_x,
+            offset_y=0 if (foreground_layout or has_per_layer_layout) else offset_y,
             button_scale=button_scale,
             fallback_rect=None,
         )

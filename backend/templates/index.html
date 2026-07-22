@@ -47,6 +47,9 @@
                         margin-bottom: 8px; cursor: pointer; transition: all 0.2s;
                         border: 1px solid rgba(255,255,255,0.04); }
         .history-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(167,139,250,0.3); }
+        .history-continue-btn { margin-top: 8px; font-size: 12px; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+            border: 1px solid rgba(52,211,153,0.45); background: rgba(16,185,129,0.18); color: #d1fae5; }
+        .history-continue-btn:hover { background: rgba(16,185,129,0.32); }
         .history-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
         .history-img-wrap { position: relative; flex-shrink: 0; }
         .history-download { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.6); color: white; 
@@ -97,6 +100,11 @@
                                    border: 1px solid rgba(167,139,250,0.45); background: rgba(167,139,250,0.15);
                                    color: #e9d5ff; flex-shrink: 0; }
         .fullscreen-details-copy:hover { background: rgba(167,139,250,0.3); }
+        .fullscreen-details-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+        .fullscreen-details-continue { font-size: 12px; padding: 4px 12px; border-radius: 8px; cursor: pointer;
+                                       border: 1px solid rgba(52,211,153,0.55); background: rgba(16,185,129,0.25);
+                                       color: #d1fae5; flex-shrink: 0; }
+        .fullscreen-details-continue:hover { background: rgba(16,185,129,0.4); }
         .fullscreen-detail-row { display: flex; gap: 10px; margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
         .fullscreen-detail-label { flex: 0 0 72px; color: rgba(255,255,255,0.45); font-size: 12px; }
         .fullscreen-detail-value { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
@@ -117,6 +125,12 @@
                            font-size: 14px; cursor: pointer; background: rgba(167,139,250,0.4);
                            padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(167,139,250,0.5); }
         .fullscreen-copy:hover { background: rgba(167,139,250,0.6); }
+        .fullscreen-continue { position: absolute; top: 20px; right: 300px; color: white;
+                               font-size: 14px; cursor: pointer; background: rgba(16,185,129,0.55);
+                               padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(52,211,153,0.65);
+                               display: none; }
+        .fullscreen-continue.visible { display: inline-block; }
+        .fullscreen-continue:hover { background: rgba(16,185,129,0.75); }
         .img-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
             z-index: 3000; padding: 10px 18px; border-radius: 10px; font-size: 13px;
             background: rgba(26,26,46,0.95); color: #e9d5ff; border: 1px solid rgba(167,139,250,0.45);
@@ -1962,7 +1976,7 @@
                 <input type="file" id="gifLayerSwayInput" accept="image/*" style="display:none" onchange="onGifLayerSelected('sway', event)">
                 <input type="file" id="gifLayerRotateInput" accept="image/*" style="display:none" onchange="onGifLayerSelected('rotate', event)">
                 <div class="gifmaker-layout" id="gifLayoutSection">
-                    <p class="gifmaker-layout-title">📍 点击要编辑的图层出现<strong>绿色调节框</strong>：拖动移动位置；拖四边单向拉伸，拖四角等比例缩放。也可在下方输入框微调。<strong>Ctrl+Z</strong> 可撤销上一步摆位操作。</p>
+                    <p class="gifmaker-layout-title">📍 点击要编辑的图层出现<strong>绿色调节框</strong>：拖动移动位置（可拖出底图，超出部分不显示）；拖四边单向拉伸，拖四角等比例缩放。也可在下方输入框微调。<strong>Ctrl+Z</strong> 可撤销上一步摆位操作。</p>
                     <div class="gifmaker-canvas-wrap" id="gifLayoutWrap">
                         <img id="gifLayoutBg" alt="底图摆位预览" draggable="false">
                         <div id="gifLayoutLayers"></div>
@@ -2070,6 +2084,7 @@
     <!-- 全屏图片查看 -->
     <div class="fullscreen-overlay" id="fullscreenOverlay" onclick="closeFullscreen()">
         <button class="fullscreen-close" onclick="event.stopPropagation(); closeFullscreen()">×</button>
+        <button type="button" class="fullscreen-continue" id="fullscreenContinueBtn" onclick="event.stopPropagation(); continueEditFromHistory()">✏️ 继续编辑</button>
         <button type="button" class="fullscreen-copy" id="fullscreenCopyBtn" onclick="event.stopPropagation(); copyCurrentFullscreenImage()">📋 复制图片</button>
         <a class="fullscreen-download" id="fullscreenDownload" download href="#" onclick="event.stopPropagation()">⬇ 下载图片</a>
         <button class="fullscreen-nav fullscreen-prev" onclick="event.stopPropagation(); prevImage()">‹</button>
@@ -4169,6 +4184,27 @@ async function submitVariantRefine() {
 
 function acceptVariantRefine() {
     if (!variantRefineState) return;
+    if (variantRefineState.fromHistory) {
+        if (!variantRefineState.currentFilename) {
+            alert('还没有可采纳的结果');
+            return;
+        }
+        variants = Array.isArray(variants) ? variants : [];
+        variants.push({
+            filename: variantRefineState.currentFilename,
+            prompt: variantRefineState.seedPrompt || ''
+        });
+        var idx = variants.length - 1;
+        variantRefineState.baseIdx = idx;
+        variantRefineState.fromHistory = false;
+        document.getElementById('variantsSection').style.display = 'block';
+        document.getElementById('actionsSection').style.display = 'flex';
+        renderVariants(variants);
+        selectVariant(idx);
+        variantRefineState.messages.push({ role: 'system', text: '已采纳为「魔法图 ' + (idx + 1) + '」，可继续修改或下载。' });
+        renderRefineHistory();
+        return;
+    }
     var idx = variantRefineState.baseIdx;
     if (variants[idx] && variantRefineState.currentFilename) {
         variants[idx].filename = variantRefineState.currentFilename;
@@ -4176,6 +4212,115 @@ function acceptVariantRefine() {
         selectVariant(idx);
         variantRefineState.messages.push({ role: 'system', text: '已采纳为「魔法图 ' + (idx + 1) + '」。' });
         renderRefineHistory();
+    }
+}
+
+function _filenameFromOutputUrl(url) {
+    if (!url) return '';
+    var path = String(url).split('?')[0];
+    var name = path.split('/').pop() || '';
+    return name;
+}
+
+function _historyContinueContextMessages(item) {
+    var messages = [];
+    messages.push({ role: 'system', text: '已从历史记录载入该图。可像 ChatGPT 一样继续描述修改要求，多轮迭代。' });
+    if (!item) return messages;
+    var tags = Array.isArray(item.meta_tags) && item.meta_tags.length
+        ? item.meta_tags.join(' · ')
+        : _historyModeText(item.mode);
+    if (tags) messages.push({ role: 'system', text: '原类型：' + tags });
+    var desc = (item.description || '').trim();
+    var prompt = (item.prompt || '').trim();
+    if (desc) messages.push({ role: 'user', text: '原修改说明：' + desc });
+    if (prompt && prompt !== desc && prompt.indexOf(desc) !== 0) {
+        messages.push({ role: 'system', text: '原 Prompt：' + prompt });
+    } else if (prompt && !desc) {
+        messages.push({ role: 'system', text: '原 Prompt：' + prompt });
+    }
+    return messages;
+}
+
+async function continueEditFromHistory() {
+    var item = fullscreenHistoryItem;
+    var imgUrl = fullscreenImages[fullscreenIndex];
+    if (!imgUrl) {
+        alert('没有可继续编辑的图片');
+        return;
+    }
+    var filename = _filenameFromOutputUrl(imgUrl);
+    if (!filename && item) {
+        var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
+        filename = imgs[fullscreenIndex] || imgs[0] || '';
+        if (filename) imgUrl = '/outputs/' + String(filename).split('?')[0];
+    }
+    if (!filename) {
+        alert('无法识别该图片文件，请重新打开历史记录后再试');
+        return;
+    }
+    await _startContinueEditSession(item, filename, imgUrl);
+}
+
+async function continueEditFromHistoryItem(historyId, imageIndex) {
+    var item = historyItemsById[historyId];
+    if (!item) {
+        alert('找不到该历史记录');
+        return;
+    }
+    var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
+    var idx = Math.max(0, Math.min(parseInt(imageIndex, 10) || 0, imgs.length - 1));
+    var filename = imgs[idx];
+    if (!filename) {
+        alert('该记录没有可编辑的图片');
+        return;
+    }
+    filename = String(filename).split('?')[0];
+    await _startContinueEditSession(item, filename, '/outputs/' + filename);
+}
+
+async function _startContinueEditSession(item, filename, imgUrl) {
+    closeFullscreen();
+    if (isHistoryDrawerOpen()) toggleHistory();
+
+    if (item && item.project && getSelectedProjectName() !== item.project) {
+        try { await pickProject(item.project); } catch (e) {}
+    }
+    if (!getSelectedProjectName()) {
+        alert('请先选择项目组');
+        return;
+    }
+    if (!getSelectedImageBackend()) {
+        alert('请先选择生图模型');
+        return;
+    }
+
+    switchTab('generate', document.querySelector('.tab-btn[data-tab="generate"]'));
+    try {
+        var dataUrl = await urlToDataUrl(imgUrl.indexOf('/') === 0 || imgUrl.indexOf('http') === 0
+            ? imgUrl
+            : ('/outputs/' + filename));
+        variantRefineState = {
+            fromHistory: true,
+            historyId: item && item.id ? item.id : '',
+            baseIdx: null,
+            currentFilename: filename,
+            currentDataUrl: dataUrl,
+            seedPrompt: (item && (item.description || item.prompt)) || '',
+            messages: _historyContinueContextMessages(item)
+        };
+        document.getElementById('refinePreviewImg').src = '/outputs/' + filename + '?t=' + Date.now();
+        document.getElementById('refinePromptInput').value = '';
+        document.getElementById('refinePromptInput').placeholder = '基于这张历史图继续修改，例如：把背景调亮一点，保留原有文字和角色';
+        renderRefineHistory();
+        document.getElementById('refineSection').style.display = 'block';
+        document.getElementById('actionsSection').style.display = 'flex';
+        setTimeout(function() {
+            document.getElementById('refineSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            var input = document.getElementById('refinePromptInput');
+            if (input) input.focus();
+        }, 80);
+    } catch (e) {
+        alert('加载历史图片失败: ' + (e.message || String(e)));
     }
 }
 
@@ -4860,6 +5005,12 @@ function openEditComparisonFullscreen(startIndex) {
     openFullscreen(images, startIndex || 0, labels);
 }
 
+function _syncFullscreenContinueBtn() {
+    var btn = document.getElementById('fullscreenContinueBtn');
+    if (!btn) return;
+    btn.classList.toggle('visible', !!fullscreenHistoryItem);
+}
+
 function openFullscreen(images, startIndex, labels) {
     if (typeof images === 'string') {
         try {
@@ -4878,6 +5029,7 @@ function openFullscreen(images, startIndex, labels) {
     if (!fullscreenImages.length) return;
     updateFullscreenImage();
     renderFullscreenDetails(fullscreenHistoryItem);
+    _syncFullscreenContinueBtn();
     document.getElementById('fullscreenOverlay').classList.add('open');
     document.addEventListener('keydown', handleFullscreenKey);
 }
@@ -5100,6 +5252,7 @@ function closeFullscreen() {
     document.removeEventListener('keydown', handleFullscreenKey);
     fullscreenHistoryItem = null;
     _fullscreenDetailsCopyText = '';
+    _syncFullscreenContinueBtn();
     var detailsEl = document.getElementById('fullscreenDetails');
     if (detailsEl) {
         detailsEl.classList.remove('open');
@@ -5187,6 +5340,7 @@ function renderFullscreenDetails(item) {
         panel.classList.remove('open');
         panel.innerHTML = '';
         _fullscreenDetailsCopyText = '';
+        _syncFullscreenContinueBtn();
         return;
     }
     _fullscreenDetailsCopyText = _buildHistoryDetailsPlainText(item);
@@ -5223,9 +5377,13 @@ function renderFullscreenDetails(item) {
     panel.innerHTML =
         '<div class="fullscreen-details-head">' +
         '<span class="fullscreen-details-title">记录详情</span>' +
-        '<button type="button" class="fullscreen-details-copy" onclick="copyFullscreenHistoryDetails()">复制全部</button>' +
+        '<div class="fullscreen-details-actions">' +
+        '<button type="button" class="fullscreen-details-continue" onclick="event.stopPropagation(); continueEditFromHistory()">✏️ 继续编辑</button>' +
+        '<button type="button" class="fullscreen-details-copy" onclick="event.stopPropagation(); copyFullscreenHistoryDetails()">复制全部</button>' +
+        '</div>' +
         '</div>' + rowsHtml + mainTitleHtml + descHtml + promptHtml;
     panel.classList.add('open');
+    _syncFullscreenContinueBtn();
 }
 
 function prevImage() {
@@ -5362,6 +5520,10 @@ function _renderHistoryItemHtml(item, idx) {
         return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
     }).join('');
     var clickAttr = imageUrls.length ? ' onclick="openHistoryThumb(this.querySelector(\'.history-thumb\'))"' : '';
+    var continueBtn = imageUrls.length
+        ? '<button type="button" class="history-continue-btn" onclick="event.stopPropagation(); continueEditFromHistoryItem(\'' +
+          _escapeHtml(historyId) + '\',' + (0) + ')">✏️ 继续编辑</button>'
+        : '';
     return '<div class="history-item"' + clickAttr + '>' +
         '<div class="history-img-wrap" style="display:flex;gap:4px;flex-wrap:wrap;position:relative;">' +
         thumbsHtml +
@@ -5372,6 +5534,7 @@ function _renderHistoryItemHtml(item, idx) {
         '<div class="history-title" title="' + _escapeHtml(title) + '">' + _escapeHtml(title) + '</div>' +
         descHtml +
         '<div class="history-meta">' + _escapeHtml(tags) + '</div>' +
+        continueBtn +
         '</div></div>';
 }
 
@@ -10791,12 +10954,10 @@ function waitImgLoad(img) {
 }
 
 function clampGifButtonRect(x, y, w, h) {
-    if (!gifLayout.bgNatW || !gifLayout.bgNatH) return { x: x, y: y, w: w, h: h };
+    // 允许图层移出底图范围；只保证最小尺寸
     var minSize = 8;
-    w = Math.max(minSize, Math.min(w, gifLayout.bgNatW));
-    h = Math.max(minSize, Math.min(h, gifLayout.bgNatH));
-    x = Math.max(0, Math.min(x, gifLayout.bgNatW - w));
-    y = Math.max(0, Math.min(y, gifLayout.bgNatH - h));
+    w = Math.max(minSize, w);
+    h = Math.max(minSize, h);
     return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
 }
 
