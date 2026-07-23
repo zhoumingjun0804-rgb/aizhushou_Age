@@ -1928,11 +1928,11 @@
                     <button type="button" class="gifmaker-mode-btn" data-gif-mode="preview" onclick="setGifmakerMode('preview', this)">🔍 SVGA 预览</button>
                 </div>
                 <div class="gifmaker-panel" id="gifPanelBreathing">
-                <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图、可选<strong>前景</strong>与动效图层（建议透明底 PNG）。点击格子后 <strong>Ctrl+V</strong> 可粘贴图片。前景叠在最上层且不动；在下方格子中上传即启用对应动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>。</p>
+                <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图、可选<strong>前景</strong>与动效图层（建议透明底 PNG）。底图可为<strong>静图</strong>或<strong>GIF 动图</strong>（动图会保留原动画；「动效周期」单独控制上层呼吸/浮动等快慢）。点击格子后 <strong>Ctrl+V</strong> 可粘贴图片。前景叠在最上层且不动；在下方格子中上传即启用对应动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>。</p>
                 <div class="gifmaker-uploads gifmaker-uploads-base">
                     <div class="gifmaker-slot" id="gifBgSlot" onclick="onGifBgSlotClick(event)" tabindex="0">
-                        <span class="gifmaker-slot-title">🖼️ 底图（不动）</span>
-                        <span class="gifmaker-slot-desc">背景 / 场景 · 单击粘贴 · 双击选文件</span>
+                        <span class="gifmaker-slot-title">🖼️ 底图（静图 / GIF）</span>
+                        <span class="gifmaker-slot-desc">背景 / 场景 · 支持 GIF 动图 · 单击粘贴 · 双击选文件</span>
                         <img id="gifBgPreview" alt="" style="display:none;">
                         <button type="button" class="action-btn btn-outline gifmaker-slot-remove" onclick="clearGifBgFile(event)">移除</button>
                     </div>
@@ -1990,7 +1990,7 @@
                             <option value="strong">强</option>
                         </select>
                     </label>
-                    <label>循环时长(秒) <input type="number" id="gifDuration" value="1.6" min="0.8" max="5" step="0.1"></label>
+                    <label>动效周期(秒) <input type="number" id="gifDuration" value="1.6" min="0.4" max="8" step="0.1" title="控制呼吸/浮动等上层动效快慢；底图为 GIF 时仍按原 GIF 帧率播放"></label>
                     <label>图层宽(%) <input type="number" id="gifBtnScaleW" value="100" min="10" max="300" step="1"></label>
                     <label>图层高(%) <input type="number" id="gifBtnScaleH" value="100" min="10" max="300" step="1"></label>
                     <label>水平偏移 <input type="number" id="gifOffsetX" value="0" step="1"></label>
@@ -11571,8 +11571,10 @@ async function generateBreathingGif() {
             data.width + '×' + data.height + ' · 动效 ' + effectText +
             ' · 图层 ' + (data.buttonWidth || layout.w) + '×' + (data.buttonHeight || layout.h) +
             ' · ' + data.frameCount + ' 帧 · ' +
-            data.fps + ' FPS · ' + data.durationSec + ' 秒/循环 · ' +
-            (data.fileSize / 1024).toFixed(1) + ' KB';
+            data.fps + ' FPS · 整段 ' + data.durationSec + ' 秒' +
+            (data.effectDurationSec ? (' · 动效周期 ' + data.effectDurationSec + ' 秒') : '') +
+            (data.backgroundAnimated ? ' · 底图动图已保留' : '') +
+            ' · ' + (data.fileSize / 1024).toFixed(1) + ' KB';
         gifLastResult = data;
         var dl = document.getElementById('gifDownloadBtn');
         dl.href = data.download_url;

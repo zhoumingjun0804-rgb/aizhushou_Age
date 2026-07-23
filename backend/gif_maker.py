@@ -1,4 +1,4 @@
-"""合成按钮动效 GIF：静态底图 + 一个或多个透明图层（呼吸 / 浮动 / 摇摆 / 旋转）。"""
+"""合成按钮动效 GIF：底图（静图或动图）+ 一个或多个透明图层（呼吸 / 浮动 / 摇摆 / 旋转）。"""
 import hashlib
 import math
 from io import BytesIO
@@ -58,9 +58,20 @@ def _quantize_to_shared_palette(frame: Image.Image, palette_ref: Image.Image) ->
     return _apply_alpha_mask(p, alpha)
 
 
-def _save_transparent_gif(frames: list[Image.Image], output_path: Path, frame_ms: int) -> None:
+def _save_transparent_gif(
+    frames: list[Image.Image],
+    output_path: Path,
+    frame_ms: int | list[int],
+) -> None:
     if not frames:
         raise ValueError("no frames")
+    if isinstance(frame_ms, list):
+        durations = [max(20, int(d or 100)) for d in frame_ms]
+        if len(durations) < len(frames):
+            durations.extend([durations[-1] if durations else 100] * (len(frames) - len(durations)))
+        durations = durations[: len(frames)]
+    else:
+        durations = max(20, int(frame_ms or 100))
     first_p = _rgba_to_palette(frames[0])
     palette_frames = [first_p]
     for frame in frames[1:]:
@@ -69,11 +80,41 @@ def _save_transparent_gif(frames: list[Image.Image], output_path: Path, frame_ms
         output_path,
         save_all=True,
         append_images=palette_frames[1:],
-        duration=frame_ms,
+        duration=durations,
         loop=0,
         optimize=True,
         disposal=2,
     )
+
+
+def _load_background_timeline(path: Path) -> tuple[list[Image.Image], list[int], bool]:
+    """读取底图时间轴。动图 GIF 保留各帧与时长；静图返回单帧。"""
+    with Image.open(path) as im:
+        n_frames = getattr(im, "n_frames", 1) or 1
+        animated = bool(getattr(im, "is_animated", False) and n_frames > 1)
+        if not animated:
+            return [im.convert("RGBA").copy()], [100], False
+
+        frames: list[Image.Image] = []
+        durations: list[int] = []
+        try:
+            idx = 0
+            while True:
+                frames.append(im.copy().convert("RGBA"))
+                try:
+                    duration = max(20, int(im.info.get("duration") or 100))
+                except (TypeError, ValueError):
+                    duration = 100
+                durations.append(duration)
+                idx += 1
+                if idx >= 300:
+                    break
+                im.seek(idx)
+        except EOFError:
+            pass
+        if not frames:
+            raise ValueError("底图 GIF 没有可用帧")
+        return frames, durations, True
 
 
 def compute_combined_transform(t: float, effects: list[str], intensity: str) -> dict[str, float]:
@@ -197,13 +238,30 @@ def make_animated_gif(
         raise ValueError("请至少上传一个动效图层")
 
     merged_layers = merge_gif_layers_by_image(layers)
-    fps = max(6, min(24, int(fps)))
-    duration_sec = max(0.8, min(5.0, float(duration_sec)))
-    frame_count = max(8, int(round(duration_sec * fps)))
-    frame_ms = int(1000 / fps)
+    bg_frames, bg_durations, bg_animated = _load_background_timeline(background_path)
+    background = bg_frames[0]
+    bg_w, bg_h = background.size
 
-    with Image.open(background_path) as bg_raw:
-        background = bg_raw.convert("RGBA")
+    # 上层动效周期与底图帧率解耦：「循环时长」只控制呼吸/浮动等快慢
+    effect_duration_sec = max(0.4, min(8.0, float(duration_sec or DEFAULT_DURATION_SEC)))
+    effect_cycle_ms = max(1.0, effect_duration_sec * 1000.0)
+
+    if bg_animated:
+        frame_count = len(bg_frames)
+        durations_ms = bg_durations
+        total_ms = sum(durations_ms) or (frame_count * 100)
+        bg_duration_sec = total_ms / 1000.0
+        fps = max(1, int(round(1000.0 * frame_count / total_ms))) if total_ms else DEFAULT_FPS
+        frame_ms: int | list[int] = durations_ms
+        out_duration_sec = bg_duration_sec
+    else:
+        fps = max(6, min(24, int(fps)))
+        frame_count = max(8, int(round(effect_duration_sec * fps)))
+        frame_ms = int(1000 / fps)
+        bg_frames = [background] * frame_count
+        durations_ms = [frame_ms] * frame_count
+        bg_duration_sec = effect_duration_sec
+        out_duration_sec = effect_duration_sec
 
     global_rect: tuple[int, int, int, int] | None = None
     if button_width is not None and button_height is not None:
@@ -230,8 +288,8 @@ def make_animated_gif(
         rect = _resolve_layer_rect(
             layout,
             btn_img,
-            background.width,
-            background.height,
+            bg_w,
+            bg_h,
             offset_x=use_offset_x,
             offset_y=use_offset_y,
             button_scale=button_scale,
@@ -247,8 +305,8 @@ def make_animated_gif(
         foreground_rect = _resolve_layer_rect(
             foreground_layout,
             foreground_img,
-            background.width,
-            background.height,
+            bg_w,
+            bg_h,
             offset_x=0 if (foreground_layout or has_per_layer_layout) else offset_x,
             offset_y=0 if (foreground_layout or has_per_layer_layout) else offset_y,
             button_scale=button_scale,
@@ -256,13 +314,17 @@ def make_animated_gif(
         )
 
     frames: list[Image.Image] = []
-    for i in range(frame_count):
-        t = i / frame_count
-        frame = background.copy()
+    out_durations: list[int] = []
+    elapsed_ms = 0.0
+    # 动效至少按约 12fps 采样，避免慢速底图导致上层动作发飘/发慢
+    effect_sample_ms = max(40.0, effect_cycle_ms / max(8.0, effect_duration_sec * 12.0))
+
+    def _compose_at(bg_frame: Image.Image, phase_t: float) -> Image.Image:
+        composed = bg_frame.copy()
         for btn_img, effects, (bx, by, bw, bh) in layer_images:
-            tr = compute_combined_transform(t, effects, intensity)
-            layer_frame = _paste_button_transformed(
-                frame,
+            tr = compute_combined_transform(phase_t, effects, intensity)
+            composed = _paste_button_transformed(
+                composed,
                 btn_img,
                 bx,
                 by,
@@ -273,18 +335,39 @@ def make_animated_gif(
                 dy=tr["dy"],
                 angle_deg=tr["angle"],
             )
-            frame = layer_frame
         if foreground_img is not None and foreground_rect is not None:
             fx, fy, fw, fh = foreground_rect
-            frame = _paste_button_transformed(
-                frame,
+            composed = _paste_button_transformed(
+                composed,
                 foreground_img,
                 fx,
                 fy,
                 fw,
                 fh,
             )
-        frames.append(frame)
+        return composed
+
+    if bg_animated:
+        for i, bg_frame in enumerate(bg_frames):
+            remaining = float(durations_ms[i] if i < len(durations_ms) else 100)
+            while remaining > 0.5:
+                chunk = min(effect_sample_ms, remaining)
+                phase_t = ((elapsed_ms + chunk * 0.5) % effect_cycle_ms) / effect_cycle_ms
+                frames.append(_compose_at(bg_frame, phase_t))
+                out_durations.append(max(20, int(round(chunk))))
+                elapsed_ms += chunk
+                remaining -= chunk
+        frame_count = len(frames)
+        frame_ms = out_durations
+        total_out_ms = sum(out_durations) or 1
+        fps = max(1, int(round(1000.0 * frame_count / total_out_ms)))
+        out_duration_sec = total_out_ms / 1000.0
+    else:
+        for i in range(frame_count):
+            phase_t = (elapsed_ms % effect_cycle_ms) / effect_cycle_ms
+            frames.append(_compose_at(bg_frames[i % len(bg_frames)], phase_t))
+            step_ms = durations_ms[i] if i < len(durations_ms) else 100
+            elapsed_ms += float(step_ms)
 
     _save_transparent_gif(frames, output_path, frame_ms)
 
@@ -298,11 +381,13 @@ def make_animated_gif(
     bx, by, bw, bh = first_rect
 
     return {
-        "width": background.width,
-        "height": background.height,
+        "width": bg_w,
+        "height": bg_h,
         "frameCount": frame_count,
         "fps": fps,
-        "durationSec": duration_sec,
+        "durationSec": round(out_duration_sec, 3),
+        "effectDurationSec": round(effect_duration_sec, 3),
+        "backgroundDurationSec": round(bg_duration_sec, 3),
         "intensity": intensity,
         "effects": enabled_effects,
         "buttonX": bx,
@@ -310,6 +395,7 @@ def make_animated_gif(
         "buttonWidth": bw,
         "buttonHeight": bh,
         "hasForeground": foreground_img is not None,
+        "backgroundAnimated": bg_animated,
         "fileSize": output_path.stat().st_size,
     }
 

@@ -139,6 +139,73 @@ class TestGifMaker(unittest.TestCase):
                 self.assertEqual(px[25, 25][:3], (0, 255, 0))
                 self.assertEqual(px[100, 100][:3], (255, 0, 0))
 
+    def test_animated_background_gif_preserves_frames(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bg = tmp / "bg.gif"
+            btn = tmp / "btn.png"
+            out = tmp / "out.gif"
+            frames = []
+            for i in range(4):
+                color = (40 * i, 80, 200 - 40 * i, 255)
+                frames.append(Image.new("RGBA", (120, 80), color))
+            frames[0].save(
+                bg,
+                save_all=True,
+                append_images=frames[1:],
+                duration=[80, 100, 120, 90],
+                loop=0,
+                disposal=2,
+            )
+            Image.new("RGBA", (20, 20), (255, 0, 0, 255)).save(btn)
+
+            meta = make_animated_gif(
+                bg,
+                [(btn, ["float"], {"x": 10, "y": 10, "w": 20, "h": 20})],
+                out,
+                duration_sec=1.6,
+            )
+            self.assertTrue(meta["backgroundAnimated"])
+            self.assertGreaterEqual(meta["frameCount"], 4)
+            self.assertEqual(meta["effectDurationSec"], 1.6)
+            self.assertTrue(out.is_file())
+            with Image.open(out) as im:
+                self.assertGreaterEqual(getattr(im, "n_frames", 1), 4)
+
+    def test_effect_speed_independent_of_slow_background_gif(self):
+        """慢速底图 GIF 时，按动效周期细分帧，上层动作不会跟着变慢。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bg = tmp / "slow.gif"
+            btn = tmp / "btn.png"
+            out = tmp / "out.gif"
+            frames = [
+                Image.new("RGBA", (100, 100), (20 + i * 30, 20, 80, 255))
+                for i in range(4)
+            ]
+            frames[0].save(
+                bg,
+                save_all=True,
+                append_images=frames[1:],
+                duration=[1000] * 4,  # 共 4 秒，仅 4 帧
+                loop=0,
+                disposal=2,
+            )
+            Image.new("RGBA", (20, 20), (255, 0, 0, 255)).save(btn)
+            meta = make_animated_gif(
+                bg,
+                [(btn, ["float"], {"x": 10, "y": 10, "w": 20, "h": 20})],
+                out,
+                duration_sec=1.0,
+                intensity="strong",
+            )
+            self.assertTrue(meta["backgroundAnimated"])
+            self.assertEqual(meta["effectDurationSec"], 1.0)
+            # 4 秒底图 + 1 秒动效周期，细分后应远多于原 4 帧
+            self.assertGreaterEqual(meta["frameCount"], 20)
+            self.assertAlmostEqual(meta["durationSec"], 4.0, places=1)
+            self.assertTrue(out.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

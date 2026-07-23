@@ -3597,7 +3597,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     def _handle_make_breathing_gif(self):
-        """静态底图 + 动效图层 → 循环 GIF（呼吸 / 浮动 / 摇摆 / 旋转，可组合）。"""
+        """底图（静图或 GIF 动图）+ 动效图层 → 循环 GIF（呼吸 / 浮动 / 摇摆 / 旋转，可组合）。"""
         try:
             if not self._auth_any():
                 return
@@ -3610,7 +3610,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fields = parse_multipart(body, boundary)
             bg_field = fields.get("background")
             if not bg_field or not isinstance(bg_field, dict):
-                self._send_json({"error": "请上传底图（不动）"})
+                self._send_json({"error": "请上传底图（静图或 GIF 动图）"})
                 return
 
             layer_field_names = {
@@ -3648,7 +3648,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             job_id = uuid.uuid4().hex[:12]
-            bg_path = UPLOAD_DIR / f"gif_bg_{job_id}.png"
+            bg_name = str(bg_field.get("filename") or "bg.png")
+            bg_ext = pathlib.Path(bg_name).suffix.lower()
+            if bg_ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+                bg_ext = ".png"
+            bg_path = UPLOAD_DIR / f"gif_bg_{job_id}{bg_ext}"
             output_filename = f"breathing_{job_id}.gif"
             output_path = OUTPUT_DIR / output_filename
             bg_path.write_bytes(bg_field["data"])
