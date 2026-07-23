@@ -1132,9 +1132,9 @@
                     <div class="form-item">
                         <label>自定义（px）</label>
                         <div class="size-inputs">
-                            <input type="number" id="onlineCustomWidthPx" placeholder="宽 px" min="256" max="8192" step="1">
+                            <input type="number" id="onlineCustomWidthPx" placeholder="宽 px" min="1" max="8192" step="1">
                             <span>×</span>
-                            <input type="number" id="onlineCustomHeightPx" placeholder="高 px" min="256" max="8192" step="1">
+                            <input type="number" id="onlineCustomHeightPx" placeholder="高 px" min="1" max="8192" step="1">
                         </div>
                     </div>
                 </div>
@@ -2927,7 +2927,6 @@ var PRINT_PAPER_PRESETS = {
 
 var PRINT_MAX_MM = 420;
 var ONLINE_MAX_PX = 8192;
-var ONLINE_MIN_PX = 256;
 
 function onSizeCategoryChange() {
     var cat = document.getElementById('sizeCategorySelect').value;
@@ -3076,8 +3075,8 @@ function getGenerationSizeParams() {
         if (sel.value === 'custom') {
             w = parseInt(document.getElementById('onlineCustomWidthPx').value, 10) || 0;
             h = parseInt(document.getElementById('onlineCustomHeightPx').value, 10) || 0;
-            if (w < ONLINE_MIN_PX || h < ONLINE_MIN_PX) {
-                alert('请填写自定义尺寸（宽、高，单位 px，至少 ' + ONLINE_MIN_PX + '）');
+            if (w < 1 || h < 1) {
+                alert('请填写自定义尺寸（宽、高，单位 px）');
                 return null;
             }
             if (w > ONLINE_MAX_PX || h > ONLINE_MAX_PX) {
