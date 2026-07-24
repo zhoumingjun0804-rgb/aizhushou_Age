@@ -7,7 +7,13 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-               background: #0f0c29; min-height: 100vh; padding: 20px; overflow-x: hidden; }
+               background: #0f0c29; min-height: 100vh; padding: 20px; overflow-x: hidden; color-scheme: dark; }
+        /* 深色页下拉：避免 option 白底+白字（未悬停看不见） */
+        select { color-scheme: dark; }
+        select option, select optgroup {
+            background-color: #1a1a3e;
+            color: #eee;
+        }
         body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
                background: linear-gradient(45deg, #0f0c29, #302b63, #24243e, #0f0c29, #1a1a3e, #302b63);
                z-index: -1; }
@@ -225,7 +231,8 @@
         .logo-position-row label { font-size: 12px; color: rgba(255,255,255,0.55); margin-bottom: 4px; display: block; }
         .logo-position-row select { width: 100%; padding: 8px 10px; font-size: 13px;
             background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 8px; color: white; }
+            border-radius: 8px; color: white; color-scheme: dark; }
+        .logo-position-row select option { background: #1a1a3e; color: #eee; }
         .upload-ref-input { width: 100%; padding: 10px;
             background: rgba(255,255,255,0.08);
             border: 1px dashed rgba(168,85,247,0.5);
@@ -598,7 +605,8 @@
         .splash-expand-passthrough-hint { line-height: 1.5; }
         .splash-hero-size-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
         .splash-hero-size-row select { flex: 1; min-width: 180px; padding: 8px 10px; border-radius: 8px;
-            border: 1px solid rgba(99,102,241,0.35); background: rgba(0,0,0,0.25); color: #fff; }
+            border: 1px solid rgba(99,102,241,0.35); background: rgba(0,0,0,0.25); color: #fff; color-scheme: dark; }
+        .splash-hero-size-row select option { background: #1a1a3e; color: #eee; }
         .splash-hero-variants { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 14px; }
         .splash-hero-variant { border: 2px solid rgba(255,255,255,0.12); border-radius: 10px; overflow: hidden; cursor: pointer; transition: 0.2s; }
         .splash-hero-variant:hover { border-color: rgba(129,140,248,0.55); }
@@ -890,8 +898,13 @@
         .gifmaker-mode-btn.active { background: rgba(236,72,153,0.22); border-color: rgba(236,72,153,0.55); color: #fbcfe8; }
         .gifmaker-panel { display: block; }
         .gifmaker-panel.hidden { display: none; }
+        /* 用裁剪隐藏代替 display:none，避免部分环境选文件后不触发 change */
+        .gifmaker-file-input {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;
+        }
         .gifmaker-svga-upload { border: 2px dashed rgba(236,72,153,0.4); border-radius: 12px; padding: 28px 20px; text-align: center;
-            cursor: pointer; min-height: 120px; transition: border-color 0.2s, background 0.2s; }
+            cursor: pointer; min-height: 120px; transition: border-color 0.2s, background 0.2s; position: relative; }
         .gifmaker-svga-upload:hover { border-color: rgba(236,72,153,0.7); background: rgba(236,72,153,0.06); }
         .gifmaker-svga-upload.dragover { border-color: #f472b6; background: rgba(236,72,153,0.12); }
         .gifmaker-svga-upload.filled { border-style: solid; border-color: rgba(236,72,153,0.55); }
@@ -918,7 +931,8 @@
         .gifmaker-options label { font-size: 13px; color: rgba(255,255,255,0.85); display: flex; align-items: center; gap: 8px; }
         .gifmaker-options select, .gifmaker-options input[type="number"] {
             padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.28);
-            background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; }
+            background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; color-scheme: dark; }
+        .gifmaker-options select option { background: #1a1a3e; color: #eee; }
         .gifmaker-options input[type="number"] { width: 72px; }
         .gifmaker-gen-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; cursor: pointer;
             font-size: 16px; font-weight: 600; color: #fff;
@@ -932,14 +946,18 @@
         .gifmaker-result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
         .gifmaker-result-actions .action-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
         .gifmaker-svga-meta { font-size: 12px; color: rgba(167,139,250,0.9); margin-top: 8px; display: none; }
-        .svga-preview-result { text-align: center; }
-        .svga-player-stage { display: inline-block; max-width: 100%; border-radius: 10px; padding: 10px;
+        .svga-preview-result { text-align: center; width: 100%; }
+        /* SVGA 官方用法：Player 挂在 div 上；子 canvas 由库创建并按父级 AspectFit */
+        .svga-player-stage { display: block; width: min(100%, 560px); height: 700px; max-width: 100%;
+            margin: 0 auto; overflow: hidden; box-sizing: border-box; position: relative;
+            border-radius: 10px; padding: 0;
             border: 1px solid rgba(167,139,250,0.4);
             background-color: #2a2440;
             background-image: linear-gradient(45deg, rgba(255,255,255,0.06) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.06) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.06) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.06) 75%);
             background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
         .svga-player-stage.bg-white { background-color: #ffffff; background-image: none; }
-        .svga-player-stage canvas { display: block; max-width: 100%; max-height: 360px; margin: 0 auto; }
+        .svga-player-host { width: 100%; height: 100%; position: relative; overflow: hidden; }
+        .svga-player-host canvas { transform-origin: 0 0 !important; }
         .svga-player-controls { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 14px; }
         .svga-bg-toggle { font-size: 13px; color: rgba(255,255,255,0.75); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
         .gifmaker-layout { margin-bottom: 16px; display: none; }
@@ -982,7 +1000,7 @@
         .project-gate-card label { display: block; font-size: 13px; color: rgba(255,255,255,0.65); margin: 12px 0 6px; }
         .project-gate-card select, .project-gate-card input { width: 100%; padding: 10px 12px; border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #eee; font-size: 14px; }
-        .project-gate-card select option { background: #1a1a3e; }
+        .project-gate-card select option { background: #1a1a3e; color: #eee; }
         .gate-error { min-height: 20px; font-size: 13px; color: #f87171; margin: 10px 0 4px; }
         #gateSubmitBtn { width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 10px;
             font-size: 15px; font-weight: 600; cursor: pointer; color: #1a1a3e;
@@ -1928,11 +1946,11 @@
                     <button type="button" class="gifmaker-mode-btn" data-gif-mode="preview" onclick="setGifmakerMode('preview', this)">🔍 SVGA 预览</button>
                 </div>
                 <div class="gifmaker-panel" id="gifPanelBreathing">
-                <p class="gifmaker-hint">上传或<strong>拖拽</strong>底图、可选<strong>前景</strong>与动效图层（建议透明底 PNG）。底图可为<strong>静图</strong>或<strong>GIF 动图</strong>（动图会保留原动画；「动效周期」单独控制上层呼吸/浮动等快慢）。点击格子后 <strong>Ctrl+V</strong> 可粘贴图片。前景叠在最上层且不动；在下方格子中上传即启用对应动效。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>。</p>
+                <p class="gifmaker-hint">上传或<strong>拖拽</strong>动效图层即可生成（建议透明底 PNG）；底图与前景为可选。无底图时自动用透明画布。底图可为<strong>静图</strong>或<strong>GIF 动图</strong>（动图会保留原动画；「动效周期」单独控制上层呼吸/浮动等快慢）。默认<strong>压缩到 1MB 以内</strong>便于 App 上传。点击格子后 <strong>Ctrl+V</strong> 可粘贴。前景叠在最上层且不动。生成后可分别下载 <strong>GIF</strong> 或 <strong>SVGA</strong>。</p>
                 <div class="gifmaker-uploads gifmaker-uploads-base">
                     <div class="gifmaker-slot" id="gifBgSlot" onclick="onGifBgSlotClick(event)" tabindex="0">
-                        <span class="gifmaker-slot-title">🖼️ 底图（静图 / GIF）</span>
-                        <span class="gifmaker-slot-desc">背景 / 场景 · 支持 GIF 动图 · 单击粘贴 · 双击选文件</span>
+                        <span class="gifmaker-slot-title">🖼️ 底图（静图 / GIF，可选）</span>
+                        <span class="gifmaker-slot-desc">可不传 · 无底图时透明画布 · 支持 GIF · 单击粘贴 · 双击选文件</span>
                         <img id="gifBgPreview" alt="" style="display:none;">
                         <button type="button" class="action-btn btn-outline gifmaker-slot-remove" onclick="clearGifBgFile(event)">移除</button>
                     </div>
@@ -1991,6 +2009,9 @@
                         </select>
                     </label>
                     <label>动效周期(秒) <input type="number" id="gifDuration" value="1.6" min="0.4" max="8" step="0.1" title="控制呼吸/浮动等上层动效快慢；底图为 GIF 时仍按原 GIF 帧率播放"></label>
+                    <label title="默认开启：自动抽帧/减色/必要时缩小，使 GIF ≤ 1MB，方便 App 上传">
+                        <input type="checkbox" id="gifMax1mb" checked> 压缩到 1MB 内
+                    </label>
                     <label>图层宽(%) <input type="number" id="gifBtnScaleW" value="100" min="10" max="300" step="1"></label>
                     <label>图层高(%) <input type="number" id="gifBtnScaleH" value="100" min="10" max="300" step="1"></label>
                     <label>水平偏移 <input type="number" id="gifOffsetX" value="0" step="1"></label>
@@ -2014,15 +2035,15 @@
                 </div>
                 </div>
                 <div class="gifmaker-panel hidden" id="gifPanelSvga">
-                    <p class="gifmaker-hint">直接上传已完成的 <strong>.gif</strong> 文件，转换为 <strong>SVGA</strong>（<strong>宽高与原 GIF 一致</strong>，文件自动压缩至 <strong>1MB 以内</strong>；极长动图可能隔帧抽帧，但不改画布尺寸）。</p>
-                    <div class="gifmaker-svga-upload" id="gifSvgaUploadSlot" onclick="document.getElementById('gifSvgaFileInput').click()">
+                    <p class="gifmaker-hint">直接上传已完成的 <strong>.gif</strong> 文件，转换为 <strong>SVGA</strong>（<strong>宽高与原 GIF 一致</strong>，文件自动压缩至 <strong>1MB 以内</strong>；极长动图可能隔帧抽帧，但不改画布尺寸）。若刚在「呼吸动图」生成过，可点下方按钮直接使用，无需重新选文件。</p>
+                    <div class="gifmaker-svga-upload" id="gifSvgaUploadSlot" role="button" tabindex="0" title="点击选择 .gif 文件">
                         <span class="gifmaker-slot-title">📁 上传 GIF</span>
-                        <span class="gifmaker-slot-desc">点击或拖拽 .gif 文件到此处</span>
+                        <span class="gifmaker-slot-desc">点击或拖拽 .gif 到此处（也可 Ctrl+V 粘贴）</span>
                         <img id="gifSvgaUploadPreview" alt="" style="display:none;">
                         <p class="gifmaker-slot-desc" id="gifSvgaUploadName" style="display:none;margin-top:8px;"></p>
                     </div>
-                    <input type="file" id="gifSvgaFileInput" accept="image/gif,.gif" style="display:none" onchange="onGifSvgaFileSelected(event)">
-                    <button type="button" class="gifmaker-gen-btn" id="gifSvgaConvertBtn" onclick="convertUploadedGifToSvga()" disabled style="margin-top:16px;">🎬 转换为 SVGA 并下载</button>
+                    <button type="button" class="action-btn btn-outline" id="gifSvgaUseLastBtn" onclick="useLastBreathingGifForSvga()" style="width:100%;margin-top:12px;display:none;">📎 使用刚生成的 GIF</button>
+                    <button type="button" class="gifmaker-gen-btn" id="gifSvgaConvertBtn" onclick="convertUploadedGifToSvga()" disabled style="margin-top:12px;">🎬 转换为 SVGA 并下载</button>
                     <div class="loading-card" id="gifSvgaLoadingCard" style="display:none;">
                         <div class="spinner"></div>
                         <p class="loading-text">正在转换 SVGA...</p>
@@ -2039,6 +2060,7 @@
                         <p class="gifmaker-svga-meta" id="gifSvgaUploadResultMeta"></p>
                     </div>
                 </div>
+                <input type="file" id="gifSvgaFileInput" accept=".gif,image/gif" class="gifmaker-file-input" onchange="onGifSvgaFileSelected(event)">
                 <div class="gifmaker-panel hidden" id="gifPanelPreview">
                     <p class="gifmaker-hint">上传或<strong>拖拽</strong> <strong>.svga</strong> 文件，在线预览动画效果（不会上传到服务器，直接在浏览器播放）。也可从「GIF 转 SVGA」结果点「在线预览」自动载入。</p>
                     <div class="gifmaker-svga-upload" id="svgaPreviewUploadSlot" onclick="document.getElementById('svgaPreviewFileInput').click()">
@@ -2050,7 +2072,7 @@
                     <p id="svgaPreviewErrorMsg" style="display:none;color:#f87171;font-size:14px;text-align:center;margin-top:12px;"></p>
                     <div class="svga-preview-result" id="svgaPreviewResultWrap" style="display:none;">
                         <div class="svga-player-stage" id="svgaPreviewStage">
-                            <canvas id="svgaPreviewCanvas"></canvas>
+                            <div id="svgaPreviewPlayer" class="svga-player-host"></div>
                         </div>
                         <div class="svga-player-controls">
                             <button type="button" class="action-btn btn-outline" id="svgaPreviewPlayBtn" onclick="toggleSvgaPreviewPlay()">⏸ 暂停</button>
@@ -10308,6 +10330,7 @@ function formatSvgaResultMeta(data, prefix) {
     var sizeStr = data.fileSize ? (data.fileSize / 1024).toFixed(1) + ' KB' : '';
     var dimStr = (data.width || data.originalWidth) + '×' + (data.height || data.originalHeight) + '（与原图同尺寸）';
     var line = prefix + '：' + sizeStr + ' · ' + dimStr + ' · ' + data.totalFrames + ' 帧 · ' + data.fps + ' FPS';
+    if (data.svgaDurationSec) line += ' · 约 ' + data.svgaDurationSec + ' 秒/循环';
     if (data.frameNote) line += ' · ' + data.frameNote;
     return line;
 }
@@ -10330,6 +10353,7 @@ var gifTransform = { active: false, handle: '', startX: 0, startY: 0, startRect:
 var gifLayoutBgUrl = null;
 var gifLastResult = null;
 var gifUploadFile = null;
+var gifUploadSourceOutput = null;
 var gifSvgaUploadResult = null;
 var gifLayoutReady = false;
 var gifLayoutUndoStack = [];
@@ -10466,6 +10490,7 @@ function setGifmakerMode(mode, btnEl) {
     if (breathing) breathing.classList.toggle('hidden', mode !== 'breathing');
     if (svga) svga.classList.toggle('hidden', mode !== 'svga');
     if (preview) preview.classList.toggle('hidden', mode !== 'preview');
+    if (mode === 'svga') updateGifSvgaUseLastBtn();
 }
 
 function updateGifSvgaConvertBtnState() {
@@ -10473,10 +10498,39 @@ function updateGifSvgaConvertBtnState() {
     if (btn) btn.disabled = !gifUploadFile;
 }
 
+function updateGifSvgaUseLastBtn() {
+    var btn = document.getElementById('gifSvgaUseLastBtn');
+    if (!btn) return;
+    var has = !!(gifLastResult && gifLastResult.download_url && gifLastResult.output_file);
+    btn.style.display = has ? 'block' : 'none';
+    if (has) {
+        btn.textContent = '📎 使用刚生成的 GIF（' + (gifLastResult.output_file || 'breathing.gif') + '）';
+    }
+}
+
+function isGifFileLike(file) {
+    if (!file) return false;
+    var name = (file.name || '').toLowerCase();
+    var type = (file.type || '').toLowerCase();
+    if (name.endsWith('.gif')) return true;
+    if (type === 'image/gif') return true;
+    return false;
+}
+
+function showGifSvgaUploadError(msg) {
+    var errEl = document.getElementById('gifSvgaUploadErrorMsg');
+    if (!errEl) {
+        alert(msg);
+        return;
+    }
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+}
+
 function setGifUploadFile(file) {
     if (!file) return;
-    if (!/\.gif$/i.test(file.name)) {
-        alert('请上传 .gif 格式的动图文件');
+    if (!isGifFileLike(file)) {
+        showGifSvgaUploadError('请上传 .gif 动图（当前：' + (file.name || file.type || '未知类型') + '）');
         return;
     }
     gifUploadFile = file;
@@ -10500,20 +10554,44 @@ function setGifUploadFile(file) {
         preview.style.display = 'block';
     }
     if (nameEl) {
-        nameEl.textContent = file.name + ' · ' + (file.size / 1024).toFixed(1) + ' KB';
+        nameEl.textContent = (file.name || 'animation.gif') + ' · ' + (file.size / 1024).toFixed(1) + ' KB';
         nameEl.style.display = 'block';
     }
     updateGifSvgaConvertBtnState();
 }
 
+async function useLastBreathingGifForSvga() {
+    if (!gifLastResult || !gifLastResult.download_url) {
+        showGifSvgaUploadError('请先在「呼吸动图」中生成 GIF');
+        return;
+    }
+    var errEl = document.getElementById('gifSvgaUploadErrorMsg');
+    if (errEl) errEl.style.display = 'none';
+    try {
+        var resp = await authFetch(gifLastResult.download_url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var name = gifLastResult.output_file || 'breathing.gif';
+        var file = new File([blob], name, { type: 'image/gif' });
+        setGifUploadFile(file);
+        // 同时走服务端已有文件，转换更快更稳
+        gifUploadSourceOutput = gifLastResult.output_file || null;
+    } catch (err) {
+        showGifSvgaUploadError('读取刚生成的 GIF 失败：' + (err.message || String(err)) + '。请改用本机文件拖拽到虚线框。');
+    }
+}
+
 function onGifSvgaFileSelected(ev) {
     var f = ev.target.files && ev.target.files[0];
+    gifUploadSourceOutput = null;
     if (f) setGifUploadFile(f);
+    else showGifSvgaUploadError('未选中文件。若选了仍无效，请把 .gif 直接拖进虚线框，或点「使用刚生成的 GIF」。');
     ev.target.value = '';
 }
 
 function clearGifSvgaUpload() {
     gifUploadFile = null;
+    gifUploadSourceOutput = null;
     gifSvgaUploadResult = null;
     if (gifSvgaUploadPreviewUrl) { URL.revokeObjectURL(gifSvgaUploadPreviewUrl); gifSvgaUploadPreviewUrl = null; }
     var slot = document.getElementById('gifSvgaUploadSlot');
@@ -10531,6 +10609,7 @@ function clearGifSvgaUpload() {
     if (actions) actions.style.display = 'none';
     if (meta) { meta.style.display = 'none'; meta.textContent = ''; }
     updateGifSvgaConvertBtnState();
+    updateGifSvgaUseLastBtn();
 }
 
 function downloadGifSvgaUploadResult() {
@@ -10580,7 +10659,11 @@ async function convertUploadedGifToSvga() {
     if (loading) loading.style.display = 'block';
     if (errEl) errEl.style.display = 'none';
     var form = new FormData();
-    form.append('gif', gifUploadFile);
+    if (gifUploadSourceOutput) {
+        form.append('source_output', gifUploadSourceOutput);
+    } else {
+        form.append('gif', gifUploadFile);
+    }
     try {
         var resp = await authFetch('/api/gif-to-svga', { method: 'POST', body: form });
         var text = await resp.text();
@@ -10620,29 +10703,39 @@ async function convertUploadedGifToSvga() {
 // ─── SVGA 在线预览 ─────────────────────────────────────
 var svgaPlayers = {};
 var svgaPreviewObjectUrl = null;
+var SVGA_PREVIEW_HOST_ID = 'svgaPreviewPlayer';
 
-function svgaEnsurePlayer(canvasId) {
+function svgaEnsurePlayer(hostId) {
     if (!window.SVGA || !SVGA.Parser || !SVGA.Player) return null;
-    if (!svgaPlayers[canvasId]) {
+    if (!svgaPlayers[hostId]) {
         try {
+            var host = document.getElementById(hostId);
+            if (!host) return null;
             var parser = new SVGA.Parser();
-            var player = new SVGA.Player('#' + canvasId);
+            // 必须挂在 div 上：库会在内部创建 canvas 并按父容器宽高做 AspectFit
+            var player = new SVGA.Player('#' + hostId);
             player.loops = 0;
             player.clearsAfterStop = false;
-            svgaPlayers[canvasId] = { parser: parser, player: player, playing: false };
+            if (typeof player.setContentMode === 'function') {
+                player.setContentMode('AspectFit');
+            }
+            svgaPlayers[hostId] = { parser: parser, player: player, playing: false };
         } catch (e) {
             return null;
         }
     }
-    return svgaPlayers[canvasId];
+    return svgaPlayers[hostId];
 }
 
-function svgaLoadUrl(canvasId, url, onOk, onErr) {
-    var p = svgaEnsurePlayer(canvasId);
+function svgaLoadUrl(hostId, url, onOk, onErr) {
+    var p = svgaEnsurePlayer(hostId);
     if (!p) { if (onErr) onErr('SVGA 播放器未加载，请刷新页面后重试'); return; }
     try {
         p.parser.load(url, function(videoItem) {
             try {
+                if (typeof p.player.setContentMode === 'function') {
+                    p.player.setContentMode('AspectFit');
+                }
                 p.player.setVideoItem(videoItem);
                 p.player.startAnimation();
                 p.playing = true;
@@ -10658,8 +10751,8 @@ function svgaLoadUrl(canvasId, url, onOk, onErr) {
     }
 }
 
-function svgaTogglePlay(canvasId, btn) {
-    var p = svgaPlayers[canvasId];
+function svgaTogglePlay(hostId, btn) {
+    var p = svgaPlayers[hostId];
     if (!p || !p.player) return;
     if (p.playing) {
         p.player.pauseAnimation();
@@ -10686,6 +10779,28 @@ function svgaFormatMeta(videoItem) {
     return parts.join(' · ');
 }
 
+/** 按 SVGA 比例设定舞台大小，让动图铺满预览框并完整可见 */
+function fitSvgaPreviewCanvas(videoItem) {
+    var stage = document.getElementById('svgaPreviewStage');
+    if (!stage) return;
+    var vs = (videoItem && videoItem.videoSize) || {};
+    var vw = Number(vs.width) || 1;
+    var vh = Number(vs.height) || 1;
+    if (vw < 1) vw = 1;
+    if (vh < 1) vh = 1;
+    var wrap = document.getElementById('svgaPreviewResultWrap') || stage.parentElement;
+    var maxW = Math.min(560, (wrap && wrap.clientWidth) ? wrap.clientWidth : 560);
+    var maxH = 700;
+    var scale = Math.min(maxW / vw, maxH / vh);
+    if (scale < 0.05) scale = 0.05;
+    stage.style.width = Math.round(vw * scale) + 'px';
+    stage.style.height = Math.round(vh * scale) + 'px';
+    var p = svgaPlayers[SVGA_PREVIEW_HOST_ID];
+    if (p && p.player && typeof p.player.setContentMode === 'function') {
+        try { p.player.setContentMode('AspectFit'); } catch (e) {}
+    }
+}
+
 // 从「GIF 转 SVGA」结果一键在线预览：切到预览页并载入
 function previewConvertedSvga(result) {
     if (!result || !result.download_url) { alert('没有可预览的 SVGA'); return; }
@@ -10703,9 +10818,13 @@ function loadSvgaPreviewFromUrl(url, name) {
     var metaEl = document.getElementById('svgaPreviewMeta');
     var playBtn = document.getElementById('svgaPreviewPlayBtn');
     if (errEl) errEl.style.display = 'none';
-    svgaLoadUrl('svgaPreviewCanvas', url, function(videoItem) {
-        if (wrap) wrap.style.display = 'block';
+    if (wrap) wrap.style.display = 'block';
+    svgaLoadUrl(SVGA_PREVIEW_HOST_ID, url, function(videoItem) {
         if (playBtn) playBtn.textContent = '⏸ 暂停';
+        requestAnimationFrame(function() {
+            fitSvgaPreviewCanvas(videoItem);
+            requestAnimationFrame(function() { fitSvgaPreviewCanvas(videoItem); });
+        });
         if (metaEl) {
             var m = svgaFormatMeta(videoItem);
             metaEl.textContent = (name ? name + '  ' : '') + m;
@@ -10736,7 +10855,7 @@ function onSvgaPreviewFileSelected(ev) {
 }
 
 function toggleSvgaPreviewPlay() {
-    svgaTogglePlay('svgaPreviewCanvas', document.getElementById('svgaPreviewPlayBtn'));
+    svgaTogglePlay(SVGA_PREVIEW_HOST_ID, document.getElementById('svgaPreviewPlayBtn'));
 }
 
 function onSvgaPreviewBgToggle() {
@@ -10751,9 +10870,15 @@ function clearSvgaPreview() {
     var wrap = document.getElementById('svgaPreviewResultWrap');
     var errEl = document.getElementById('svgaPreviewErrorMsg');
     var metaEl = document.getElementById('svgaPreviewMeta');
-    var p = svgaPlayers['svgaPreviewCanvas'];
+    var host = document.getElementById(SVGA_PREVIEW_HOST_ID);
+    var stage = document.getElementById('svgaPreviewStage');
+    var p = svgaPlayers[SVGA_PREVIEW_HOST_ID];
     if (p && p.player) { try { p.player.stopAnimation(true); } catch (e) {} p.playing = false; }
     if (svgaPreviewObjectUrl) { URL.revokeObjectURL(svgaPreviewObjectUrl); svgaPreviewObjectUrl = null; }
+    if (host) host.innerHTML = '';
+    // 清空后下次重新挂载 Player，避免旧 canvas 尺寸残留
+    delete svgaPlayers[SVGA_PREVIEW_HOST_ID];
+    if (stage) { stage.style.width = ''; stage.style.height = ''; }
     if (slot) slot.classList.remove('filled');
     if (nameEl) { nameEl.style.display = 'none'; nameEl.textContent = ''; }
     if (wrap) wrap.style.display = 'none';
@@ -10933,11 +11058,16 @@ function onGifLayerSelected(key, ev) {
 
 function updateGifGenBtnState() {
     var btn = document.getElementById('gifGenBtn');
-    if (btn) btn.disabled = !(gifBgFile && hasAnyGifLayer());
+    if (btn) btn.disabled = !hasAnyGifLayer();
 }
 
 function revokeGifLayoutUrls() {
-    if (gifLayoutBgUrl) { URL.revokeObjectURL(gifLayoutBgUrl); gifLayoutBgUrl = null; }
+    if (gifLayoutBgUrl) {
+        if (String(gifLayoutBgUrl).indexOf('blob:') === 0) {
+            try { URL.revokeObjectURL(gifLayoutBgUrl); } catch (e) {}
+        }
+        gifLayoutBgUrl = null;
+    }
     Object.keys(gifLayerPreviewUrls).forEach(function(key) {
         try { URL.revokeObjectURL(gifLayerPreviewUrls[key]); } catch (e) {}
     });
@@ -11147,31 +11277,61 @@ async function refreshGifLayoutEditor() {
     gifLayoutReady = false;
     if (!section) return;
     var keys = getGifLayoutEditableKeys();
-    if (!gifBgFile || !keys.length) {
+    if (!keys.length) {
         section.style.display = 'none';
         return;
     }
     section.style.display = 'block';
     revokeGifLayoutUrls();
     var bgImg = document.getElementById('gifLayoutBg');
-    gifLayoutBgUrl = URL.createObjectURL(gifBgFile);
-    bgImg.src = gifLayoutBgUrl;
-    await waitImgLoad(bgImg);
-    gifLayout.bgNatW = bgImg.naturalWidth;
-    gifLayout.bgNatH = bgImg.naturalHeight;
+    // 先量动效层尺寸，无底图时用透明画布
+    var maxW = 0, maxH = 0;
     for (var i = 0; i < keys.length; i++) {
         var key = keys[i];
         var probe = new Image();
         gifLayerPreviewUrls[key] = URL.createObjectURL(getGifLayerFile(key));
         probe.src = gifLayerPreviewUrls[key];
         await waitImgLoad(probe);
+        maxW = Math.max(maxW, probe.naturalWidth || 0);
+        maxH = Math.max(maxH, probe.naturalHeight || 0);
         if (!gifLayerLayouts[key] || !gifLayerLayouts[key].w) {
-            initGifLayerLayoutCenter(key, probe.naturalWidth, probe.naturalHeight);
+            // 稍后有 bg 尺寸再居中
+            gifLayerLayouts[key] = gifLayerLayouts[key] || {};
+            gifLayerLayouts[key].natW = probe.naturalWidth;
+            gifLayerLayouts[key].natH = probe.naturalHeight;
+            gifLayerLayouts[key]._needCenter = true;
         } else {
             gifLayerLayouts[key].natW = probe.naturalWidth;
             gifLayerLayouts[key].natH = probe.naturalHeight;
         }
     }
+    if (gifBgFile) {
+        gifLayoutBgUrl = URL.createObjectURL(gifBgFile);
+        bgImg.src = gifLayoutBgUrl;
+        await waitImgLoad(bgImg);
+        gifLayout.bgNatW = bgImg.naturalWidth;
+        gifLayout.bgNatH = bgImg.naturalHeight;
+    } else {
+        var pad = Math.max(24, Math.round(Math.max(maxW, maxH) * 0.15));
+        var cw = Math.max(1, maxW + pad * 2);
+        var ch = Math.max(1, maxH + pad * 2);
+        var c = document.createElement('canvas');
+        c.width = cw;
+        c.height = ch;
+        gifLayoutBgUrl = c.toDataURL('image/png');
+        bgImg.src = gifLayoutBgUrl;
+        await waitImgLoad(bgImg);
+        gifLayout.bgNatW = cw;
+        gifLayout.bgNatH = ch;
+    }
+    keys.forEach(function(key) {
+        var L = gifLayerLayouts[key];
+        if (!L) return;
+        if (L._needCenter || !L.w) {
+            initGifLayerLayoutCenter(key, L.natW || maxW, L.natH || maxH);
+            delete gifLayerLayouts[key]._needCenter;
+        }
+    });
     if (!gifSelectedLayerKey || !getGifLayerFile(gifSelectedLayerKey)) {
         gifSelectedLayerKey = keys[keys.length - 1];
     }
@@ -11376,7 +11536,19 @@ function initGifUploadZones() {
         });
     });
     var svgaSlot = document.getElementById('gifSvgaUploadSlot');
-    if (svgaSlot) {
+    var svgaInput = document.getElementById('gifSvgaFileInput');
+    if (svgaSlot && svgaInput) {
+        function openGifSvgaPicker(e) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            svgaInput.click();
+        }
+        svgaSlot.addEventListener('click', openGifSvgaPicker);
+        svgaSlot.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') openGifSvgaPicker(e);
+        });
         svgaSlot.addEventListener('dragover', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -11390,9 +11562,18 @@ function initGifUploadZones() {
             e.preventDefault();
             e.stopPropagation();
             svgaSlot.classList.remove('dragover');
+            gifUploadSourceOutput = null;
             var f = e.dataTransfer.files && e.dataTransfer.files[0];
-            if (f) setGifUploadFile(f);
+            if (f) {
+                setGifUploadFile(f);
+                return;
+            }
+            showGifSvgaUploadError('未识别到文件。请从文件夹把 .gif 拖进来，或点「使用刚生成的 GIF」。');
         });
+        bindImageZonePaste(svgaSlot, function(file) {
+            gifUploadSourceOutput = null;
+            setGifUploadFile(file);
+        }, { focusOnClick: false });
     }
     var svgaPvSlot = document.getElementById('svgaPreviewUploadSlot');
     if (svgaPvSlot) {
@@ -11423,6 +11604,7 @@ function onGifBgSelected(ev) {
 
 function resetGifSvgaDownload() {
     gifLastResult = null;
+    updateGifSvgaUseLastBtn();
     var actions = document.getElementById('gifmakerResultActions');
     var svgaMeta = document.getElementById('gifSvgaMeta');
     var svgaBtn = document.getElementById('gifSvgaBtn');
@@ -11462,7 +11644,7 @@ async function convertBreathingGifToSvga() {
     if (svgaMeta) svgaMeta.style.display = 'none';
     var form = new FormData();
     form.append('source_output', gifLastResult.output_file);
-    if (gifLastResult.fps) form.append('fps', String(gifLastResult.fps));
+    // 不传 fps：由服务端按 GIF 各帧时长推算；抽帧压体积时会同步降低 FPS，避免播放变快
     try {
         var resp = await authFetch('/api/gif-to-svga', { method: 'POST', body: form });
         var text = await resp.text();
@@ -11509,8 +11691,8 @@ async function convertBreathingGifToSvga() {
 }
 
 async function generateBreathingGif() {
-    if (!gifBgFile || !hasAnyGifLayer()) {
-        alert('请先上传底图，并至少上传一个动效图层');
+    if (!hasAnyGifLayer()) {
+        alert('请至少上传一个动效图层（呼吸 / 浮动 / 摇摆 / 旋转）');
         return;
     }
     if (!gifLayoutReady) {
@@ -11533,7 +11715,7 @@ async function generateBreathingGif() {
     preview.style.display = 'none';
     resetGifSvgaDownload();
     var form = new FormData();
-    form.append('background', gifBgFile);
+    if (gifBgFile) form.append('background', gifBgFile);
     GIF_LAYER_DEFS.forEach(function(def) {
         var file = gifLayerFiles[def.key];
         if (file) form.append(def.field, file);
@@ -11541,6 +11723,7 @@ async function generateBreathingGif() {
     if (gifForegroundFile) form.append('layer_foreground', gifForegroundFile);
     form.append('intensity', document.getElementById('gifIntensity').value);
     form.append('duration_sec', document.getElementById('gifDuration').value);
+    form.append('max_bytes', document.getElementById('gifMax1mb').checked ? '1048576' : '0');
     form.append('button_layout', JSON.stringify(layout));
     form.append('layer_layouts', JSON.stringify(layerLayouts));
     form.append('button_x', String(layout.x));
@@ -11574,8 +11757,12 @@ async function generateBreathingGif() {
             data.fps + ' FPS · 整段 ' + data.durationSec + ' 秒' +
             (data.effectDurationSec ? (' · 动效周期 ' + data.effectDurationSec + ' 秒') : '') +
             (data.backgroundAnimated ? ' · 底图动图已保留' : '') +
-            ' · ' + (data.fileSize / 1024).toFixed(1) + ' KB';
+            (data.framesReduced ? ' · 已抽帧压体积' : '') +
+            (data.scaled ? (' · 已缩至 ' + Math.round((data.scale || 1) * 100) + '%') : '') +
+            ' · ' + (data.fileSize / 1024).toFixed(1) + ' KB' +
+            (data.maxBytes ? (' / 上限 ' + (data.maxBytes / 1024).toFixed(0) + ' KB') : '');
         gifLastResult = data;
+        updateGifSvgaUseLastBtn();
         var dl = document.getElementById('gifDownloadBtn');
         dl.href = data.download_url;
         dl.download = data.output_file;

@@ -3609,9 +3609,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             boundary = content_type.split("boundary=")[-1].encode()
             fields = parse_multipart(body, boundary)
             bg_field = fields.get("background")
-            if not bg_field or not isinstance(bg_field, dict):
-                self._send_json({"error": "请上传底图（静图或 GIF 动图）"})
-                return
+            has_bg = bool(bg_field and isinstance(bg_field, dict) and bg_field.get("data"))
 
             layer_field_names = {
                 "breathing": ("layer_breathing", "button"),
@@ -3647,15 +3645,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "参数格式无效"})
                 return
 
+            max_bytes = 1024 * 1024
+            max_raw = fields.get("max_bytes", "")
+            if max_raw is not None and str(max_raw).strip() != "":
+                try:
+                    max_bytes = int(str(max_raw).strip())
+                except ValueError:
+                    self._send_json({"error": "max_bytes 格式无效"})
+                    return
+                if max_bytes < 0:
+                    self._send_json({"error": "max_bytes 不能为负数"})
+                    return
+
             job_id = uuid.uuid4().hex[:12]
-            bg_name = str(bg_field.get("filename") or "bg.png")
-            bg_ext = pathlib.Path(bg_name).suffix.lower()
-            if bg_ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
-                bg_ext = ".png"
-            bg_path = UPLOAD_DIR / f"gif_bg_{job_id}{bg_ext}"
+            bg_path: pathlib.Path | None = None
+            if has_bg:
+                bg_name = str(bg_field.get("filename") or "bg.png")
+                bg_ext = pathlib.Path(bg_name).suffix.lower()
+                if bg_ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+                    bg_ext = ".png"
+                bg_path = UPLOAD_DIR / f"gif_bg_{job_id}{bg_ext}"
+                bg_path.write_bytes(bg_field["data"])
             output_filename = f"breathing_{job_id}.gif"
             output_path = OUTPUT_DIR / output_filename
-            bg_path.write_bytes(bg_field["data"])
 
             layers: list[tuple[pathlib.Path, list[str], dict | None]] = []
             layer_layouts = _parse_layer_layouts(fields)
@@ -3686,7 +3698,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 button_height=button_height,
                 foreground_path=foreground_path,
                 foreground_layout=fg_layout,
+                max_bytes=max_bytes if max_bytes > 0 else None,
             )
+            if not meta.get("underLimit", True) and max_bytes > 0:
+                self._send_json({
+                    "error": (
+                        f"无法将 GIF 压缩到 {max_bytes / (1024 * 1024):.0f}MB 以内"
+                        f"（当前约 {meta.get('fileSize', 0) / 1024:.0f}KB）。"
+                        "请缩小底图尺寸、减少动效图层或缩短底图 GIF 时长后重试。"
+                    ),
+                    **meta,
+                })
+                return
             if foreground_path:
                 print(
                     f"[GIF-MAKER] 前景层 layout={fg_layout} "
@@ -4313,6 +4336,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "sizePreserved": result.get("sizePreserved", False),
                 "totalFrames": result["totalFrames"],
                 "fps": result["fps"],
+                "durationSec": result.get("durationSec"),
+                "svgaDurationSec": result.get("svgaDurationSec"),
                 "version": result.get("version", "2.0.0"),
                 "fileSize": result.get("fileSize"),
                 "inputFileSize": result.get("inputFileSize"),
@@ -4321,7 +4346,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "originalFrameCount": result.get("originalFrameCount"),
                 "frameThinStep": result.get("frameThinStep", 1),
                 "frameNote": (
-                    f"为控制在 1MB 内，帧数由 {result.get('originalFrameCount')} 减至 {result.get('totalFrames')}"
+                    (
+                        f"为控制在 1MB 内，帧数由 {result.get('originalFrameCount')} 减至 {result.get('totalFrames')}"
+                        f"（已同步降低 FPS 以保持约 {result.get('durationSec')} 秒时长）"
+                    )
                     if result.get("framesReduced")
                     else None
                 ),

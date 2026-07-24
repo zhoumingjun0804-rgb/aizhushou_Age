@@ -41,20 +41,41 @@ def estimate_fps_from_durations_ms(durations_ms: list[int]) -> int | None:
     return nearest_valid_fps(1000.0 / avg_ms)
 
 
+def _total_duration_ms(durations_ms: list[int]) -> float:
+    if not durations_ms:
+        return 0.0
+    return float(sum(d if d > 0 else 100 for d in durations_ms))
+
+
+def fps_preserving_duration(frame_count: int, total_ms: float) -> int:
+    """按「帧数 / 原 GIF 总时长」选合法 FPS，避免抽帧后仍用原帧率导致播放变快。"""
+    if frame_count <= 0 or total_ms <= 0:
+        return 20
+    target_sec = total_ms / 1000.0
+    best = VALID_FPS[0]
+    best_err = abs(frame_count / float(best) - target_sec)
+    for v in VALID_FPS:
+        err = abs(frame_count / float(v) - target_sec)
+        if err < best_err:
+            best_err = err
+            best = v
+    return best
+
+
 def _read_gif_frames(input_path: Path) -> tuple[list[Image.Image], int, int, list[int]]:
-    img = Image.open(input_path)
-    width, height = img.size
-    frames: list[Image.Image] = []
-    durations_ms: list[int] = []
-    try:
-        frame_index = 0
-        while True:
-            frames.append(img.copy().convert("RGBA"))
-            durations_ms.append(int(img.info.get("duration") or 100))
-            frame_index += 1
-            img.seek(frame_index)
-    except EOFError:
-        pass
+    with Image.open(input_path) as img:
+        width, height = img.size
+        frames: list[Image.Image] = []
+        durations_ms: list[int] = []
+        try:
+            frame_index = 0
+            while True:
+                frames.append(img.copy().convert("RGBA"))
+                durations_ms.append(int(img.info.get("duration") or 100))
+                frame_index += 1
+                img.seek(frame_index)
+        except EOFError:
+            pass
     if not frames:
         raise ValueError("GIF 没有可用帧")
     return frames, width, height, durations_ms
@@ -200,29 +221,37 @@ def gif_to_svga(
 
     frames, orig_w, orig_h, durations_ms = _read_gif_frames(input_path)
     orig_frame_count = len(frames)
-    if fps is None:
-        fps = estimate_fps_from_durations_ms(durations_ms)
-    fps = fps or 20
-    if fps not in VALID_FPS:
-        fps = nearest_valid_fps(float(fps))
+    total_ms = _total_duration_ms(durations_ms)
+    # 用户指定的 fps 仅在未抽帧时采用；抽帧后必须按总时长重算，否则会明显变快
+    fps_override = fps
+    if fps_override is not None and fps_override not in VALID_FPS:
+        fps_override = nearest_valid_fps(float(fps_override))
 
     compressed: bytes | None = None
     profile_used: dict | None = None
     output_frame_count = orig_frame_count
     thin_step_used = 1
+    fps_used = fps_override or estimate_fps_from_durations_ms(durations_ms) or 20
 
     for work_frames, colors, thin_step in _iter_compress_attempts(frames):
         png_list, final_w, final_h = _prepare_frame_pngs(work_frames, colors)
         _assert_dimensions(orig_w, orig_h, final_w, final_h)
-        movie = _build_movie_entity(png_list, final_w, final_h, fps)
+        n = len(work_frames)
+        if thin_step > 1 or fps_override is None:
+            attempt_fps = fps_preserving_duration(n, total_ms)
+        else:
+            attempt_fps = fps_override
+        movie = _build_movie_entity(png_list, final_w, final_h, attempt_fps)
         candidate = _movie_to_svga_bytes(movie)
         profile_used = {
             "colors": colors,
             "thin_step": thin_step,
             "phase": "full_size" if thin_step <= 1 else "thin_frames",
+            "fps": attempt_fps,
         }
-        output_frame_count = len(work_frames)
+        output_frame_count = n
         thin_step_used = thin_step
+        fps_used = attempt_fps
         if not enforce_limit or len(candidate) <= max_bytes:
             compressed = candidate
             break
@@ -238,9 +267,16 @@ def gif_to_svga(
     if compressed is None:
         work_frames, colors, thin_step = frames, FULL_SIZE_COLOR_LEVELS[0], 1
         png_list, final_w, final_h = _prepare_frame_pngs(work_frames, colors)
-        movie = _build_movie_entity(png_list, final_w, final_h, fps)
+        fps_used = (
+            fps_override
+            if fps_override is not None
+            else fps_preserving_duration(len(work_frames), total_ms)
+        )
+        movie = _build_movie_entity(png_list, final_w, final_h, fps_used)
         compressed = _movie_to_svga_bytes(movie)
-        profile_used = {"colors": colors, "thin_step": 1, "phase": "unlimited"}
+        profile_used = {"colors": colors, "thin_step": 1, "phase": "unlimited", "fps": fps_used}
+        output_frame_count = len(work_frames)
+        thin_step_used = 1
 
     if output_path.suffix.lower() != ".svga":
         output_path = output_path.with_suffix(".svga")
@@ -253,6 +289,10 @@ def gif_to_svga(
 
     out_size = output_path.stat().st_size
     frames_reduced = output_frame_count < orig_frame_count
+    duration_sec = round(total_ms / 1000.0, 3) if total_ms else None
+    svga_duration_sec = (
+        round(output_frame_count / float(fps_used), 3) if fps_used else None
+    )
     return {
         "inputPath": str(input_path),
         "outputPath": str(output_path),
@@ -265,7 +305,9 @@ def gif_to_svga(
         "originalFrameCount": orig_frame_count,
         "framesReduced": frames_reduced,
         "frameThinStep": thin_step_used if frames_reduced else 1,
-        "fps": fps,
+        "fps": fps_used,
+        "durationSec": duration_sec,
+        "svgaDurationSec": svga_duration_sec,
         "version": meta["version"],
         "output_filename": output_path.name,
         "fileSize": out_size,

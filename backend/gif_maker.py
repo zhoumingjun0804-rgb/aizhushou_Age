@@ -8,6 +8,10 @@ from PIL import Image
 
 DEFAULT_FPS = 12
 DEFAULT_DURATION_SEC = 1.6
+# App 上传常用上限；0 / None 表示不限制
+DEFAULT_MAX_BYTES = 1024 * 1024
+# 合成时上限：慢速底图插帧再多也不超过，避免动辄上百帧撑爆体积
+MAX_COMPOSE_FRAMES = 48
 SCALE_PRESETS = {"weak": 0.04, "medium": 0.07, "strong": 0.11}
 FLOAT_PRESETS = {"weak": 4, "medium": 8, "strong": 14}
 SWAY_PRESETS = {"weak": 4, "medium": 8, "strong": 14}
@@ -41,12 +45,13 @@ def _apply_alpha_mask(palette_img: Image.Image, alpha: Image.Image) -> Image.Ima
     return palette_img
 
 
-def _rgba_to_palette(frame: Image.Image) -> Image.Image:
-    """RGBA → 256 色调色板，保留透明像素（避免 convert('RGB') 把透明变黑）。"""
+def _rgba_to_palette(frame: Image.Image, colors: int = 255) -> Image.Image:
+    """RGBA → 调色板，保留透明像素（避免 convert('RGB') 把透明变黑）。"""
+    n = max(2, min(255, int(colors)))
     rgba = frame.convert("RGBA")
     alpha = rgba.getchannel("A")
     rgb = rgba.convert("RGB")
-    p = rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=255)
+    p = rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=n)
     return _apply_alpha_mask(p, alpha)
 
 
@@ -58,21 +63,63 @@ def _quantize_to_shared_palette(frame: Image.Image, palette_ref: Image.Image) ->
     return _apply_alpha_mask(p, alpha)
 
 
+def _normalize_durations(frame_ms: int | list[int], frame_count: int) -> list[int]:
+    if isinstance(frame_ms, list):
+        durations = [max(20, int(d or 100)) for d in frame_ms]
+        if len(durations) < frame_count:
+            durations.extend([durations[-1] if durations else 100] * (frame_count - len(durations)))
+        return durations[:frame_count]
+    return [max(20, int(frame_ms or 100))] * frame_count
+
+
+def _thin_timeline(
+    frames: list[Image.Image],
+    durations: list[int],
+    step: int,
+) -> tuple[list[Image.Image], list[int]]:
+    step = max(1, int(step))
+    if step <= 1 or len(frames) <= 2:
+        return frames, durations
+    out_frames: list[Image.Image] = []
+    out_durations: list[int] = []
+    i = 0
+    while i < len(frames):
+        chunk_d = durations[i : i + step]
+        out_frames.append(frames[i])
+        out_durations.append(max(20, sum(chunk_d) if chunk_d else 100))
+        i += step
+    if len(out_frames) < 2 and len(frames) >= 2:
+        return [frames[0], frames[-1]], [
+            max(20, sum(durations[:-1]) or 100),
+            max(20, durations[-1]),
+        ]
+    return out_frames, out_durations
+
+
+def _scale_frames(frames: list[Image.Image], scale: float) -> list[Image.Image]:
+    scale = float(scale)
+    if scale >= 0.999 or not frames:
+        return frames
+    scale = max(0.35, min(1.0, scale))
+    w, h = frames[0].size
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    if (nw, nh) == (w, h):
+        return frames
+    return [f.resize((nw, nh), Image.Resampling.LANCZOS) for f in frames]
+
+
 def _save_transparent_gif(
     frames: list[Image.Image],
     output_path: Path,
     frame_ms: int | list[int],
+    *,
+    colors: int = 255,
 ) -> None:
     if not frames:
         raise ValueError("no frames")
-    if isinstance(frame_ms, list):
-        durations = [max(20, int(d or 100)) for d in frame_ms]
-        if len(durations) < len(frames):
-            durations.extend([durations[-1] if durations else 100] * (len(frames) - len(durations)))
-        durations = durations[: len(frames)]
-    else:
-        durations = max(20, int(frame_ms or 100))
-    first_p = _rgba_to_palette(frames[0])
+    durations = _normalize_durations(frame_ms, len(frames))
+    first_p = _rgba_to_palette(frames[0], colors=colors)
     palette_frames = [first_p]
     for frame in frames[1:]:
         palette_frames.append(_quantize_to_shared_palette(frame, first_p))
@@ -85,6 +132,72 @@ def _save_transparent_gif(
         optimize=True,
         disposal=2,
     )
+
+
+def _save_gif_under_max_bytes(
+    frames: list[Image.Image],
+    frame_ms: int | list[int],
+    output_path: Path,
+    max_bytes: int | None,
+) -> dict:
+    """写入 GIF；若超过 max_bytes，按抽帧 → 减色 → 等比缩小依次压缩。"""
+    durations = _normalize_durations(frame_ms, len(frames))
+    enforce = bool(max_bytes and max_bytes > 0)
+    limit = int(max_bytes) if enforce else 0
+
+    # 先保尺寸，再缩小；同档内先抽帧再减色
+    scales = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
+    thin_steps = (1, 2, 3, 4, 5, 6, 8)
+    color_levels = (255, 128, 96, 64)
+
+    best: dict | None = None
+    uncompressed_size: int | None = None
+
+    for scale in scales:
+        for thin in thin_steps:
+            work_f, work_d = _thin_timeline(frames, durations, thin)
+            work_f = _scale_frames(work_f, scale)
+            for colors in color_levels:
+                _save_transparent_gif(work_f, output_path, work_d, colors=colors)
+                size = output_path.stat().st_size
+                if uncompressed_size is None and scale >= 0.999 and thin == 1 and colors >= 255:
+                    uncompressed_size = size
+                info = {
+                    "fileSize": size,
+                    "underLimit": (not enforce) or size <= limit,
+                    "framesReduced": len(work_f) < len(frames),
+                    "frameThinStep": thin if len(work_f) < len(frames) else 1,
+                    "scaled": scale < 0.999,
+                    "scale": round(scale, 3),
+                    "colors": colors,
+                    "frameCount": len(work_f),
+                    "width": work_f[0].size[0],
+                    "height": work_f[0].size[1],
+                    "durations": work_d,
+                    "uncompressedSize": uncompressed_size,
+                    "maxBytes": limit if enforce else None,
+                }
+                if best is None or size < best["fileSize"]:
+                    best = info
+                    if enforce and size <= limit:
+                        # 已达标：把当前最优结果留在 output_path（刚写入）
+                        return info
+                if not enforce:
+                    return info
+            if scale < 0.999 and thin >= 4:
+                break
+
+    # 仍超限：保留体积最小的一档
+    assert best is not None
+    work_f, work_d = _thin_timeline(frames, durations, int(best["frameThinStep"]))
+    work_f = _scale_frames(work_f, float(best["scale"]))
+    _save_transparent_gif(work_f, output_path, work_d, colors=int(best["colors"]))
+    best["fileSize"] = output_path.stat().st_size
+    best["underLimit"] = (not enforce) or best["fileSize"] <= limit
+    best["width"], best["height"] = work_f[0].size
+    best["frameCount"] = len(work_f)
+    best["durations"] = work_d
+    return best
 
 
 def _load_background_timeline(path: Path) -> tuple[list[Image.Image], list[int], bool]:
@@ -115,6 +228,25 @@ def _load_background_timeline(path: Path) -> tuple[list[Image.Image], list[int],
         if not frames:
             raise ValueError("底图 GIF 没有可用帧")
         return frames, durations, True
+
+
+def _synthetic_transparent_bg(
+    layers: list[tuple[Path, list[str], dict | None]],
+) -> Image.Image:
+    """无底图时：按动效图层尺寸生成透明画布（预留动效边距）。"""
+    max_w = 1
+    max_h = 1
+    for path, _, layout in layers:
+        if layout and layout.get("w") and layout.get("h"):
+            max_w = max(max_w, int(layout["w"]))
+            max_h = max(max_h, int(layout["h"]))
+            continue
+        with Image.open(path) as raw:
+            iw, ih = raw.size
+        max_w = max(max_w, iw)
+        max_h = max(max_h, ih)
+    pad = max(24, int(max(max_w, max_h) * 0.15))
+    return Image.new("RGBA", (max_w + 2 * pad, max_h + 2 * pad), (0, 0, 0, 0))
 
 
 def compute_combined_transform(t: float, effects: list[str], intensity: str) -> dict[str, float]:
@@ -217,7 +349,7 @@ def merge_gif_layers_by_image(
 
 
 def make_animated_gif(
-    background_path: Path,
+    background_path: Path | None,
     layers: list[tuple[Path, list[str], dict | None]],
     output_path: Path,
     *,
@@ -233,13 +365,18 @@ def make_animated_gif(
     button_height: int | None = None,
     foreground_path: Path | None = None,
     foreground_layout: dict | None = None,
+    max_bytes: int | None = DEFAULT_MAX_BYTES,
 ) -> dict:
     if not layers:
         raise ValueError("请至少上传一个动效图层")
 
     merged_layers = merge_gif_layers_by_image(layers)
-    bg_frames, bg_durations, bg_animated = _load_background_timeline(background_path)
-    background = bg_frames[0]
+    if background_path is not None and Path(background_path).is_file():
+        bg_frames, bg_durations, bg_animated = _load_background_timeline(Path(background_path))
+        background = bg_frames[0]
+    else:
+        background = _synthetic_transparent_bg(merged_layers)
+        bg_frames, bg_durations, bg_animated = [background], [100], False
     bg_w, bg_h = background.size
 
     # 上层动效周期与底图帧率解耦：「循环时长」只控制呼吸/浮动等快慢
@@ -257,6 +394,7 @@ def make_animated_gif(
     else:
         fps = max(6, min(24, int(fps)))
         frame_count = max(8, int(round(effect_duration_sec * fps)))
+        frame_count = min(frame_count, MAX_COMPOSE_FRAMES)
         frame_ms = int(1000 / fps)
         bg_frames = [background] * frame_count
         durations_ms = [frame_ms] * frame_count
@@ -316,8 +454,15 @@ def make_animated_gif(
     frames: list[Image.Image] = []
     out_durations: list[int] = []
     elapsed_ms = 0.0
-    # 动效至少按约 12fps 采样，避免慢速底图导致上层动作发飘/发慢
+    # 动效至少按约 12fps 采样，但总帧数封顶，避免慢速底图插出上百帧
     effect_sample_ms = max(40.0, effect_cycle_ms / max(8.0, effect_duration_sec * 12.0))
+    if bg_animated:
+        total_ms = sum(durations_ms) or 1.0
+        est_frames = 0
+        for d in durations_ms:
+            est_frames += max(1, int(math.ceil(float(d) / effect_sample_ms)))
+        if est_frames > MAX_COMPOSE_FRAMES:
+            effect_sample_ms = max(effect_sample_ms, total_ms / float(MAX_COMPOSE_FRAMES))
 
     def _compose_at(bg_frame: Image.Image, phase_t: float) -> Image.Image:
         composed = bg_frame.copy()
@@ -369,7 +514,14 @@ def make_animated_gif(
             step_ms = durations_ms[i] if i < len(durations_ms) else 100
             elapsed_ms += float(step_ms)
 
-    _save_transparent_gif(frames, output_path, frame_ms)
+    save_info = _save_gif_under_max_bytes(frames, frame_ms, output_path, max_bytes)
+    frame_count = int(save_info["frameCount"])
+    bg_w = int(save_info["width"])
+    bg_h = int(save_info["height"])
+    saved_durs = save_info.get("durations") or _normalize_durations(frame_ms, frame_count)
+    total_out_ms = sum(saved_durs) or 1
+    fps = max(1, int(round(1000.0 * frame_count / total_out_ms)))
+    out_duration_sec = total_out_ms / 1000.0
 
     enabled_effects: list[str] = []
     for _, effects, _ in merged_layers:
@@ -379,6 +531,12 @@ def make_animated_gif(
 
     first_rect = layer_images[0][2] if layer_images else (0, 0, 0, 0)
     bx, by, bw, bh = first_rect
+    scale = float(save_info.get("scale") or 1.0)
+    if scale < 0.999:
+        bx = int(round(bx * scale))
+        by = int(round(by * scale))
+        bw = max(1, int(round(bw * scale)))
+        bh = max(1, int(round(bh * scale)))
 
     return {
         "width": bg_w,
@@ -396,17 +554,25 @@ def make_animated_gif(
         "buttonHeight": bh,
         "hasForeground": foreground_img is not None,
         "backgroundAnimated": bg_animated,
-        "fileSize": output_path.stat().st_size,
+        "fileSize": save_info["fileSize"],
+        "underLimit": save_info.get("underLimit", True),
+        "maxBytes": save_info.get("maxBytes"),
+        "framesReduced": save_info.get("framesReduced", False),
+        "frameThinStep": save_info.get("frameThinStep", 1),
+        "scaled": save_info.get("scaled", False),
+        "scale": save_info.get("scale", 1.0),
+        "colors": save_info.get("colors", 255),
+        "uncompressedSize": save_info.get("uncompressedSize"),
     }
 
 
 def make_breathing_gif(
-    background_path: Path,
+    background_path: Path | None,
     button_path: Path,
     output_path: Path,
     **kwargs,
 ) -> dict:
-    """兼容旧接口：单图层呼吸动效。"""
+    """兼容旧接口：单图层呼吸动效。background_path 可为 None（透明画布）。"""
     return make_animated_gif(
         background_path,
         [(button_path, ["breathing"], None)],

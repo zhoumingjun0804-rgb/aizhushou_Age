@@ -201,9 +201,54 @@ class TestGifMaker(unittest.TestCase):
             )
             self.assertTrue(meta["backgroundAnimated"])
             self.assertEqual(meta["effectDurationSec"], 1.0)
-            # 4 秒底图 + 1 秒动效周期，细分后应远多于原 4 帧
-            self.assertGreaterEqual(meta["frameCount"], 20)
+            # 4 秒底图 + 1 秒动效周期，细分后应远多于原 4 帧（总帧有上限）
+            self.assertGreaterEqual(meta["frameCount"], 8)
+            self.assertLessEqual(meta["frameCount"], 48)
             self.assertAlmostEqual(meta["durationSec"], 4.0, places=1)
+            self.assertTrue(out.is_file())
+
+    def test_layer_only_without_background(self):
+        """无底图时，仅动效图层也可生成透明画布 GIF。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            btn = tmp / "btn.png"
+            out = tmp / "out.gif"
+            Image.new("RGBA", (80, 40), (255, 0, 0, 255)).save(btn)
+            meta = make_animated_gif(
+                None,
+                [(btn, ["breathing"], None)],
+                out,
+                duration_sec=1.0,
+                max_bytes=None,
+            )
+            self.assertGreaterEqual(meta["width"], 80)
+            self.assertGreaterEqual(meta["height"], 40)
+            self.assertFalse(meta["backgroundAnimated"])
+            self.assertEqual(meta["effects"], ["breathing"])
+            self.assertTrue(out.is_file())
+
+    def test_max_bytes_compresses_large_gif(self):
+        """大画布多帧时，开启 max_bytes 应压到上限内。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bg = tmp / "bg.png"
+            btn = tmp / "btn.png"
+            out = tmp / "out.gif"
+            img = Image.new("RGBA", (400, 500), (30, 40, 50, 255))
+            px = img.load()
+            for y in range(500):
+                for x in range(0, 400, 4):
+                    px[x, y] = ((x * 3 + y) % 255, (y * 2) % 255, (x + y) % 255, 255)
+            img.save(bg)
+            Image.new("RGBA", (80, 40), (255, 80, 0, 255)).save(btn)
+            meta = make_breathing_gif(
+                bg, btn, out,
+                button_x=100, button_y=200, button_width=80, button_height=40,
+                duration_sec=2.0,
+                max_bytes=80 * 1024,
+            )
+            self.assertTrue(meta["underLimit"])
+            self.assertLessEqual(meta["fileSize"], 80 * 1024)
             self.assertTrue(out.is_file())
 
 
