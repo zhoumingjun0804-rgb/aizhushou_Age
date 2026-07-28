@@ -45,6 +45,44 @@ class TestGifToSvgaTiming(unittest.TestCase):
             if result.get("framesReduced"):
                 self.assertLess(meta["fps"], 12)
 
+    def test_svga_compatible_with_mobile_player_conventions(self):
+        import io
+        import zlib
+
+        from gif_to_svga.proto import svga_pb2
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            gif_path = tmp / "tiny.gif"
+            out_path = tmp / "out.svga"
+            frames = [
+                Image.new("RGBA", (40, 20), (i * 40, 80, 120, 255)) for i in range(4)
+            ]
+            frames[0].save(
+                gif_path,
+                save_all=True,
+                append_images=frames[1:],
+                duration=[80] * 4,
+                loop=0,
+                disposal=2,
+            )
+            gif_to_svga(gif_path, out_path, max_bytes=0)
+            movie = svga_pb2.MovieEntity()
+            movie.ParseFromString(zlib.decompress(out_path.read_bytes()))
+            self.assertTrue(movie.version.startswith("2.1"))
+            self.assertTrue(movie.images)
+            self.assertTrue(all("." not in k for k in movie.images.keys()))
+            for sp in movie.sprites:
+                for fr in sp.frames:
+                    self.assertGreater(fr.layout.width, 0)
+                    self.assertGreater(fr.layout.height, 0)
+                    self.assertEqual(fr.transform.a, 1.0)
+                    self.assertEqual(fr.transform.d, 1.0)
+            # 资源图应为 RGBA PNG，而非索引色
+            sample = next(iter(movie.images.values()))
+            im = Image.open(io.BytesIO(sample))
+            self.assertEqual(im.mode, "RGBA")
+
 
 if __name__ == "__main__":
     unittest.main()

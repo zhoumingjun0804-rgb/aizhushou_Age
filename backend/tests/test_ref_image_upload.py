@@ -62,6 +62,27 @@ class TestRefImageUpload(unittest.TestCase):
         self.assertIn(GENERATION_REF_PROMPT_SUFFIX, payload["prompt"])
         self.assertTrue(payload["image_paths"])
 
+    def test_build_generation_payload_can_skip_style_suffix(self):
+        png = io.BytesIO()
+        Image.new("RGB", (4, 4), color="green").save(png, format="PNG")
+        fields = {
+            "project": "小灯塔",
+            "count": "1",
+            "client_id": "test",
+            "image_backend": "gpt",
+            "prompt": "直播间文案",
+            "kind": "with_prompt",
+            "skip_ref_prompt_suffix": "1",
+            "ref_image_0": {
+                "filename": "ref.png",
+                "data": png.getvalue(),
+            },
+        }
+        payload = build_generation_payload(fields, "with_prompt")
+        self.assertEqual(payload["prompt"], "直播间文案")
+        self.assertNotIn(GENERATION_REF_PROMPT_SUFFIX, payload["prompt"])
+        self.assertTrue(payload["image_paths"])
+
 
 if __name__ == "__main__":
     unittest.main()

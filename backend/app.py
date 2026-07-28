@@ -734,13 +734,16 @@ def _build_image_paths_from_selection(fields: dict, project: str) -> list:
     return collect_reference_image_paths(selected_list, project)
 
 def get_project_images(project_name, design_type: str = ""):
-    """获取项目参考图：folder_types 按设计类型子目录，static_types 为扁平 refs/。"""
+    """获取项目参考图：folder_types 按设计类型子目录，static_types 为扁平 refs/。
+
+    未指定 design_type 时：folder_types 回退为扁平 refs/（生图页已取消设计类型选择）。
+    """
     if not project_name:
         return []
     if detect_project_catalog(project_name) == "folder_types":
         if design_type:
             return list_typed_reference_images(project_name, design_type)
-        return []
+        return list_flat_reference_images(project_name)
     return list_flat_reference_images(project_name)
 
 
@@ -1653,7 +1656,10 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
     image_paths.extend(str(p) for p in _build_image_paths_from_selection(fields, project))
     user_ref_paths = _save_ref_images_from_fields(fields)
     image_paths.extend(str(p) for p in user_ref_paths)
-    if user_ref_paths:
+    skip_ref_suffix = str(fields.get("skip_ref_prompt_suffix", "") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    if user_ref_paths and not skip_ref_suffix:
         base_prompt = payload.get("prompt") or ""
         payload["prompt"] = (
             f"{base_prompt}。{GENERATION_REF_PROMPT_SUFFIX}"
@@ -2366,11 +2372,11 @@ def run_ai_extract_subject(
     trim: bool = True,
     local_project: Optional[str] = None,
 ) -> dict:
-    """AI 抠图：以参考图（可选框选）走 GPT Image 2 生图，按用户说明输出。"""
+    """AI 提取：以参考图（可选框选）走 GPT Image 2 生图，按用户说明输出。"""
     from PIL import Image
 
     if not local_project or not gpt_image_available_for_project(local_project):
-        raise ValueError("未配置 GPT 生图 Key，无法使用 AI 抠图")
+        raise ValueError("未配置 GPT 生图 Key，无法使用 AI 提取")
 
     with Image.open(input_path) as im:
         img_w, img_h = im.size
@@ -2487,16 +2493,16 @@ def _run_smart_cutout_job(
         try:
             add_history(build_history_entry(
                 mode="img2img",
-                prompt=f"AI 抠图 · {(prompt or '').strip() or '参考图生成'}",
+                prompt=f"AI 提取 · {(prompt or '').strip() or '参考图生成'}",
                 description=(prompt or "").strip(),
                 source="ai_cutout",
                 project=local_project or "",
                 output_images=[output_path.name],
                 variants_count=1,
-                meta_tags=["🪄AI抠图", "GPT Image 2"],
+                meta_tags=["🪄AI提取", "GPT Image 2"],
             ))
         except Exception as hist_err:
-            print(f"[HISTORY] AI 抠图记录失败: {hist_err}")
+            print(f"[HISTORY] AI 提取记录失败: {hist_err}")
     except Exception as e:
         print(f"[SMART-CUTOUT] 任务 {job_id} 失败: {e}")
         import traceback
@@ -3892,7 +3898,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send_json(job)
 
     def _handle_smart_cutout(self):
-        """AI 抠图：参考图 + 说明，用 GPT Image 2 生图输出透明素材。"""
+        """AI 提取：参考图 + 说明，用 GPT Image 2 生图输出透明素材。"""
         try:
             _reload_runtime_env()
             content_type = self.headers.get("Content-Type", "")
@@ -3925,7 +3931,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not local_project:
                 return
             if not gpt_image_available_for_project(local_project):
-                self._send_json({"error": "未配置 GPT 生图 Key，无法使用 AI 抠图"})
+                self._send_json({"error": "未配置 GPT 生图 Key，无法使用 AI 提取"})
                 return
             job_id = uuid.uuid4().hex[:12]
             ext = pathlib.Path(img_field.get("filename") or "input.png").suffix.lower()

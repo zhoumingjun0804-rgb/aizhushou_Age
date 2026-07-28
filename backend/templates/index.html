@@ -564,6 +564,43 @@
             border-color: rgba(129,140,248,0.65); color: white; }
         .splash-panel { display: none; }
         .splash-panel.active { display: block; }
+        .liveroom-extract-upload { border: 2px dashed rgba(52,211,153,0.45); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; }
+        .liveroom-extract-upload:hover, .liveroom-extract-upload.dragover { border-color: rgba(52,211,153,0.75); background: rgba(52,211,153,0.06); }
+        .liveroom-extract-upload.has-image { cursor: default; padding: 14px; }
+        .liveroom-extract-preview { display: none; flex-direction: column; align-items: center; gap: 10px; }
+        .liveroom-extract-upload.has-image .liveroom-extract-preview { display: flex; }
+        .liveroom-extract-upload.has-image .liveroom-extract-upload-placeholder { display: none; }
+        .liveroom-extract-preview img { max-width: 100%; max-height: 360px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.2); }
+        .liveroom-extract-targets { display: none; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+        .liveroom-extract-targets.visible { display: grid; }
+        .liveroom-extract-target-btn { padding: 14px 10px; border-radius: 10px; border: 1px solid rgba(96,165,250,0.45);
+            background: rgba(59,130,246,0.18); color: rgba(255,255,255,0.92); font-size: 14px; font-weight: 600; cursor: pointer; }
+        .liveroom-extract-target-btn:hover { background: rgba(59,130,246,0.3); border-color: rgba(147,197,253,0.7); }
+        .liveroom-extract-target-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .liveroom-extract-target-btn.active { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96,165,250,0.35); }
+        .liveroom-extract-result { display: none; margin-top: 18px; text-align: center; }
+        .liveroom-extract-result.visible { display: block; }
+        .liveroom-extract-result img { max-width: 100%; max-height: 320px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.2); cursor: zoom-in; }
+        .liveroom-extract-result-meta { margin: 10px 0; font-size: 13px; color: rgba(255,255,255,0.65); }
+        .liveroom-extract-refine { margin-top: 14px; text-align: left; }
+        .liveroom-extract-refine label { display: block; font-size: 12px; color: rgba(255,255,255,0.7); margin-bottom: 6px; }
+        .liveroom-extract-refine textarea { width: 100%; min-height: 64px; padding: 10px 12px; border-radius: 10px; resize: vertical;
+            border: 1px solid rgba(99,102,241,0.35); background: rgba(0,0,0,0.25); color: white; font-size: 13px; }
+        .liveroom-extract-refine textarea:focus { outline: none; border-color: #818cf8; }
+        .liveroom-extract-refine-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; align-items: center; }
+        .liveroom-extract-wand-view { display: none; margin-top: 8px; text-align: center; }
+        .liveroom-extract-wand-view.active { display: block; }
+        .liveroom-extract-crop-view { display: none; margin-top: 8px; text-align: center; }
+        .liveroom-extract-crop-view.active { display: block; }
+        .liveroom-extract-result-view.hidden { display: none; }
+        .liveroom-extract-wand-view .cutout-apply-btn { padding: 12px 28px; border: none; border-radius: 10px; cursor: pointer;
+            font-size: 15px; font-weight: 600; color: #042f1a;
+            background: linear-gradient(135deg, #6ee7b7, #34d399);
+            box-shadow: 0 4px 14px rgba(52,211,153,0.35); }
+        .liveroom-extract-wand-view .cutout-apply-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        @media (max-width: 720px) {
+            .liveroom-extract-targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
         .splash-target-size { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
         .splash-target-size input[type="number"] { width: 100px; padding: 8px 10px; border-radius: 8px;
             border: 1px solid rgba(99,102,241,0.35); background: rgba(0,0,0,0.25); color: white; font-size: 13px; }
@@ -1045,6 +1082,7 @@
             <span class="nav-tools-label">工具</span>
             <button type="button" class="tab-btn-tool" data-tab="landing" onclick="switchTab('landing', this)">📄 落地页</button>
             <button type="button" class="tab-btn-tool" data-tab="multi" onclick="switchTab('multi', this)">📐 开屏</button>
+            <button type="button" class="tab-btn-tool" data-tab="liveroom" onclick="switchTab('liveroom', this)">📺 直播间</button>
             <button type="button" class="tab-btn-tool feature-hidden" data-tab="layout" onclick="switchTab('layout', this)">📋 延展</button>
             <button type="button" class="tab-btn-tool" data-tab="crop" onclick="switchTab('crop', this)">✂️ 裁切</button>
             <button type="button" class="tab-btn-tool" data-tab="gifmaker" onclick="switchTab('gifmaker', this)">🎞️ 动图</button>
@@ -1063,17 +1101,11 @@
         </div>
         
         <div class="card tab-content active" id="generateTab">
-            <!-- 设计类型 -->
-            <div class="project-section">
-                <div class="project-bar">
-                    <div class="project-bar-field">
-                        <label>设计类型</label>
-                        <select id="designType" onchange="onDesignTypeChange()">
-                            <option value="">请选择设计类型</option>
-                        </select>
-                    </div>
-                </div>
-                <p class="project-refs-hint" id="projectRefsHint">请先选择项目组和设计类型，再挑选参考图</p>
+            <div class="project-section feature-hidden" id="projectRefsSection" aria-hidden="true">
+                <select id="designType" style="display:none;" aria-hidden="true">
+                    <option value="">请选择设计类型</option>
+                </select>
+                <p class="project-refs-hint" id="projectRefsHint">请先选择项目组，再挑选参考图（也可在下方自行上传）</p>
                 <div class="project-refs-wrap" id="projectRefsWrap" style="display: none;">
                     <div class="project-info" id="projectInfo"></div>
                     <div class="project-images-grid" id="projectImagesGrid"></div>
@@ -1556,6 +1588,142 @@
             </div>
         </div>
 
+        <!-- 直播间：生图 + 提取（套用抠图） -->
+        <div class="card tab-content" id="liveroomTab">
+            <div class="splash-v2">
+                <h3>📺 直播间</h3>
+                <div class="splash-subnav" role="tablist" aria-label="直播间功能">
+                    <button type="button" class="splash-subnav-btn active" data-liveroom-mode="generate" onclick="switchLiveroomMode('generate', this)">① 生图</button>
+                    <button type="button" class="splash-subnav-btn" data-liveroom-mode="extract" onclick="switchLiveroomMode('extract', this)">② 提取</button>
+                </div>
+
+                <div class="splash-panel active" id="liveroomGeneratePanel">
+                    <p class="multi-hint">用 <strong>GPT Image 2</strong> 生成直播间画面（默认尺寸 1080×1920）。可先上传参考图（选填），再输入描述生成。</p>
+                    <div class="splash-hero-gen">
+                        <div class="splash-hero-ref-zone" id="liveroomRefZone" onclick="onLiveroomRefZoneClick(event)" tabindex="0">
+                            <p class="splash-hero-ref-placeholder" id="liveroomRefPlaceholder">📎 参考图（选填，最多 3 张）</p>
+                            <p style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:4px;">点击此处后 Ctrl+V 粘贴；也可拖拽或选择文件</p>
+                            <div class="splash-hero-ref-previews" id="liveroomRefPreviews"></div>
+                            <div class="landing-gen-ref-actions">
+                                <button type="button" class="action-btn btn-outline" onclick="onLiveroomRefPickClick(event)" style="font-size:12px;padding:4px 10px;">选择文件</button>
+                                <button type="button" class="action-btn btn-outline" id="liveroomRefClearBtn" onclick="clearLiveroomRefs(event)" style="display:none;font-size:12px;padding:4px 10px;">清空参考图</button>
+                            </div>
+                        </div>
+                        <input type="file" id="liveroomRefInput" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="onLiveroomRefSelected(event)">
+                        <textarea id="liveroomPrompt" class="splash-hero-prompt" placeholder="描述直播间画面，例如：画啦啦直播间背景，暖色灯光，卡通 IP 居中，底部留出商品卡区域…"></textarea>
+                        <div class="splash-hero-size-row">
+                            <span style="font-size:12px;color:rgba(255,255,255,0.65);">生成尺寸</span>
+                            <span style="font-size:13px;color:rgba(255,255,255,0.85);padding:8px 12px;border-radius:8px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.12);">直播间 · 1080×1920</span>
+                        </div>
+                        <button type="button" class="multi-export-btn" id="liveroomGenBtn" onclick="generateLiveroom()">✨ GPT Image 2 生成</button>
+                        <div class="loading-card" id="liveroomLoading" style="display:none;">
+                            <div class="spinner"></div>
+                            <p class="loading-text" id="liveroomLoadingText">GPT Image 2 正在生成直播间画面…</p>
+                        </div>
+                        <p id="liveroomGenError" style="display:none;color:#f87171;font-size:13px;margin-top:10px;"></p>
+                        <div class="splash-hero-variants" id="liveroomVariantsGrid"></div>
+                        <div id="liveroomGoExtractWrap" style="display:none;margin-top:14px;">
+                            <button type="button" class="multi-export-btn" id="liveroomGoExtractBtn" onclick="goLiveroomExtract()">🪄 去提取</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="splash-panel" id="liveroomExtractPanel">
+                    <p class="multi-hint">上传直播间画面后，点击下方位置按钮一键 <strong>AI 提取</strong>（可先不填关键词，使用内置说明；结果不满意可补充关键词后再次提取）。</p>
+                    <div class="liveroom-extract-upload" id="liveroomExtractUploadZone" onclick="onLiveroomExtractUploadZoneClick(event)" tabindex="0">
+                        <div class="liveroom-extract-upload-placeholder" id="liveroomExtractUploadPlaceholder">
+                            <p style="color: rgba(255,255,255,0.65);">🖼️ 点击此处后 Ctrl+V 粘贴，或拖拽上传</p>
+                            <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 8px;">支持 PNG、JPG、WebP</p>
+                            <button type="button" class="action-btn btn-outline" onclick="onLiveroomExtractPickClick(event)" style="margin-top:10px;font-size:12px;padding:4px 10px;">选择文件</button>
+                        </div>
+                        <div class="liveroom-extract-preview" id="liveroomExtractPreviewWrap">
+                            <img id="liveroomExtractPreviewImg" alt="待提取画面">
+                            <button type="button" class="action-btn btn-outline" onclick="clearLiveroomExtractImage(event)">移除图片</button>
+                        </div>
+                    </div>
+                    <input type="file" id="liveroomExtractInput" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="onLiveroomExtractSelected(event)">
+
+                    <div class="liveroom-extract-targets" id="liveroomExtractTargets" role="group" aria-label="提取位置">
+                        <button type="button" class="liveroom-extract-target-btn" data-liveroom-extract="logo" onclick="runLiveroomExtract('logo')">提取logo</button>
+                        <button type="button" class="liveroom-extract-target-btn" data-liveroom-extract="left" onclick="runLiveroomExtract('left')">提取左贴片</button>
+                        <button type="button" class="liveroom-extract-target-btn" data-liveroom-extract="bottom" onclick="runLiveroomExtract('bottom')">提取底部贴片</button>
+                        <button type="button" class="liveroom-extract-target-btn" data-liveroom-extract="bg" onclick="runLiveroomExtract('bg')">提取背景</button>
+                    </div>
+
+                    <div class="loading-card" id="liveroomExtractLoading" style="display:none;">
+                        <div class="spinner"></div>
+                        <p class="loading-text" id="liveroomExtractLoadingText">GPT Image 2 正在提取，约需 1–3 分钟…</p>
+                    </div>
+                    <p id="liveroomExtractError" style="display:none;color:#f87171;font-size:13px;margin-top:10px;"></p>
+
+                    <div class="liveroom-extract-result" id="liveroomExtractResult">
+                        <p class="liveroom-extract-result-meta" id="liveroomExtractResultMeta"></p>
+
+                        <div class="liveroom-extract-result-view" id="liveroomExtractResultView">
+                            <img id="liveroomExtractResultImg" alt="提取结果" onclick="openLiveroomExtractResultPreview()">
+                            <div class="liveroom-extract-refine-actions" style="justify-content:center;margin-top:12px;">
+                                <button type="button" class="action-btn btn-outline" id="liveroomExtractWandBtn" onclick="enterLiveroomWandMode()" style="display:none;">🎯 魔棒</button>
+                                <button type="button" class="action-btn btn-outline" id="liveroomExtractCropBtn" onclick="enterLiveroomCropMode()" style="display:none;">✂️ 裁切</button>
+                                <a class="action-btn btn-primary" id="liveroomExtractDownloadBtn" href="#" download>💾 下载 PNG</a>
+                            </div>
+                        </div>
+
+                        <div class="liveroom-extract-wand-view" id="liveroomExtractWandView">
+                            <div class="cutout-options" style="justify-content:center;">
+                                <label>容差
+                                    <input type="range" id="liveroomWandTolerance" min="0" max="128" value="32" oninput="onLiveroomWandToleranceChange()">
+                                    <span class="cutout-tolerance-val" id="liveroomWandTolVal">32</span>
+                                </label>
+                            </div>
+                            <div class="cutout-canvas-wrap" id="liveroomWandCanvasWrap">
+                                <img id="liveroomWandPreviewImg" alt="魔棒预览" draggable="false">
+                                <canvas id="liveroomWandOverlay"></canvas>
+                            </div>
+                            <p class="cutout-info" id="liveroomWandInfo">点击空白/相近颜色区域选中要去掉的部分（红色高亮）</p>
+                            <div class="liveroom-extract-refine-actions" style="justify-content:center;">
+                                <button type="button" class="cutout-apply-btn" id="liveroomWandConfirmBtn" onclick="confirmLiveroomWand()" disabled>✓ 确定抠图</button>
+                                <button type="button" class="action-btn btn-outline" onclick="undoLiveroomWandSelection()">↩ 撤销</button>
+                                <button type="button" class="action-btn btn-outline" onclick="clearLiveroomWandSelection()">清除选区</button>
+                                <button type="button" class="action-btn btn-outline" onclick="exitLiveroomWandMode()">退出魔棒</button>
+                            </div>
+                        </div>
+
+                        <div class="liveroom-extract-crop-view" id="liveroomExtractCropView">
+                            <div class="crop-canvas-wrap" id="liveroomCropCanvasWrap">
+                                <img id="liveroomCropPreviewImg" alt="裁切预览" draggable="false">
+                                <div class="crop-overlay" id="liveroomCropOverlay">
+                                    <div class="crop-box" id="liveroomCropBox">
+                                        <span class="crop-handle h-nw" data-handle="nw" title="等比缩放"></span>
+                                        <span class="crop-handle h-n" data-handle="n" title="上下拉伸"></span>
+                                        <span class="crop-handle h-ne" data-handle="ne" title="等比缩放"></span>
+                                        <span class="crop-handle h-e" data-handle="e" title="左右拉伸"></span>
+                                        <span class="crop-handle h-se" data-handle="se" title="等比缩放"></span>
+                                        <span class="crop-handle h-s" data-handle="s" title="上下拉伸"></span>
+                                        <span class="crop-handle h-sw" data-handle="sw" title="等比缩放"></span>
+                                        <span class="crop-handle h-w" data-handle="w" title="左右拉伸"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="crop-info" id="liveroomCropInfo">拖动黄框移动；四边自由拉伸，四角等比缩放</p>
+                            <div class="liveroom-extract-refine-actions" style="justify-content:center;">
+                                <button type="button" class="crop-apply-btn" id="liveroomCropConfirmBtn" onclick="applyLiveroomCrop()">✓ 应用裁切</button>
+                                <button type="button" class="action-btn btn-outline" onclick="resetLiveroomCropBox()">↺ 重置选区</button>
+                                <button type="button" class="action-btn btn-outline" onclick="exitLiveroomCropMode()">退出裁切</button>
+                            </div>
+                        </div>
+
+                        <div class="liveroom-extract-refine">
+                            <label for="liveroomExtractExtraPrompt">补充关键词（可选，效果不满意时填写后再提取）</label>
+                            <textarea id="liveroomExtractExtraPrompt" placeholder="提取图中logo，包含主标题&副标题"></textarea>
+                            <div class="liveroom-extract-refine-actions">
+                                <button type="button" class="multi-export-btn" id="liveroomExtractRerunBtn" onclick="rerunLiveroomExtract()" style="width:auto;min-width:160px;padding:12px 20px;">🔄 再次提取</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 规范延展 -->
         <div class="card tab-content feature-hidden" id="layoutTab">
             <div class="layout-section">
@@ -1652,13 +1820,14 @@
             </div>
         </div>
 
-        <!-- 抠图工具 -->
+        <!-- 抠图工具（UI 与直播间「提取」共享同一套 DOM） -->
         <div class="card tab-content" id="cutoutTab">
-            <div class="cutout-section">
-                <h3>🪄 抠图工具</h3>
-                <p class="cutout-hint" id="cutoutHintText"><strong>AI 抠图</strong>根据参考图与提取说明，用 GPT Image 2 生成；<strong>魔棒</strong>适合纯色/简单背景。</p>
+            <div id="cutoutHomeMount">
+            <div class="cutout-section" id="cutoutSharedRoot">
+                <h3 id="cutoutSharedTitle">🪄 抠图工具</h3>
+                <p class="cutout-hint" id="cutoutHintText"><strong>AI 提取</strong>根据参考图与提取说明，用 GPT Image 2 生成；<strong>魔棒</strong>适合纯色/简单背景。</p>
                 <div class="cutout-mode-tabs">
-                    <button type="button" class="cutout-mode-btn active" data-cutout-mode="extract" onclick="setCutoutMode('extract', this)">✨ AI 抠图</button>
+                    <button type="button" class="cutout-mode-btn active" data-cutout-mode="extract" onclick="setCutoutMode('extract', this)">✨ AI 提取</button>
                     <button type="button" class="cutout-mode-btn" data-cutout-mode="wand" onclick="setCutoutMode('wand', this)">🎯 魔棒（删背景）</button>
                 </div>
                 <div class="cutout-upload-zone" id="cutoutUploadZone" onclick="onCutoutUploadZoneClick(event)" tabindex="0">
@@ -1688,7 +1857,7 @@
                     </div>
                     <p class="cutout-info" id="cutoutInfo">填写提取说明即可生成，也可拖拽框选区域（可框选整图）</p>
                     <div class="cutout-actions">
-                        <button type="button" class="cutout-apply-btn" id="cutoutApplyBtn" onclick="applyCutout()" disabled>✓ AI 抠图</button>
+                        <button type="button" class="cutout-apply-btn" id="cutoutApplyBtn" onclick="applyCutout()" disabled>✓ AI 提取</button>
                         <button type="button" class="action-btn btn-outline" id="cutoutClearRoiBtn" onclick="clearCutoutRoi()">清除框选</button>
                         <button type="button" class="action-btn btn-outline" id="cutoutUndoBtn" onclick="undoCutoutSelection()" style="display:none;">↩ 撤销</button>
                         <button type="button" class="action-btn btn-outline" onclick="clearCutoutSelectionOrRoi()">清除选区</button>
@@ -1707,6 +1876,7 @@
                         <a class="action-btn btn-primary" id="cutoutDownloadBtn" href="#" download>💾 下载 PNG</a>
                     </div>
                 </div>
+            </div>
             </div>
         </div>
 
@@ -2456,6 +2626,8 @@ window.onload = function() {
     if (printDpiSel) printDpiSel.addEventListener('change', onPrintSizeChange);
     initTaskCompleteSoundToggle();
     initSplashUploadZones();
+    initLiveroomUploadZones();
+    initLiveroomExtractUpload();
     initLandingUploadZones();
     initLayoutExtend();
     initMultiUploadZone();
@@ -2531,7 +2703,7 @@ function parseDesignBrief(text) {
 
 function getDesignTypeLabel() {
     var sel = document.getElementById('designType');
-    if (!sel || !sel.value) return '';
+    if (!sel || !sel.value) return '海报';
     var opt = sel.selectedOptions[0];
     if (opt) return opt.textContent.replace(/\s*\(\d+张参考\)\s*$/, '').trim();
     return sel.value;
@@ -3171,9 +3343,8 @@ function appendGenerationSize(formData) {
 }
 
 function shouldShowProjectRefs() {
-    var project = getSelectedProjectName();
-    var designType = document.getElementById('designType').value;
-    return !!(project && designType);
+    // 生图页不再展示项目组参考图缩略图，请用下方「参考图」上传
+    return false;
 }
 
 function updateProjectRefsVisibility() {
@@ -3307,7 +3478,7 @@ function appendGenerationUploads(formData) {
 async function onProjectSelectChange() {
     var project = getSelectedProjectName();
     var designSel = document.getElementById('designType');
-    designSel.innerHTML = '<option value="">请选择设计类型</option>';
+    if (designSel) designSel.innerHTML = '<option value="">请选择设计类型</option>';
     selectedProjectImages = [];
     clearUploadedRefImages();
     clearUploadedLogo();
@@ -3326,13 +3497,15 @@ async function onProjectSelectChange() {
     await loadDesignTypesForProject(project);
     loadSplashSizePresets();
     updateProjectRefsVisibility();
+    // 不再要求选择设计类型：选好项目组即可加载参考图
+    onProjectOrDesignTypeChange();
     updateEditImageButtonState();
 }
 
 async function loadDesignTypesForProject(project) {
     var sel = document.getElementById('designType');
-    if (!sel || !project) return;
-    sel.innerHTML = '<option value="">请选择设计类型</option>';
+    if (!project) return;
+    if (sel) sel.innerHTML = '<option value="">请选择设计类型</option>';
     DESIGN_TYPE_SIZE_DEFAULTS = {};
     DESIGN_TYPE_ALTERNATE_SIZES = {};
     try {
@@ -3343,13 +3516,16 @@ async function loadDesignTypesForProject(project) {
         refreshOnlineSizeOptions(currentProjectCatalog, hllOnlineSizePresetsFull);
         if (data.available_models) applyAvailableModels(data.available_models);
         (data.designTypes || []).forEach(function(item) {
-            var opt = document.createElement('option');
-            opt.value = item.value;
-            var suffix = '';
-            if (currentProjectCatalog === 'folder_types' && item.referenceCount != null) {
-                suffix = ' (' + item.referenceCount + '张参考)';
+            if (sel) {
+                var opt = document.createElement('option');
+                opt.value = item.value;
+                var suffix = '';
+                if (currentProjectCatalog === 'folder_types' && item.referenceCount != null) {
+                    suffix = ' (' + item.referenceCount + '张参考)';
+                }
+                opt.textContent = (item.label || item.value) + suffix;
+                sel.appendChild(opt);
             }
-            opt.textContent = (item.label || item.value) + suffix;
             if (item.defaultSize && item.defaultSize.width && item.defaultSize.height) {
                 DESIGN_TYPE_SIZE_DEFAULTS[item.value] = item.defaultSize;
                 DESIGN_TYPE_SIZE_DEFAULTS[item.label || ''] = item.defaultSize;
@@ -3363,7 +3539,6 @@ async function loadDesignTypesForProject(project) {
                 DESIGN_TYPE_ALTERNATE_SIZES[item.value] = item.alternateSizes;
                 DESIGN_TYPE_ALTERNATE_SIZES[item.label || ''] = item.alternateSizes;
             }
-            sel.appendChild(opt);
         });
     } catch (e) {
         console.error('加载设计类型失败', e);
@@ -3377,7 +3552,7 @@ function onProjectOrDesignTypeChange() {
 }
 
 function applyDefaultSizeForDesignType() {
-    var designType = document.getElementById('designType').value;
+    var designType = (document.getElementById('designType') || {}).value || '';
     if (!designType) return;
     var size = DESIGN_TYPE_SIZE_DEFAULTS[designType];
     if (!size || !size.width || !size.height) return;
@@ -3444,7 +3619,7 @@ async function loadProjects() {
     }
 }
 
-// 选择项目 + 设计类型后加载参考图
+// 选择项目组后加载参考图（不再依赖设计类型）
 function selectProject() {
     if (!shouldShowProjectRefs()) {
         clearProjectRefs();
@@ -3453,7 +3628,7 @@ function selectProject() {
     var grid = document.getElementById('projectImagesGrid');
     selectedProjectImages = [];
     var meta = getSelectedProjectMeta();
-    var designType = document.getElementById('designType').value;
+    var designType = (document.getElementById('designType') || {}).value || '';
     if (!meta) {
         clearProjectRefs();
         return;
@@ -3466,8 +3641,7 @@ function selectProject() {
         productType: meta.productType
     };
     currentProjectCatalog = meta.catalog;
-    var typeLabel = getDesignTypeLabel();
-    var info = meta.displayName + ' · ' + typeLabel;
+    var info = meta.displayName || meta.name;
     if (meta.tags) info += '。风格标签：' + meta.tags;
     if (meta.desc) info += '。' + meta.desc;
     document.getElementById('projectInfo').textContent = info;
@@ -3489,8 +3663,8 @@ async function loadProjectImages(projectName, designType, grid) {
         if (images.length === 0) {
             grid.innerHTML = '<span class="select-hint">' +
                 (currentProjectCatalog === 'folder_types'
-                    ? '该设计类型下暂无参考图，请将素材放入 projects/' + projectName + '/types/对应文件夹'
-                    : '该项目暂无参考图，请将素材放入 projects/' + projectName + '/refs/') +
+                    ? '该项目暂无可直接勾选的参考图，请在下方自行上传参考图'
+                    : '该项目暂无参考图，请将素材放入 projects/' + projectName + '/refs/，或在下方自行上传') +
                 '</span>';
             grid.classList.add('active');
             return;
@@ -5890,6 +6064,1117 @@ async function generateSplashHero() {
         if (loading) loading.style.display = 'none';
         if (btn) btn.disabled = false;
     }
+}
+
+// ─── 直播间：GPT Image 2 生图 ─────────────────────────────────
+var liveroomRefImages = [];
+var liveroomVariants = [];
+var liveroomSelectedVariant = -1;
+
+function appendLiveroomRefs(formData) {
+    for (var i = 0; i < liveroomRefImages.length; i++) {
+        var dataUrl = liveroomRefImages[i];
+        var blob = dataUrlToBlob(dataUrl);
+        var ext = extFromDataUrl(dataUrl);
+        formData.append('ref_image_' + i, blob, 'ref_' + i + '.' + ext);
+    }
+}
+
+function appendLiveroomSize(formData) {
+    formData.append('output_width', '1080');
+    formData.append('output_height', '1920');
+    formData.append('size_mode', 'online');
+    formData.append('size_label', '直播间');
+}
+
+function renderLiveroomRefPreviews() {
+    var container = document.getElementById('liveroomRefPreviews');
+    var zone = document.getElementById('liveroomRefZone');
+    var placeholder = document.getElementById('liveroomRefPlaceholder');
+    var clearBtn = document.getElementById('liveroomRefClearBtn');
+    if (!container) return;
+    if (zone) zone.classList.toggle('has-image', liveroomRefImages.length > 0);
+    if (placeholder) placeholder.style.display = liveroomRefImages.length ? 'none' : '';
+    if (clearBtn) clearBtn.style.display = liveroomRefImages.length ? '' : 'none';
+    container.innerHTML = '';
+    for (var i = 0; i < liveroomRefImages.length; i++) {
+        (function(idx, src) {
+            var wrap = document.createElement('div');
+            wrap.className = 'uploaded-thumb-wrap';
+            var img = document.createElement('img');
+            img.src = src;
+            img.alt = '参考图 ' + (idx + 1);
+            img.className = 'uploaded-thumb';
+            var removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'uploaded-thumb-remove';
+            removeBtn.textContent = '×';
+            removeBtn.onclick = function(e) {
+                e.stopPropagation();
+                liveroomRefImages.splice(idx, 1);
+                renderLiveroomRefPreviews();
+            };
+            wrap.appendChild(img);
+            wrap.appendChild(removeBtn);
+            container.appendChild(wrap);
+        })(i, liveroomRefImages[i]);
+    }
+}
+
+function clearLiveroomRefs(ev) {
+    if (ev) ev.stopPropagation();
+    liveroomRefImages.length = 0;
+    var input = document.getElementById('liveroomRefInput');
+    if (input) input.value = '';
+    renderLiveroomRefPreviews();
+}
+
+function onLiveroomRefZoneClick(ev) {
+    if (ev.target && (ev.target.closest('.uploaded-thumb-wrap') || ev.target.closest('button'))) return;
+    var zone = document.getElementById('liveroomRefZone');
+    if (zone) { try { zone.focus(); } catch (e) {} }
+}
+
+function onLiveroomRefPickClick(ev) {
+    if (ev) ev.stopPropagation();
+    document.getElementById('liveroomRefInput').click();
+}
+
+function onLiveroomRefSelected(ev) {
+    addRefImagesFromFiles(ev.target.files, liveroomRefImages, renderLiveroomRefPreviews);
+    ev.target.value = '';
+}
+
+function updateLiveroomGoExtractBtn() {
+    var wrap = document.getElementById('liveroomGoExtractWrap');
+    if (wrap) wrap.style.display = liveroomVariants.length ? 'block' : 'none';
+}
+
+function selectLiveroomVariant(idx) {
+    if (idx < 0 || idx >= liveroomVariants.length) return;
+    liveroomSelectedVariant = idx;
+    document.querySelectorAll('#liveroomVariantsGrid .splash-hero-variant').forEach(function(el, i) {
+        el.classList.toggle('selected', i === idx);
+    });
+}
+
+function renderLiveroomVariants(vars) {
+    var grid = document.getElementById('liveroomVariantsGrid');
+    if (!grid) return;
+    liveroomVariants = (vars || []).filter(function(v) { return v && v.filename; });
+    liveroomSelectedVariant = -1;
+    if (!liveroomVariants.length) {
+        var err = (vars || []).map(function(v) { return v && v.error; }).filter(Boolean)[0] || '未生成可用图片';
+        grid.innerHTML = '<p style="grid-column:1/-1;color:#fca5a5;font-size:13px;">' + err + '</p>';
+        updateLiveroomGoExtractBtn();
+        return;
+    }
+    grid.innerHTML = liveroomVariants.map(function(v, i) {
+        var url = '/outputs/' + v.filename;
+        var size = (v.width && v.height) ? (' · ' + v.width + '×' + v.height) : '';
+        return '<div class="splash-hero-variant" id="liveroomVariant-' + i + '" onclick="selectLiveroomVariant(' + i + ')">' +
+            '<img src="' + url + '?t=' + Date.now() + '" alt="候选 ' + (i + 1) + '"' +
+            ' onclick="event.stopPropagation(); openLiveroomVariantPreview(' + i + ')">' +
+            '<div class="label">候选 ' + (i + 1) + size +
+            ' · 点击选中 · <a href="' + url + '" download="直播间_' + (i + 1) + '.png" onclick="event.stopPropagation()">下载</a></div></div>';
+    }).join('');
+    selectLiveroomVariant(0);
+    updateLiveroomGoExtractBtn();
+}
+
+function openLiveroomVariantPreview(idx) {
+    if (!liveroomVariants.length) return;
+    var images = liveroomVariants.map(function(v) { return '/outputs/' + v.filename; });
+    var labels = liveroomVariants.map(function(v, i) { return '直播间候选 ' + (i + 1); });
+    openFullscreen(images, idx || 0, labels);
+}
+
+async function goLiveroomExtract() {
+    if (!liveroomVariants.length) {
+        alert('请先生成直播间画面');
+        return;
+    }
+    var idx = liveroomSelectedVariant;
+    if (idx < 0 || idx >= liveroomVariants.length) idx = 0;
+    var v = liveroomVariants[idx];
+    var btn = document.getElementById('liveroomGoExtractBtn');
+    if (btn) btn.disabled = true;
+    try {
+        var resp = await fetch('/outputs/' + v.filename);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var ext = ((v.filename || '').match(/\.[^.]+$/) || ['.png'])[0];
+        var file = new File([blob], '直播间_候选' + (idx + 1) + ext, { type: blob.type || 'image/png' });
+        switchLiveroomMode('extract', document.querySelector('[data-liveroom-mode="extract"]'));
+        setLiveroomExtractImage(file);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+        alert('加载生成图失败: ' + (err.message || String(err)));
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function generateLiveroom() {
+    var prompt = (document.getElementById('liveroomPrompt') || {}).value;
+    prompt = (prompt || '').trim();
+    if (!prompt) {
+        alert('请输入直播间画面描述');
+        return;
+    }
+    var project = getSelectedProjectName();
+    if (!project) {
+        alert('请先选择项目组');
+        return;
+    }
+    var backend = getSplashHeroImageBackend();
+    if (backend.indexOf('gpt:') !== 0) {
+        alert('当前项目组未配置 GPT Image 生图，请先在 .env 中配置 OPENAI_API_KEY');
+        return;
+    }
+    backend = 'gpt:gpt-image-2';
+
+    var loading = document.getElementById('liveroomLoading');
+    var errEl = document.getElementById('liveroomGenError');
+    var btn = document.getElementById('liveroomGenBtn');
+    if (loading) loading.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+    if (btn) btn.disabled = true;
+
+    var formData = new FormData();
+    formData.append('prompt', prompt);
+    formData.append('count', '2');
+    formData.append('image_backend', backend);
+    formData.append('skip_ref_prompt_suffix', '1');
+    appendLiveroomSize(formData);
+    appendProjectContext(formData);
+    appendLiveroomRefs(formData);
+
+    try {
+        var submitted = await submitGenerationJob(formData, 'with_prompt');
+        var variants = [];
+        if (submitted.sync && submitted.variants) {
+            variants = submitted.variants;
+        } else if (submitted.job_id) {
+            var result = await new Promise(function(resolve, reject) {
+                pollGenerationJob(submitted.job_id, function(err, data) {
+                    if (err) reject(err);
+                    else resolve(data);
+                });
+            });
+            variants = result.variants || [];
+        }
+        renderLiveroomVariants(variants);
+        if (variants.some(function(v) { return v && v.filename; })) {
+            notifyToolTaskComplete(true);
+        } else {
+            var msg = (variants.map(function(v) { return v && v.error; }).filter(Boolean)[0]) || '生成失败';
+            if (errEl) {
+                errEl.textContent = msg;
+                errEl.style.display = 'block';
+            }
+        }
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = err.message || String(err);
+            errEl.style.display = 'block';
+        } else {
+            alert('生成失败: ' + (err.message || String(err)));
+        }
+    } finally {
+        if (loading) loading.style.display = 'none';
+        if (btn) btn.disabled = false;
+    }
+}
+
+function initLiveroomUploadZones() {
+    var zone = document.getElementById('liveroomRefZone');
+    if (!zone) return;
+    zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        var files = e.dataTransfer.files;
+        if (files && files.length) addRefImagesFromFiles(files, liveroomRefImages, renderLiveroomRefPreviews);
+    });
+    bindRefImagePaste(zone, function() { return liveroomRefImages; }, renderLiveroomRefPreviews);
+}
+
+var liveroomMode = 'generate';
+var LIVEROOM_PANEL_IDS = {
+    generate: 'liveroomGeneratePanel',
+    extract: 'liveroomExtractPanel'
+};
+
+/** 直播间提取：各位置内置关键词（后续可替换为正式文案） */
+var LIVEROOM_EXTRACT_TARGETS = {
+    logo: {
+        label: '提取logo',
+        prompt: '提取画面中的 Logo / 品牌标识，输出透明背景 PNG，边缘清晰干净，不要其他元素',
+        postProcess: true,
+        extraPlaceholder: '提取图中logo，包含主标题&副标题'
+    },
+    left: {
+        label: '提取左贴片',
+        prompt: '提取画面左侧贴片 / 角标区域，输出透明背景 PNG，完整保留贴片内容，不要背景',
+        postProcess: true,
+        extraPlaceholder: '例如：只保留左侧贴片主体、边缘更干净…'
+    },
+    bottom: {
+        label: '提取底部贴片',
+        prompt: '提取画面底部贴片 / 横条区域，输出透明背景 PNG，完整保留贴片内容，不要背景',
+        postProcess: true,
+        extraPlaceholder: '例如：只保留底部贴片、去掉多余背景…'
+    },
+    bg: {
+        label: '提取背景',
+        prompt: '提取直播间背景层，去掉前景主体、贴片与 Logo，输出干净背景图',
+        postProcess: false,
+        extraPlaceholder: '例如：背景更干净、去掉前景残留…'
+    }
+};
+
+var liveroomExtractFile = null;
+var liveroomExtractObjectUrl = null;
+var liveroomExtractNatural = { w: 0, h: 0 };
+var liveroomExtractLastTarget = '';
+var liveroomExtractResultUrl = '';
+var liveroomWandActive = false;
+var liveroomWandFile = null;
+var liveroomWandImageData = null;
+var liveroomWandMask = null;
+var liveroomWandHistory = [];
+var liveroomWandNatural = { w: 0, h: 0 };
+var liveroomWandBound = false;
+var liveroomPostWandReady = false;
+var liveroomCropActive = false;
+var liveroomCropFile = null;
+var liveroomCropObjectUrl = null;
+var liveroomCropNatural = { x: 0, y: 0, w: 0, h: 0 };
+var liveroomCropDrag = { mode: null, handle: '', startX: 0, startY: 0, startBox: null };
+var liveroomCropBound = false;
+
+function switchLiveroomMode(mode, btnEl) {
+    if (mode !== 'generate' && mode !== 'extract') mode = 'generate';
+    liveroomMode = mode;
+    document.querySelectorAll('[data-liveroom-mode]').forEach(function(b) { b.classList.remove('active'); });
+    if (btnEl) btnEl.classList.add('active');
+    else {
+        var btn = document.querySelector('[data-liveroom-mode="' + mode + '"]');
+        if (btn) btn.classList.add('active');
+    }
+    Object.keys(LIVEROOM_PANEL_IDS).forEach(function(key) {
+        var el = document.getElementById(LIVEROOM_PANEL_IDS[key]);
+        if (el) el.classList.toggle('active', key === mode);
+    });
+}
+
+function initLiveroomExtractUpload() {
+    var zone = document.getElementById('liveroomExtractUploadZone');
+    if (!zone || zone.dataset.bound === '1') return;
+    zone.dataset.bound = '1';
+    zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        var file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) setLiveroomExtractImage(file);
+    });
+    bindImageZonePaste(zone, setLiveroomExtractImage);
+}
+
+function onLiveroomExtractUploadZoneClick(ev) {
+    if (ev.target && ev.target.closest('button')) return;
+    if (liveroomExtractFile) return;
+    var zone = document.getElementById('liveroomExtractUploadZone');
+    if (zone) { try { zone.focus(); } catch (e) {} }
+}
+
+function onLiveroomExtractPickClick(ev) {
+    if (ev) ev.stopPropagation();
+    document.getElementById('liveroomExtractInput').click();
+}
+
+function onLiveroomExtractSelected(ev) {
+    var file = ev.target.files && ev.target.files[0];
+    if (file) setLiveroomExtractImage(file);
+    ev.target.value = '';
+}
+
+function setLiveroomExtractImage(file) {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+        alert('图片过大，请选择 25MB 以内的文件');
+        return;
+    }
+    if (liveroomExtractObjectUrl) {
+        try { URL.revokeObjectURL(liveroomExtractObjectUrl); } catch (e) {}
+    }
+    liveroomExtractFile = file;
+    liveroomExtractObjectUrl = URL.createObjectURL(file);
+    liveroomExtractLastTarget = '';
+    liveroomExtractResultUrl = '';
+    liveroomPostWandReady = false;
+    exitLiveroomWandMode(true);
+    exitLiveroomCropMode(true);
+    var zone = document.getElementById('liveroomExtractUploadZone');
+    var img = document.getElementById('liveroomExtractPreviewImg');
+    var targets = document.getElementById('liveroomExtractTargets');
+    var result = document.getElementById('liveroomExtractResult');
+    var errEl = document.getElementById('liveroomExtractError');
+    if (zone) zone.classList.add('has-image');
+    if (targets) targets.classList.add('visible');
+    if (result) result.classList.remove('visible');
+    if (errEl) errEl.style.display = 'none';
+    var extra = document.getElementById('liveroomExtractExtraPrompt');
+    if (extra) extra.value = '';
+    document.querySelectorAll('.liveroom-extract-target-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (img) {
+        img.onload = function() {
+            liveroomExtractNatural = { w: img.naturalWidth || 0, h: img.naturalHeight || 0 };
+        };
+        img.src = liveroomExtractObjectUrl;
+        if (img.complete) img.onload();
+    }
+}
+
+function clearLiveroomExtractImage(ev) {
+    if (ev) ev.stopPropagation();
+    if (liveroomExtractObjectUrl) {
+        try { URL.revokeObjectURL(liveroomExtractObjectUrl); } catch (e) {}
+    }
+    liveroomExtractFile = null;
+    liveroomExtractObjectUrl = null;
+    liveroomExtractNatural = { w: 0, h: 0 };
+    liveroomExtractLastTarget = '';
+    liveroomExtractResultUrl = '';
+    liveroomPostWandReady = false;
+    exitLiveroomWandMode(true);
+    exitLiveroomCropMode(true);
+    var zone = document.getElementById('liveroomExtractUploadZone');
+    var img = document.getElementById('liveroomExtractPreviewImg');
+    var targets = document.getElementById('liveroomExtractTargets');
+    var result = document.getElementById('liveroomExtractResult');
+    var errEl = document.getElementById('liveroomExtractError');
+    var input = document.getElementById('liveroomExtractInput');
+    if (zone) zone.classList.remove('has-image');
+    if (img) img.removeAttribute('src');
+    if (targets) targets.classList.remove('visible');
+    if (result) result.classList.remove('visible');
+    if (errEl) errEl.style.display = 'none';
+    if (input) input.value = '';
+    document.querySelectorAll('.liveroom-extract-target-btn').forEach(function(b) { b.classList.remove('active'); });
+}
+
+function buildLiveroomExtractPrompt(targetKey, withExtra) {
+    var target = LIVEROOM_EXTRACT_TARGETS[targetKey];
+    if (!target) return '';
+    var prompt = target.prompt || '';
+    if (withExtra) {
+        var extraEl = document.getElementById('liveroomExtractExtraPrompt');
+        var extra = extraEl ? (extraEl.value || '').trim() : '';
+        if (extra) prompt = prompt ? (prompt + '。' + extra) : extra;
+    }
+    return prompt;
+}
+
+function setLiveroomExtractBusy(busy) {
+    document.querySelectorAll('.liveroom-extract-target-btn').forEach(function(b) { b.disabled = !!busy; });
+    var rerun = document.getElementById('liveroomExtractRerunBtn');
+    if (rerun) rerun.disabled = !!busy;
+    var wandBtn = document.getElementById('liveroomExtractWandBtn');
+    if (wandBtn) wandBtn.disabled = !!busy;
+    var cropBtn = document.getElementById('liveroomExtractCropBtn');
+    if (cropBtn) cropBtn.disabled = !!busy;
+}
+
+function updateLiveroomExtraPromptPlaceholder(targetKey) {
+    var el = document.getElementById('liveroomExtractExtraPrompt');
+    if (!el) return;
+    var target = LIVEROOM_EXTRACT_TARGETS[targetKey || liveroomExtractLastTarget];
+    el.placeholder = (target && target.extraPlaceholder) || '提取图中logo，包含主标题&副标题';
+}
+
+function liveroomTargetSupportsPostProcess(targetKey) {
+    var key = targetKey || liveroomExtractLastTarget;
+    var target = LIVEROOM_EXTRACT_TARGETS[key];
+    return !!(target && target.postProcess);
+}
+
+function updateLiveroomResultActionButtons() {
+    var wandBtn = document.getElementById('liveroomExtractWandBtn');
+    var cropBtn = document.getElementById('liveroomExtractCropBtn');
+    var supports = liveroomTargetSupportsPostProcess(liveroomExtractLastTarget);
+    // logo / 左贴片 / 底部贴片：始终同时提供魔棒与裁切
+    if (wandBtn) wandBtn.style.display = supports ? '' : 'none';
+    if (cropBtn) cropBtn.style.display = supports ? '' : 'none';
+}
+
+function showLiveroomExtractResult(data, targetKey, options) {
+    options = options || {};
+    var wrap = document.getElementById('liveroomExtractResult');
+    var img = document.getElementById('liveroomExtractResultImg');
+    var meta = document.getElementById('liveroomExtractResultMeta');
+    var dl = document.getElementById('liveroomExtractDownloadBtn');
+    if (!wrap || !img || !meta || !dl) return;
+    exitLiveroomWandMode(true);
+    exitLiveroomCropMode(true);
+    if (targetKey) liveroomExtractLastTarget = targetKey;
+    liveroomExtractResultUrl = data.download_url || '';
+    img.src = liveroomExtractResultUrl + (liveroomExtractResultUrl.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+    var label = (LIVEROOM_EXTRACT_TARGETS[liveroomExtractLastTarget] || {}).label || '提取结果';
+    var parts;
+    if (options.afterWand) {
+        parts = ['魔棒抠图', '已输出透明 PNG ' + data.width + '×' + data.height];
+    } else if (options.afterCrop) {
+        parts = ['裁切', '已输出 ' + data.width + '×' + data.height];
+    } else {
+        parts = [label, '已生成 ' + data.width + '×' + data.height];
+    }
+    if (data.fileSize) parts.push((data.fileSize / 1024).toFixed(1) + ' KB');
+    if (!options.afterWand && !options.afterCrop) parts.push('GPT Image 2');
+    meta.textContent = parts.join(' · ');
+    dl.href = liveroomExtractResultUrl;
+    dl.download = data.output_file || ('直播间_' + label + '.png');
+    liveroomPostWandReady = liveroomTargetSupportsPostProcess(liveroomExtractLastTarget);
+    updateLiveroomResultActionButtons();
+    updateLiveroomExtraPromptPlaceholder(liveroomExtractLastTarget);
+    wrap.classList.add('visible');
+}
+
+function openLiveroomExtractResultPreview() {
+    if (!liveroomExtractResultUrl || liveroomWandActive || liveroomCropActive) return;
+    openFullscreen([liveroomExtractResultUrl], 0, ['提取结果']);
+}
+
+function onLiveroomWandToleranceChange() {
+    var el = document.getElementById('liveroomWandTolerance');
+    var val = document.getElementById('liveroomWandTolVal');
+    if (val && el) val.textContent = String(el.value);
+}
+
+function bindLiveroomWandInteractions() {
+    if (liveroomWandBound) return;
+    var canvas = document.getElementById('liveroomWandOverlay');
+    if (!canvas) return;
+    liveroomWandBound = true;
+    canvas.addEventListener('mousedown', onLiveroomWandCanvasDown);
+    canvas.addEventListener('touchstart', function(e) {
+        if (!liveroomWandActive || !liveroomWandImageData) return;
+        e.preventDefault();
+        onLiveroomWandCanvasDown(e);
+    }, { passive: false });
+    window.addEventListener('resize', function() {
+        if (liveroomWandActive) layoutLiveroomWandOverlay();
+    });
+}
+
+function liveroomWandDisplayToNatural(dx, dy) {
+    var img = document.getElementById('liveroomWandPreviewImg');
+    var scaleX = liveroomWandNatural.w / Math.max(1, img.clientWidth);
+    var scaleY = liveroomWandNatural.h / Math.max(1, img.clientHeight);
+    return {
+        x: clamp(Math.floor(dx * scaleX), 0, liveroomWandNatural.w - 1),
+        y: clamp(Math.floor(dy * scaleY), 0, liveroomWandNatural.h - 1)
+    };
+}
+
+function liveroomWandPointFromEvent(e) {
+    var canvas = document.getElementById('liveroomWandOverlay');
+    var rect = canvas.getBoundingClientRect();
+    var clientX = e.clientX;
+    var clientY = e.clientY;
+    if (e.touches && e.touches.length) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+    }
+    var dx = clientX - rect.left;
+    var dy = clientY - rect.top;
+    return { dx: dx, dy: dy, nat: liveroomWandDisplayToNatural(dx, dy) };
+}
+
+function floodFillLiveroomWand(nx, ny, tolerance) {
+    if (!liveroomWandImageData || !liveroomWandMask) return 0;
+    var w = liveroomWandNatural.w;
+    var h = liveroomWandNatural.h;
+    var data = liveroomWandImageData.data;
+    var mask = liveroomWandMask;
+    var pi = ny * w + nx;
+    if (mask[pi]) return 0;
+    var i0 = pi * 4;
+    var sr = data[i0], sg = data[i0 + 1], sb = data[i0 + 2];
+    var stack = [[nx, ny]];
+    var visited = new Uint8Array(w * h);
+    var added = 0;
+    while (stack.length) {
+        var pt = stack.pop();
+        var cx = pt[0], cy = pt[1];
+        var idx = cy * w + cx;
+        if (visited[idx]) continue;
+        visited[idx] = 1;
+        var di = idx * 4;
+        var r = data[di], g = data[di + 1], b = data[di + 2];
+        if (cutoutColorDist(r, g, b, sr, sg, sb) > tolerance) continue;
+        if (!mask[idx]) {
+            mask[idx] = 1;
+            added++;
+        }
+        if (cx > 0) stack.push([cx - 1, cy]);
+        if (cx < w - 1) stack.push([cx + 1, cy]);
+        if (cy > 0) stack.push([cx, cy - 1]);
+        if (cy < h - 1) stack.push([cx, cy + 1]);
+    }
+    return added;
+}
+
+function countLiveroomWandSelected() {
+    if (!liveroomWandMask) return 0;
+    var n = 0;
+    for (var i = 0; i < liveroomWandMask.length; i++) if (liveroomWandMask[i]) n++;
+    return n;
+}
+
+function updateLiveroomWandInfo() {
+    var info = document.getElementById('liveroomWandInfo');
+    var btn = document.getElementById('liveroomWandConfirmBtn');
+    var n = countLiveroomWandSelected();
+    if (info) {
+        info.textContent = n
+            ? ('已选中约 ' + n + ' 像素，将删除选中区域（红色高亮）')
+            : '点击空白/相近颜色区域选中要去掉的部分（红色高亮）';
+    }
+    if (btn) btn.disabled = n === 0;
+}
+
+function layoutLiveroomWandOverlay() {
+    var img = document.getElementById('liveroomWandPreviewImg');
+    var canvas = document.getElementById('liveroomWandOverlay');
+    if (!img || !canvas || !img.clientWidth) return;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+    canvas.style.width = img.clientWidth + 'px';
+    canvas.style.height = img.clientHeight + 'px';
+    renderLiveroomWandOverlay();
+}
+
+function renderLiveroomWandOverlay() {
+    var canvas = document.getElementById('liveroomWandOverlay');
+    if (!canvas || !liveroomWandImageData || !liveroomWandMask) return;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var nw = liveroomWandNatural.w;
+    var nh = liveroomWandNatural.h;
+    var off = document.createElement('canvas');
+    off.width = nw;
+    off.height = nh;
+    var octx = off.getContext('2d');
+    var imgData = octx.createImageData(nw, nh);
+    var mask = liveroomWandMask;
+    var out = imgData.data;
+    for (var i = 0, n = nw * nh; i < n; i++) {
+        if (!mask[i]) continue;
+        var j = i * 4;
+        out[j] = 248;
+        out[j + 1] = 72;
+        out[j + 2] = 94;
+        out[j + 3] = 140;
+    }
+    octx.putImageData(imgData, 0, 0);
+    ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+
+function onLiveroomWandCanvasDown(e) {
+    if (!liveroomWandActive || !liveroomWandImageData) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    var pt = liveroomWandPointFromEvent(e);
+    var tolEl = document.getElementById('liveroomWandTolerance');
+    var tol = parseInt(tolEl && tolEl.value, 10) || 0;
+    liveroomWandHistory.push(new Uint8Array(liveroomWandMask));
+    var added = floodFillLiveroomWand(pt.nat.x, pt.nat.y, tol);
+    if (added === 0) liveroomWandHistory.pop();
+    renderLiveroomWandOverlay();
+    updateLiveroomWandInfo();
+}
+
+function clearLiveroomWandSelection() {
+    if (!liveroomWandMask) return;
+    liveroomWandHistory.push(new Uint8Array(liveroomWandMask));
+    liveroomWandMask.fill(0);
+    renderLiveroomWandOverlay();
+    updateLiveroomWandInfo();
+}
+
+function undoLiveroomWandSelection() {
+    if (!liveroomWandHistory.length) return;
+    liveroomWandMask = liveroomWandHistory.pop();
+    renderLiveroomWandOverlay();
+    updateLiveroomWandInfo();
+}
+
+function exitLiveroomWandMode(silent) {
+    liveroomWandActive = false;
+    liveroomWandFile = null;
+    liveroomWandImageData = null;
+    liveroomWandMask = null;
+    liveroomWandHistory = [];
+    liveroomWandNatural = { w: 0, h: 0 };
+    var view = document.getElementById('liveroomExtractResultView');
+    var wand = document.getElementById('liveroomExtractWandView');
+    if (view) view.classList.remove('hidden');
+    if (wand) wand.classList.remove('active');
+    var preview = document.getElementById('liveroomWandPreviewImg');
+    if (preview) preview.removeAttribute('src');
+}
+
+async function enterLiveroomWandMode() {
+    if (!liveroomExtractResultUrl) {
+        alert('请先完成一次提取');
+        return;
+    }
+    if (!liveroomTargetSupportsPostProcess(liveroomExtractLastTarget)) {
+        alert('当前提取类型不支持魔棒');
+        return;
+    }
+    exitLiveroomCropMode(true);
+    bindLiveroomWandInteractions();
+    var btn = document.getElementById('liveroomExtractWandBtn');
+    if (btn) btn.disabled = true;
+    try {
+        var resp = await fetch(liveroomExtractResultUrl);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var name = ((liveroomExtractResultUrl.split('/').pop() || 'extract.png').split('?')[0]) || 'extract.png';
+        liveroomWandFile = new File([blob], name, { type: blob.type || 'image/png' });
+        liveroomWandActive = true;
+        liveroomWandHistory = [];
+        var view = document.getElementById('liveroomExtractResultView');
+        var wand = document.getElementById('liveroomExtractWandView');
+        if (view) view.classList.add('hidden');
+        if (wand) wand.classList.add('active');
+        var preview = document.getElementById('liveroomWandPreviewImg');
+        var objectUrl = URL.createObjectURL(blob);
+        await new Promise(function(resolve, reject) {
+            preview.onload = function() {
+                try {
+                    var w = preview.naturalWidth;
+                    var h = preview.naturalHeight;
+                    liveroomWandNatural = { w: w, h: h };
+                    var c = document.createElement('canvas');
+                    c.width = w;
+                    c.height = h;
+                    var ctx = c.getContext('2d', { willReadFrequently: true });
+                    ctx.drawImage(preview, 0, 0);
+                    liveroomWandImageData = ctx.getImageData(0, 0, w, h);
+                    liveroomWandMask = new Uint8Array(w * h);
+                    layoutLiveroomWandOverlay();
+                    updateLiveroomWandInfo();
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                } finally {
+                    try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+                }
+            };
+            preview.onerror = function() {
+                try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+                reject(new Error('预览加载失败'));
+            };
+            preview.src = objectUrl;
+        });
+    } catch (err) {
+        exitLiveroomWandMode(true);
+        alert('进入魔棒失败: ' + (err.message || String(err)));
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function buildLiveroomWandMaskBlob() {
+    var w = liveroomWandNatural.w;
+    var h = liveroomWandNatural.h;
+    var c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    var ctx = c.getContext('2d');
+    var imgData = ctx.createImageData(w, h);
+    var mask = liveroomWandMask;
+    var out = imgData.data;
+    for (var i = 0, n = w * h; i < n; i++) {
+        var v = mask[i] ? 255 : 0;
+        var j = i * 4;
+        out[j] = v;
+        out[j + 1] = v;
+        out[j + 2] = v;
+        out[j + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return new Promise(function(resolve) {
+        c.toBlob(function(blob) { resolve(blob); }, 'image/png');
+    });
+}
+
+async function confirmLiveroomWand() {
+    if (!liveroomWandFile || !liveroomWandMask || countLiveroomWandSelected() === 0) {
+        alert('请先在图片上点击选择要去掉的区域');
+        return;
+    }
+    var loading = document.getElementById('liveroomExtractLoading');
+    var loadingText = document.getElementById('liveroomExtractLoadingText');
+    var errEl = document.getElementById('liveroomExtractError');
+    var btn = document.getElementById('liveroomWandConfirmBtn');
+    if (loadingText) loadingText.textContent = '正在魔棒抠图…';
+    if (loading) loading.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+    if (btn) btn.disabled = true;
+    setLiveroomExtractBusy(true);
+    try {
+        var maskBlob = await buildLiveroomWandMaskBlob();
+        if (!maskBlob) throw new Error('生成蒙版失败');
+        var form = new FormData();
+        form.append('image', liveroomWandFile);
+        form.append('mask', maskBlob, 'mask.png');
+        var resp = await authFetch('/api/magic-cutout', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            throw new Error('服务器返回异常');
+        }
+        if (!resp.ok || data.error) {
+            throw new Error(data.error || ('HTTP ' + resp.status));
+        }
+        showLiveroomExtractResult({
+            download_url: data.download_url,
+            width: data.width,
+            height: data.height,
+            fileSize: data.fileSize,
+            output_file: data.output_file
+        }, liveroomExtractLastTarget || 'logo', { afterWand: true });
+        notifyToolTaskComplete(true);
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = '魔棒抠图失败: ' + (err.message || String(err));
+            errEl.style.display = 'block';
+        } else {
+            alert('魔棒抠图失败: ' + (err.message || String(err)));
+        }
+    } finally {
+        if (loading) loading.style.display = 'none';
+        if (loadingText) loadingText.textContent = 'GPT Image 2 正在提取，约需 1–3 分钟…';
+        setLiveroomExtractBusy(false);
+        updateLiveroomWandInfo();
+    }
+}
+
+function exitLiveroomCropMode(silent) {
+    liveroomCropActive = false;
+    liveroomCropFile = null;
+    liveroomCropNatural = { x: 0, y: 0, w: 0, h: 0 };
+    liveroomCropDrag = { mode: null, handle: '', startX: 0, startY: 0, startBox: null };
+    if (liveroomCropObjectUrl) {
+        try { URL.revokeObjectURL(liveroomCropObjectUrl); } catch (e) {}
+        liveroomCropObjectUrl = null;
+    }
+    var view = document.getElementById('liveroomExtractResultView');
+    var crop = document.getElementById('liveroomExtractCropView');
+    if (view) view.classList.remove('hidden');
+    if (crop) crop.classList.remove('active');
+    var preview = document.getElementById('liveroomCropPreviewImg');
+    if (preview) preview.removeAttribute('src');
+}
+
+function bindLiveroomCropInteractions() {
+    if (liveroomCropBound) return;
+    var box = document.getElementById('liveroomCropBox');
+    if (!box) return;
+    liveroomCropBound = true;
+    box.addEventListener('mousedown', function(e) {
+        if (!liveroomCropActive) return;
+        var handleEl = e.target.closest('.crop-handle');
+        if (handleEl) {
+            liveroomCropDrag.mode = 'resize';
+            liveroomCropDrag.handle = handleEl.getAttribute('data-handle') || 'se';
+            e.stopPropagation();
+        } else {
+            liveroomCropDrag.mode = 'move';
+            liveroomCropDrag.handle = '';
+        }
+        e.preventDefault();
+        liveroomCropDrag.startX = e.clientX;
+        liveroomCropDrag.startY = e.clientY;
+        liveroomCropDrag.startBox = Object.assign({}, liveroomCropNatural);
+        document.addEventListener('mousemove', onLiveroomCropDragMove);
+        document.addEventListener('mouseup', onLiveroomCropDragEnd);
+    });
+    window.addEventListener('resize', function() {
+        if (liveroomCropActive) renderLiveroomCropBox();
+    });
+}
+
+function onLiveroomCropDragMove(e) {
+    if (!liveroomCropDrag.mode || !liveroomCropDrag.startBox) return;
+    var img = document.getElementById('liveroomCropPreviewImg');
+    if (!img || !img.clientWidth) return;
+    var scaleX = img.naturalWidth / img.clientWidth;
+    var scaleY = img.naturalHeight / img.clientHeight;
+    var dx = (e.clientX - liveroomCropDrag.startX) * scaleX;
+    var dy = (e.clientY - liveroomCropDrag.startY) * scaleY;
+    var b = liveroomCropDrag.startBox;
+    var natW = img.naturalWidth, natH = img.naturalHeight;
+    if (liveroomCropDrag.mode === 'move') {
+        liveroomCropNatural.x = clamp(b.x + dx, 0, natW - b.w);
+        liveroomCropNatural.y = clamp(b.y + dy, 0, natH - b.h);
+        liveroomCropNatural.w = b.w;
+        liveroomCropNatural.h = b.h;
+    } else {
+        liveroomCropNatural = applyCropHandle(liveroomCropDrag.handle, dx, dy, b, natW, natH);
+    }
+    renderLiveroomCropBox();
+}
+
+function onLiveroomCropDragEnd() {
+    liveroomCropDrag.mode = null;
+    liveroomCropDrag.handle = '';
+    liveroomCropDrag.startBox = null;
+    document.removeEventListener('mousemove', onLiveroomCropDragMove);
+    document.removeEventListener('mouseup', onLiveroomCropDragEnd);
+}
+
+function renderLiveroomCropBox() {
+    var img = document.getElementById('liveroomCropPreviewImg');
+    var box = document.getElementById('liveroomCropBox');
+    var info = document.getElementById('liveroomCropInfo');
+    if (!img || !box || !img.clientWidth || !liveroomCropNatural.w) return;
+    var sx = img.clientWidth / img.naturalWidth;
+    var sy = img.clientHeight / img.naturalHeight;
+    box.style.left = (liveroomCropNatural.x * sx) + 'px';
+    box.style.top = (liveroomCropNatural.y * sy) + 'px';
+    box.style.width = (liveroomCropNatural.w * sx) + 'px';
+    box.style.height = (liveroomCropNatural.h * sy) + 'px';
+    if (info) {
+        info.textContent = '选区 ' + Math.round(liveroomCropNatural.w) + '×' + Math.round(liveroomCropNatural.h) +
+            ' px → 输出同尺寸（拖动移动，四边自由拉伸，四角等比缩放）';
+    }
+}
+
+function resetLiveroomCropBox() {
+    var img = document.getElementById('liveroomCropPreviewImg');
+    if (!img || !img.naturalWidth) return;
+    liveroomCropNatural = {
+        x: 0,
+        y: 0,
+        w: img.naturalWidth,
+        h: img.naturalHeight
+    };
+    renderLiveroomCropBox();
+}
+
+async function enterLiveroomCropMode() {
+    if (!liveroomExtractResultUrl) {
+        alert('请先完成一次提取');
+        return;
+    }
+    if (!liveroomTargetSupportsPostProcess(liveroomExtractLastTarget)) {
+        alert('当前提取类型不支持裁切');
+        return;
+    }
+    bindLiveroomCropInteractions();
+    var btn = document.getElementById('liveroomExtractCropBtn');
+    if (btn) btn.disabled = true;
+    try {
+        var resp = await fetch(liveroomExtractResultUrl);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var name = ((liveroomExtractResultUrl.split('/').pop() || 'crop.png').split('?')[0]) || 'crop.png';
+        liveroomCropFile = new File([blob], name, { type: blob.type || 'image/png' });
+        if (liveroomCropObjectUrl) {
+            try { URL.revokeObjectURL(liveroomCropObjectUrl); } catch (e) {}
+        }
+        liveroomCropObjectUrl = URL.createObjectURL(blob);
+        liveroomCropActive = true;
+        var view = document.getElementById('liveroomExtractResultView');
+        var crop = document.getElementById('liveroomExtractCropView');
+        if (view) view.classList.add('hidden');
+        if (crop) crop.classList.add('active');
+        var preview = document.getElementById('liveroomCropPreviewImg');
+        await new Promise(function(resolve, reject) {
+            preview.onload = function() {
+                resetLiveroomCropBox();
+                resolve();
+            };
+            preview.onerror = function() { reject(new Error('预览加载失败')); };
+            preview.src = liveroomCropObjectUrl;
+            if (preview.complete && preview.naturalWidth) {
+                resetLiveroomCropBox();
+                resolve();
+            }
+        });
+    } catch (err) {
+        exitLiveroomCropMode(true);
+        alert('进入裁切失败: ' + (err.message || String(err)));
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function applyLiveroomCrop() {
+    if (!liveroomCropFile || !liveroomCropNatural.w || !liveroomCropNatural.h) {
+        alert('请先调整裁切选区');
+        return;
+    }
+    var outW = Math.max(1, Math.round(liveroomCropNatural.w));
+    var outH = Math.max(1, Math.round(liveroomCropNatural.h));
+    var loading = document.getElementById('liveroomExtractLoading');
+    var loadingText = document.getElementById('liveroomExtractLoadingText');
+    var errEl = document.getElementById('liveroomExtractError');
+    var btn = document.getElementById('liveroomCropConfirmBtn');
+    if (loadingText) loadingText.textContent = '正在裁切…';
+    if (loading) loading.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+    if (btn) btn.disabled = true;
+    setLiveroomExtractBusy(true);
+    try {
+        var form = new FormData();
+        form.append('image', liveroomCropFile);
+        form.append('output_width', String(outW));
+        form.append('output_height', String(outH));
+        form.append('crop_x', String(Math.round(liveroomCropNatural.x)));
+        form.append('crop_y', String(Math.round(liveroomCropNatural.y)));
+        form.append('crop_w', String(outW));
+        form.append('crop_h', String(outH));
+        var resp = await authFetch('/api/crop-image', { method: 'POST', body: form });
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            throw new Error('服务器返回异常');
+        }
+        if (!resp.ok || data.error) {
+            throw new Error(data.error || ('HTTP ' + resp.status));
+        }
+        showLiveroomExtractResult({
+            download_url: data.download_url,
+            width: data.width,
+            height: data.height,
+            fileSize: data.fileSize,
+            output_file: data.output_file
+        }, liveroomExtractLastTarget || 'logo', { afterCrop: true });
+        notifyToolTaskComplete(true);
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = '裁切失败: ' + (err.message || String(err));
+            errEl.style.display = 'block';
+        } else {
+            alert('裁切失败: ' + (err.message || String(err)));
+        }
+    } finally {
+        if (loading) loading.style.display = 'none';
+        if (loadingText) loadingText.textContent = 'GPT Image 2 正在提取，约需 1–3 分钟…';
+        setLiveroomExtractBusy(false);
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function runLiveroomExtract(targetKey, options) {
+    options = options || {};
+    var withExtra = !!options.withExtra;
+    if (!LIVEROOM_EXTRACT_TARGETS[targetKey]) {
+        alert('未知提取位置');
+        return;
+    }
+    if (!liveroomExtractFile) {
+        alert('请先上传直播间画面');
+        return;
+    }
+    var project = getSelectedProjectName();
+    if (!project) {
+        alert('请先选择项目组');
+        return;
+    }
+    var prompt = buildLiveroomExtractPrompt(targetKey, withExtra);
+    if (!prompt) {
+        alert('缺少提取说明');
+        return;
+    }
+    var w = liveroomExtractNatural.w;
+    var h = liveroomExtractNatural.h;
+    if (!w || !h) {
+        var preview = document.getElementById('liveroomExtractPreviewImg');
+        w = preview ? preview.naturalWidth : 0;
+        h = preview ? preview.naturalHeight : 0;
+        liveroomExtractNatural = { w: w, h: h };
+    }
+    if (!w || !h) {
+        alert('图片尺寸无效，请重新上传');
+        return;
+    }
+
+    liveroomExtractLastTarget = targetKey;
+    updateLiveroomExtraPromptPlaceholder(targetKey);
+    document.querySelectorAll('.liveroom-extract-target-btn').forEach(function(b) {
+        b.classList.toggle('active', b.getAttribute('data-liveroom-extract') === targetKey);
+    });
+
+    var loading = document.getElementById('liveroomExtractLoading');
+    var loadingText = document.getElementById('liveroomExtractLoadingText');
+    var errEl = document.getElementById('liveroomExtractError');
+    if (loadingText) loadingText.textContent = 'GPT Image 2 正在提取，约需 1–3 分钟…';
+    if (loading) loading.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+    setLiveroomExtractBusy(true);
+
+    try {
+        var form = new FormData();
+        form.append('image', liveroomExtractFile);
+        form.append('roi_x', '0');
+        form.append('roi_y', '0');
+        form.append('roi_w', String(w));
+        form.append('roi_h', String(h));
+        form.append('prompt', prompt);
+        form.append('trim', '1');
+        form.append('local_project', project);
+        var resp = await fetchWithRetry('/api/smart-cutout', { method: 'POST', body: form }, 2);
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) {
+            throw new Error('服务器返回异常');
+        }
+        if (!resp.ok || data.error) {
+            throw new Error(data.error || ('HTTP ' + resp.status));
+        }
+        if (data.async && data.job_id) {
+            data = await pollSmartCutoutJob(data.job_id, loadingText);
+        }
+        showLiveroomExtractResult(data, targetKey);
+        if (typeof loadHistory === 'function') loadHistory();
+        notifyToolTaskComplete(true);
+    } catch (err) {
+        var msg = err && err.message ? err.message : String(err);
+        if (msg === 'Failed to fetch') {
+            msg = '无法连接本地服务，请确认服务已启动后重试';
+        }
+        if (errEl) {
+            errEl.textContent = '提取失败: ' + msg;
+            errEl.style.display = 'block';
+        } else {
+            alert('提取失败: ' + msg);
+        }
+    } finally {
+        if (loading) loading.style.display = 'none';
+        if (loadingText) loadingText.textContent = 'GPT Image 2 正在提取，约需 1–3 分钟…';
+        setLiveroomExtractBusy(false);
+    }
+}
+
+function rerunLiveroomExtract() {
+    if (!liveroomExtractLastTarget) {
+        alert('请先点击上方位置按钮完成一次提取');
+        return;
+    }
+    runLiveroomExtract(liveroomExtractLastTarget, { withExtra: true });
 }
 
 // ─── 落地页四步流程 ─────────────────────────────────
@@ -9420,7 +10705,7 @@ function setCutoutMode(mode, btnEl) {
     if (hint) {
         hint.innerHTML = mode === 'wand'
             ? '<strong>魔棒：</strong>点击相近颜色（红色高亮）删除背景，适合纯色/简单背景。'
-            : '<strong>AI 抠图：</strong>填写提取说明（可框选区域），用 GPT Image 2 根据参考图与说明生成。';
+            : '<strong>AI 提取：</strong>填写提取说明（可框选区域），用 GPT Image 2 根据参考图与说明生成。';
     }
     if (mode !== prev) restoreCutoutModeState(mode);
     else updateCutoutInfo();
@@ -9722,7 +11007,7 @@ function updateCutoutInfo() {
         var canApply = cutoutNatural.w > 0 && cutoutNatural.h > 0 && (!!nat || hasPrompt);
         if (info) {
             if (nat) {
-                info.textContent = '已框选 ' + nat.w + '×' + nat.h + (hasPrompt ? ' — 将结合说明用 GPT Image 2 生成' : ' — 可开始 AI 抠图');
+                info.textContent = '已框选 ' + nat.w + '×' + nat.h + (hasPrompt ? ' — 将结合说明用 GPT Image 2 生成' : ' — 可开始 AI 提取');
             } else if (hasPrompt) {
                 info.textContent = '已填写提取说明，将对整图用 GPT Image 2 生成';
             } else {
@@ -9731,7 +11016,7 @@ function updateCutoutInfo() {
         }
         if (btn) {
             btn.disabled = !canApply;
-            btn.textContent = '✓ AI 抠图';
+            btn.textContent = '✓ AI 提取';
         }
         return;
     }
@@ -9926,7 +11211,7 @@ async function pollSmartCutoutJob(jobId, loadingText) {
         if (job.ok) return job;
         throw new Error('AI 提取未完成');
     }
-    throw new Error('AI 抠图超时，请稍后重试；GPT Image 2 通常需 1–3 分钟');
+    throw new Error('AI 提取超时，请稍后重试；GPT Image 2 通常需 1–3 分钟');
 }
 
 async function applySmartCutout() {

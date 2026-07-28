@@ -14,7 +14,7 @@ from PIL import Image
 from gif_to_svga.proto import svga_pb2
 
 VALID_FPS = [1, 2, 3, 5, 6, 10, 12, 15, 20, 30, 60]
-SVGA_VERSION = "2.0.0"
+SVGA_VERSION = "2.1.0"
 DEFAULT_MAX_BYTES = int(os.environ.get("SVGA_MAX_BYTES", str(1024 * 1024)))
 
 FULL_SIZE_COLOR_LEVELS = [256, 200, 160, 128, 96, 72, 64, 48, 36, 32, 24, 16, 12, 8]
@@ -89,13 +89,15 @@ def _thin_frames(frames: list[Image.Image], step: int) -> list[Image.Image]:
 
 
 def _encode_png(frame: Image.Image, colors: int) -> bytes:
+    """导出 PNG。减色后转回 RGBA，避免索引色 PNG 在部分 App SVGA 播放器上解不出图。"""
     img = frame.convert("RGBA")
     if colors < 256:
         n_colors = max(2, min(colors, 255))
         try:
-            img = img.quantize(colors=n_colors, method=Image.Quantize.LIBIMAGEQUANT)
+            q = img.quantize(colors=n_colors, method=Image.Quantize.LIBIMAGEQUANT)
         except (ValueError, OSError, AttributeError):
-            img = img.quantize(colors=n_colors, method=Image.Quantize.FASTOCTREE)
+            q = img.quantize(colors=n_colors, method=Image.Quantize.FASTOCTREE)
+        img = q.convert("RGBA")
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True, compress_level=9)
     return buf.getvalue()
@@ -113,6 +115,21 @@ def _prepare_frame_pngs(frames: list[Image.Image], colors: int) -> tuple[list[by
     return png_list, out_w, out_h
 
 
+def _fill_frame_entity(fe, *, alpha: float, width: float, height: float) -> None:
+    """所有帧都写完整 layout/transform；部分播放器遇到 0 尺寸或零矩阵会整段不渲染。"""
+    fe.alpha = float(alpha)
+    fe.layout.x = 0.0
+    fe.layout.y = 0.0
+    fe.layout.width = float(width)
+    fe.layout.height = float(height)
+    fe.transform.a = 1.0
+    fe.transform.b = 0.0
+    fe.transform.c = 0.0
+    fe.transform.d = 1.0
+    fe.transform.tx = 0.0
+    fe.transform.ty = 0.0
+
+
 def _build_movie_entity(
     png_frames: list[bytes],
     width: int,
@@ -127,13 +144,14 @@ def _build_movie_entity(
     movie.params.fps = int(fps)
     movie.params.frames = int(total_frames)
 
-    # 相同 PNG 内容复用 imageKey，减小体积
+    # 相同 PNG 内容复用 imageKey，减小体积。
+    # imageKey 不加 .png 后缀，与 AE/SVGA 官方导出一致，兼容性更好。
     key_by_digest: dict[str, str] = {}
 
     for i, png_data in enumerate(png_frames):
         digest = hashlib.md5(png_data).hexdigest()
         if digest not in key_by_digest:
-            key = f"img_{len(key_by_digest)}.png"
+            key = f"img_{len(key_by_digest)}"
             key_by_digest[digest] = key
             movie.images[key] = png_data
         image_key = key_by_digest[digest]
@@ -142,23 +160,20 @@ def _build_movie_entity(
         sprite.imageKey = image_key
         for f in range(total_frames):
             fe = sprite.frames.add()
-            if f == i:
-                fe.alpha = 1.0
-                fe.layout.x = 0.0
-                fe.layout.y = 0.0
-                fe.layout.width = float(width)
-                fe.layout.height = float(height)
-                fe.transform.a = 1.0
-                fe.transform.d = 1.0
-            else:
-                fe.alpha = 0.0
+            _fill_frame_entity(
+                fe,
+                alpha=1.0 if f == i else 0.0,
+                width=width,
+                height=height,
+            )
         movie.sprites.append(sprite)
 
     return movie
 
 
 def _movie_to_svga_bytes(movie: svga_pb2.MovieEntity) -> bytes:
-    return zlib.compress(movie.SerializeToString(), level=9)
+    # level=6 接近 AE 默认 zlib 头，体积与兼容性折中
+    return zlib.compress(movie.SerializeToString(), level=6)
 
 
 def _iter_compress_attempts(frames: list[Image.Image]):
