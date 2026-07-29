@@ -4439,10 +4439,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         target_w = client_orig_w if client_orig_w else orig_w
         target_h = client_orig_h if client_orig_h else orig_h
 
-        # 计算原始比例，用于保持原图尺寸
-        import math
-        g = math.gcd(orig_w, orig_h)
-        ratio = f"{orig_w//g}:{orig_h//g}"
+        # 按目标像素算比例；整图改图必须带上 output_width/height，
+        # 否则会落到默认 1024×1024，再居中裁切就会像被裁掉。
+        ratio = bbox_to_ratio(target_w, target_h)
 
         prompt = build_edit_prompt(
             description,
@@ -4486,6 +4485,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 queue_priority=PRIORITY_HIGH,
                 reference_paths=reference_paths,
                 image_backend=image_backend_raw,
+                output_width=target_w,
+                output_height=target_h,
             )
             if not image_url:
                 self._send_json({"error": error or "修图失败，请重试"})
@@ -4497,22 +4498,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": f"下载图片失败: {str(e)}"})
                 return
 
-        # 确保输出与原始分辨率一致
+        # 恢复到原图像素：同比例直接缩放，异比例留边适配，避免居中裁切丢内容
         try:
             if regions:
                 ensure_image_dimensions(output_path, target_w, target_h)
             else:
-                from PIL import Image
-                with Image.open(output_path) as result_img:
-                    result_w, result_h = result_img.size
-                    if (result_w, result_h) != (target_w, target_h):
-                        scale = max(target_w / result_w, target_h / result_h)
-                        new_w = int(result_w * scale)
-                        new_h = int(result_h * scale)
-                        temp = result_img.resize((new_w, new_h), Image.LANCZOS)
-                        left = (new_w - target_w) // 2
-                        top = (new_h - target_h) // 2
-                        temp.crop((left, top, left + target_w, top + target_h)).save(output_path)
+                finalize_generation_output(output_path, target_w, target_h)
         except Exception as e:
             print(f"[EDIT] 尺寸恢复失败: {str(e)}")
 

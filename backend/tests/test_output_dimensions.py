@@ -25,6 +25,17 @@ class TestResolveOutputDimensions(unittest.TestCase):
         self.assertEqual((w, h), (702, 320))
         self.assertEqual(ratio, "351:160")
 
+    def test_wide_banner_without_pixels_falls_back_to_square(self):
+        # 继续编辑若未传 output_width/height，超宽比会落到默认方图，再裁回原尺寸就会丢内容
+        ratio, w, h = resolve_output_dimensions("3:1")
+        self.assertEqual(ratio, "3:1")
+        self.assertEqual((w, h), (1024, 1024))
+
+    def test_wide_banner_with_pixels_keeps_original_size(self):
+        ratio, w, h = resolve_output_dimensions("3:1", 1920, 640)
+        self.assertEqual((w, h), (1920, 640))
+        self.assertEqual(ratio, "3:1")
+
 
 class TestFinalizeGenerationOutput(unittest.TestCase):
     def test_resizes_downloaded_image_to_target_pixels(self):
