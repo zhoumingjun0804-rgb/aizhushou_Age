@@ -59,6 +59,7 @@ from generation_queues import (
     queue_for_backend,
     raise_if_duplicate_high,
 )
+from gpt_parallel import run_variants_parallel
 import gpt_slot
 from comfyui_client import ComfyUIClient, ComfyUIClientError
 from gpt_image_client import (
@@ -1569,15 +1570,16 @@ def call_gpt(
         provider=image_cfg.provider,
     )
     try:
-        return client.generate_image(
-            prompt,
-            model=model,
-            width=width,
-            height=height,
-            image_paths=image_paths if mode == "img2img" else None,
-            mask_path=pathlib.Path(mask_path) if mask_path else None,
-            prefer_responses=bool(prefer_responses),
-        )
+        with gpt_slot.hold():
+            return client.generate_image(
+                prompt,
+                model=model,
+                width=width,
+                height=height,
+                image_paths=image_paths if mode == "img2img" else None,
+                mask_path=pathlib.Path(mask_path) if mask_path else None,
+                prefer_responses=bool(prefer_responses),
+            )
     except GptImageError as e:
         return None, e.message
 
@@ -1847,16 +1849,18 @@ def execute_generation_job(job: dict) -> None:
     """队列 worker 执行生图任务。"""
     payload = job["payload"]
     job_id = job["job_id"]
+    backend = normalize_image_backend(payload.get("image_backend"))
+    q = queue_for_backend(backend, lovart_queue, gpt_queue)
     started = time.time()
-    with lovart_queue._jobs_lock:
-        stored = lovart_queue._jobs.get(job_id)
+    with q._jobs_lock:
+        stored = q._jobs.get(job_id)
         if stored:
             stored["started_at"] = started
 
     project = payload.get("project") or None
     lovart_err = lovart_project_required_error(project or "")
     if lovart_err:
-        lovart_queue.fail_job(job_id, lovart_err)
+        q.fail_job(job_id, lovart_err)
         return
 
     prompt = payload.get("prompt", "")
@@ -1868,19 +1872,11 @@ def execute_generation_job(job: dict) -> None:
     dpi = payload.get("dpi")
     mode = payload.get("mode", "text2img")
     image_paths = [pathlib.Path(p) for p in payload.get("image_paths") or []]
-    backend = normalize_image_backend(payload.get("image_backend"))
     input_filename = payload.get("input_filename")
 
-    lovart_queue.set_progress(job_id, 0, count)
-    variants = []
+    q.set_progress(job_id, 0, count)
 
-    for idx in range(count):
-        if lovart_queue.check_job_timeout(job_id):
-            return
-        if time.time() - started > LOVART_JOB_MAX_SECONDS:
-            lovart_queue.fail_job(job_id, f"任务超时（超过 {LOVART_JOB_MAX_SECONDS} 秒）")
-            return
-
+    def one(_idx: int) -> dict:
         image_url, error = call_image_generator(
             mode,
             prompt,
@@ -1924,12 +1920,30 @@ def execute_generation_job(job: dict) -> None:
                             )
                     except Exception:
                         pass
-                variants.append(variant_entry_from_path(output_filename, output_path))
+                return variant_entry_from_path(output_filename, output_path)
             except Exception as e:
-                variants.append({"filename": None, "error": format_url_error(e)})
-        else:
-            variants.append({"filename": None, "error": error or "生成失败"})
-        lovart_queue.set_progress(job_id, idx + 1, count)
+                return {"filename": None, "error": format_url_error(e)}
+        return {"filename": None, "error": error or "生成失败"}
+
+    if backend == "gpt":
+        variants = run_variants_parallel(
+            count,
+            GPT_VARIANT_PARALLEL,
+            one,
+            on_progress=lambda cur, tot: q.set_progress(job_id, cur, tot),
+            should_abort=lambda: q.check_job_timeout(job_id)
+            or (time.time() - started > LOVART_JOB_MAX_SECONDS),
+        )
+    else:
+        variants = []
+        for idx in range(count):
+            if q.check_job_timeout(job_id):
+                return
+            if time.time() - started > LOVART_JOB_MAX_SECONDS:
+                q.fail_job(job_id, f"任务超时（超过 {LOVART_JOB_MAX_SECONDS} 秒）")
+                return
+            variants.append(one(idx))
+            q.set_progress(job_id, idx + 1, count)
 
     size_notice = None
     if backend == "gpt":
@@ -1946,9 +1960,9 @@ def execute_generation_job(job: dict) -> None:
                     "actual_height": ah,
                 }
 
-    lovart_queue.set_variants(job_id, variants)
-    with lovart_queue._jobs_lock:
-        stored = lovart_queue._jobs.get(job_id)
+    q.set_variants(job_id, variants)
+    with q._jobs_lock:
+        stored = q._jobs.get(job_id)
         if stored and stored.get("status") == "running":
             stored["status"] = "done"
             stored["finished_at"] = time.time()
