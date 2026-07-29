@@ -34,8 +34,12 @@ class TestGptImage2Size(unittest.TestCase):
 
 
 class TestGptImage2Quality(unittest.TestCase):
-    def test_default_quality_is_high_for_gpt_image2(self):
-        self.assertEqual(resolve_gpt_image_output_quality("gpt-image-2"), "high")
+    def test_default_quality_is_medium_for_gpt_image2(self):
+        self.assertEqual(resolve_gpt_image_output_quality("gpt-image-2"), "medium")
+
+    def test_override_quality(self):
+        self.assertEqual(resolve_gpt_image_output_quality("gpt-image-2", override="high"), "high")
+        self.assertEqual(resolve_gpt_image_output_quality("gpt-image-2", override="low"), "low")
 
     def test_other_models_skip_quality(self):
         self.assertIsNone(resolve_gpt_image_output_quality("gpt-image-1.5"))

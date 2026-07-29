@@ -157,7 +157,7 @@ pm2 save
 | `TEST_SERVICE_URL` | `your-server.example.com` | 目标 IP 或 hostname |
 | `TEST_ACCOUNT` | `deploy_user` | SSH 用户 |
 | `TEST_PASSWORD` | `***` | SSH 密码 |
-| `PORT` | `<your-port>` | 原样同步到远端，脚本不改写 |
+| `PORT` | `<your-port>` | 小灯塔：原样同步到远端；画啦啦：`remote-hll` 会把远端写成 `8629`（不改本机） |
 
 **本机需安装：** `ssh`、`rsync`、`sshpass`
 
@@ -172,12 +172,18 @@ apt install sshpass rsync
 **命令：**
 
 ```bash
-./deploy.sh remote         # 同步 + 远端 deploy + PM2
-./deploy.sh remote sync    # 仅 rsync，不重启服务
+./deploy.sh remote         # 小灯塔：同步 + 远端 deploy + PM2（/home/xiaoA）
+./deploy.sh remote sync    # 仅 rsync 小灯塔目录，不重启
+./deploy.sh remote-hll     # 画啦啦：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+./deploy.sh remote-hll sync
 ```
 
-**远端路径：** 由 `deploy.sh` 中的 `REMOTE_DIR` 控制（自动 `mkdir -p`）
+**远端路径：**
 
+| 实例 | 目录 | PM2 | 端口 |
+|------|------|-----|------|
+| 小灯塔 | `/home/xiaoA` | `aizhushou-age` | `.env` 的 `PORT` |
+| 画啦啦 | `/home/xiaoA-hll` | `aizhushou-hll` | 固定 `8629` |
 **同步规则：**
 
 - **包含：** 项目代码、`.env`、`projects/`、`deploy.sh` 等
@@ -216,7 +222,7 @@ curl -I https://lgw.lovart.ai -x http://proxy.example.com:1080
 
 GPT 生图走独立内存队列（与 Lovart 分池，互不占用 worker）。`GPT_MAX_CONCURRENCY` 默认 4，同时是全站 GPT Image API 并发上限；`GPT_VARIANT_PARALLEL` 控制单任务内多张变体并行数；`GPT_QUEUE_MAX` / `GPT_ETA_AVG_SECONDS` 见 `.env.example`。开发态热加载仅在队列参数变化时重建队列；`pm2 reload` 仍会清空两队列。规格见 [docs/superpowers/specs/2026-07-29-gpt-generation-queue-design.md](./docs/superpowers/specs/2026-07-29-gpt-generation-queue-design.md)。
 
-设计规格详见 [docs/superpowers/specs/2026-05-25-remote-deploy-design.md](./docs/superpowers/specs/2026-05-25-remote-deploy-design.md)。
+设计规格详见 [docs/superpowers/specs/2026-05-25-remote-deploy-design.md](./docs/superpowers/specs/2026-05-25-remote-deploy-design.md)、[画啦啦双实例](./docs/superpowers/specs/2026-07-29-remote-hll-deploy-design.md)。
 
 ---
 

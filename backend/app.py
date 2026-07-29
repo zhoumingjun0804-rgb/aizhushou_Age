@@ -70,6 +70,7 @@ from gpt_image_client import (
     build_chat_completion_payload,
     call_gpt_chat,
     resolve_gpt_image_model,
+    resolve_gpt_image_output_quality,
     validate_official_gpt_image_key,
 )
 from sd_client import StableDiffusionClient, SDClientError
@@ -1557,6 +1558,16 @@ def call_stable_diffusion(
         return None, e.message
 
 
+def resolve_gpt_output_quality(fields: dict | None = None, explicit: str | None = None) -> str | None:
+    """请求级画质覆盖；非法值回落 env/默认 medium。"""
+    raw = (explicit or "").strip().lower()
+    if not raw and fields:
+        raw = str(fields.get("gpt_output_quality", "") or "").strip().lower()
+    if not raw:
+        return None
+    return resolve_gpt_image_output_quality("gpt-image-2", override=raw)
+
+
 def call_gpt(
     mode,
     prompt,
@@ -1570,6 +1581,7 @@ def call_gpt(
     mask_path=None,
     prefer_responses=False,
     should_abort: Callable[[], bool] | None = None,
+    gpt_output_quality: str | None = None,
 ):
     if not local_project:
         return None, "GPT 生图请先选择项目组"
@@ -1610,6 +1622,7 @@ def call_gpt(
                 image_paths=image_paths if mode == "img2img" else None,
                 mask_path=pathlib.Path(mask_path) if mask_path else None,
                 prefer_responses=bool(prefer_responses),
+                output_quality=gpt_output_quality,
             )
     except GptImageError as e:
         return None, e.message
@@ -1635,6 +1648,7 @@ def call_image_generator(
     mask_path=None,
     prefer_responses=False,
     should_abort: Callable[[], bool] | None = None,
+    gpt_output_quality: str | None = None,
 ):
     backend = normalize_image_backend(image_backend)
     if backend == "gpt":
@@ -1651,6 +1665,7 @@ def call_image_generator(
             mask_path=mask_path,
             prefer_responses=prefer_responses,
             should_abort=should_abort,
+            gpt_output_quality=gpt_output_quality,
         )
     if backend == "lovart":
         return call_lovart(
@@ -1804,6 +1819,7 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
     image_backend_raw = str(fields.get("image_backend", "") or "")
     image_backend = normalize_image_backend(image_backend_raw)
     gpt_model = resolve_gpt_model(image_backend_raw, fields) if image_backend == "gpt" else None
+    gpt_output_quality = resolve_gpt_output_quality(fields) if image_backend == "gpt" else None
     size_info = parse_size_fields(fields)
 
     payload = {
@@ -1822,6 +1838,7 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
         "image_backend": image_backend,
         "image_backend_raw": image_backend_raw,
         "gpt_model": gpt_model,
+        "gpt_output_quality": gpt_output_quality,
     }
 
     if kind == "with_prompt":
@@ -1924,6 +1941,7 @@ def execute_generation_job(job: dict) -> None:
             size_mode=size_mode,
             dpi=dpi,
             gpt_model=payload.get("gpt_model"),
+            gpt_output_quality=payload.get("gpt_output_quality"),
             should_abort=(
                 lambda: q.check_job_timeout(job_id)
                 or (time.time() - started > LOVART_JOB_MAX_SECONDS)

@@ -13,6 +13,10 @@ MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10
 MIN_NODE_MAJOR=18
 REMOTE_DIR="/home/xiaoA"
+REMOTE_DIR_HLL="/home/xiaoA-hll"
+REMOTE_APP_NAME_HLL="aizhushou-hll"
+REMOTE_PORT_HLL="8629"
+REMOTE_HINT_PORT=""
 PYTHON_INSTALL_PREFIX="/opt/aizhushou-python"
 
 # 设为 1 时跳过 Node/PM2 自动安装（仅做 Python 环境与 PM2 启动）
@@ -42,8 +46,10 @@ usage() {
   logs     查看 PM2 日志（Ctrl+C 退出）
   update   git pull + 更新依赖 + PM2 重载
   setup    仅安装 Python 依赖并生成 PM2 配置，不启动
-  remote   上传到测试服务器并在远端 deploy（含 rembg/Playwright 自动处理）
+  remote       上传到测试服务器并在远端 deploy（小灯塔，/home/xiaoA）
   remote sync  仅 rsync 到测试服务器，不在远端启动
+  remote-hll       画啦啦实例：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+  remote-hll sync  仅 rsync 画啦啦目录并写 PORT=8629，不重启
 
 环境变量:
   PM2_APP_NAME=名称     PM2 进程名（默认 aizhushou-age）
@@ -54,7 +60,8 @@ usage() {
 示例:
   chmod +x deploy.sh
   ./deploy.sh              # 本机部署
-  ./deploy.sh remote       # 上传到测试机 /home/xiaoA 并自动补远端依赖后启动
+  ./deploy.sh remote       # 小灯塔 → /home/xiaoA
+  ./deploy.sh remote-hll   # 画啦啦 → /home/xiaoA-hll:8629
   ./deploy.sh update       # 代码更新后重载
   pm2 startup && pm2 save  # 开机自启（deploy 成功后会提示）
 EOF
@@ -187,13 +194,38 @@ remote_chmod_scripts() {
 }
 
 remote_run_deploy() {
-  info "远端执行 deploy.sh ..."
-  remote_ssh "cd '${REMOTE_DIR}' && ./deploy.sh"
+  info "远端执行 deploy.sh（PM2: ${APP_NAME}）..."
+  remote_ssh "cd '${REMOTE_DIR}' && PM2_APP_NAME='${APP_NAME}' ./deploy.sh"
+}
+
+remote_set_port() {
+  local port="$1"
+  info "远端设置 PORT=${port}（仅改 ${REMOTE_DIR}/.env）..."
+  remote_ssh "cd '${REMOTE_DIR}' && \
+    if [ -f .env ]; then
+      if grep -qE '^[[:space:]]*PORT=' .env; then
+        sed -i.bak -E 's/^[[:space:]]*PORT=.*/PORT=${port}/' .env && rm -f .env.bak
+      else
+        printf '\\nPORT=%s\\n' '${port}' >> .env
+      fi
+    else
+      printf 'PORT=%s\\n' '${port}' > .env
+    fi"
 }
 
 remote_health_hint() {
-  load_port
+  if [ -n "${REMOTE_HINT_PORT}" ]; then
+    PORT="${REMOTE_HINT_PORT}"
+  else
+    load_port
+  fi
   ok "远端部署完成，访问: http://${TEST_SERVICE_URL}:${PORT}/"
+}
+
+apply_remote_hll_profile() {
+  REMOTE_DIR="${REMOTE_DIR_HLL}"
+  APP_NAME="${REMOTE_APP_NAME_HLL}"
+  REMOTE_HINT_PORT="${REMOTE_PORT_HLL}"
 }
 
 cmd_remote_sync() {
@@ -202,6 +234,9 @@ cmd_remote_sync() {
   remote_prepare_dir
   remote_rsync
   remote_chmod_scripts
+  if [ -n "${REMOTE_HINT_PORT}" ]; then
+    remote_set_port "${REMOTE_HINT_PORT}"
+  fi
   ok "同步完成（未在远端启动服务）"
 }
 
@@ -209,10 +244,13 @@ cmd_remote_deploy() {
   load_remote_config
   info "========== 远程部署 → ${REMOTE_SSH}:${REMOTE_DIR} =========="
   ensure_remote_tools
-  ok "目标: ${REMOTE_SSH}:${REMOTE_DIR}"
+  ok "目标: ${REMOTE_SSH}:${REMOTE_DIR}（PM2: ${APP_NAME}）"
   remote_prepare_dir
   remote_rsync
   remote_chmod_scripts
+  if [ -n "${REMOTE_HINT_PORT}" ]; then
+    remote_set_port "${REMOTE_HINT_PORT}"
+  fi
   remote_run_deploy
   remote_health_hint
 }
@@ -223,6 +261,16 @@ cmd_remote() {
     sync)       cmd_remote_sync ;;
     deploy|"")  cmd_remote_deploy ;;
     *)          fail "未知 remote 子命令: $sub（可用: remote / remote sync）" ;;
+  esac
+}
+
+cmd_remote_hll() {
+  local sub="${1:-deploy}"
+  apply_remote_hll_profile
+  case "$sub" in
+    sync)       cmd_remote_sync ;;
+    deploy|"")  cmd_remote_deploy ;;
+    *)          fail "未知 remote-hll 子命令: $sub（可用: remote-hll / remote-hll sync）" ;;
   esac
 }
 
@@ -696,6 +744,7 @@ main() {
     logs)        cmd_logs ;;
     update)      cmd_update ;;
     remote)      cmd_remote "${2:-deploy}" ;;
+    remote-hll)  cmd_remote_hll "${2:-deploy}" ;;
     -h|--help|help) usage ;;
     *)           fail "未知命令: $action"; usage ;;
   esac

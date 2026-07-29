@@ -73,13 +73,16 @@ chmod +x deploy.sh
 # 若测试机直连 Lovart 失败，配置 HTTP 代理（见下方）
 
 chmod +x deploy.sh
-./deploy.sh remote     # 上传 + 远端部署 + PM2 重载
-./deploy.sh remote sync  # 仅同步文件，不重启
+./deploy.sh remote       # 小灯塔：/home/xiaoA + 远端部署 + PM2 重载
+./deploy.sh remote sync  # 仅同步小灯塔目录，不重启
+./deploy.sh remote-hll   # 画啦啦：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+./deploy.sh remote-hll sync  # 仅同步画啦啦目录，不重启
 ```
 
 | 项 | 说明 |
 |----|------|
-| 远端目录 | 由 `deploy.sh` 中的 `REMOTE_DIR` 控制（不存在则自动创建） |
+| 小灯塔远端 | `/home/xiaoA`，PM2 `aizhushou-age`，端口用本机 `.env` 的 `PORT` |
+| 画啦啦远端 | `/home/xiaoA-hll`，PM2 `aizhushou-hll`，远端固定 `PORT=8629`（不改本机 `.env`） |
 | 本机依赖 | `sshpass`、`rsync`、`ssh`（macOS: `brew install hudochenkov/sshpass/sshpass`） |
 | 同步内容 | 含 `.env`；排除 `.git`、`backend/.venv`、`uploads/`、`outputs/` 等 |
 | CentOS 7 | 自动用 Miniconda Python 3.10 + 精简依赖，并补装 **rembg**；Playwright 浏览器因 glibc 过旧不可用 |
@@ -124,6 +127,7 @@ cd backend
 | `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 主 Key；可用 `LOVART_ACCESS_KEY_2` 等配置备用，并发/额度受限时自动切换 |
 | `LOVART_MAX_CONCURRENCY` / `LOVART_QUEUE_MAX` | Lovart 生图 worker 数（默认 1）与全局排队上限（默认 20） |
 | `GPT_MAX_CONCURRENCY` / `GPT_QUEUE_MAX` | GPT 生图 worker/API 并发（默认 4）与排队上限（默认 20） |
+| `OPENAI_IMAGE_OUTPUT_QUALITY` | gpt-image-2 画质：`low` / `medium` / `high`（默认 `medium`） |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 测试机出网经代理访问 Lovart 时使用（会随 `.env` 同步到远端） |
 | `TEST_SERVICE_URL` / `TEST_ACCOUNT` / `TEST_PASSWORD` | `./deploy.sh remote` 的 SSH 目标 |
 | `DEEPSEEK_API_KEY` 等 | 至少配置一个，用于 AI 关键词分析 |

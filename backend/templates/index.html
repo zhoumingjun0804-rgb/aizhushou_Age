@@ -1249,7 +1249,18 @@
                 <div class="form-row" id="imageBackendRow" style="display:none">
                     <div class="form-item full-width">
                         <label>生图模型</label>
-                        <select id="imageBackendSelect"></select>
+                        <select id="imageBackendSelect" onchange="onImageBackendChange()"></select>
+                    </div>
+                </div>
+                <div class="form-row" id="gptQualityRow" style="display:none">
+                    <div class="form-item full-width">
+                        <label>GPT 画质</label>
+                        <select id="gptOutputQualitySelect" onchange="onGptQualityChange()">
+                            <option value="medium" selected>中等 · 约 20–40 秒（推荐）</option>
+                            <option value="high">高 · 约 2–4 分钟（印刷/文字）</option>
+                            <option value="low">低 · 约 3–8 秒（草稿）</option>
+                        </select>
+                        <p class="design-brief-hint" style="margin-top:6px">仅 gpt-image-2 生效；默认中等可大幅缩短等待。</p>
                     </div>
                 </div>
 
@@ -1290,7 +1301,7 @@
             <!-- 加载中 -->
             <div class="loading-card" id="loadingCard">
                 <div class="spinner"></div>
-                <p class="loading-text">AI 正在创作变体中…GPT Image 2 约需 2–3 分钟/张，请耐心等待</p>
+                <p class="loading-text">AI 正在创作变体中…GPT 中等画质约数十秒/张，高画质约 2–4 分钟</p>
             </div>
             
             <!-- 变体展示 -->
@@ -2795,6 +2806,48 @@ function syncImageBackendSelects(value) {
         if (sel) sel.value = value;
     });
     localStorage.setItem('imageBackendSelect', value);
+    updateGptQualityRowVisibility();
+}
+
+function getSelectedGptOutputQuality() {
+    var sel = document.getElementById('gptOutputQualitySelect');
+    var saved = localStorage.getItem('gptOutputQuality');
+    var value = sel ? sel.value : (saved || 'medium');
+    if (['low', 'medium', 'high', 'auto'].indexOf(value) < 0) value = 'medium';
+    return value;
+}
+
+function onGptQualityChange() {
+    var sel = document.getElementById('gptOutputQualitySelect');
+    if (sel) localStorage.setItem('gptOutputQuality', sel.value);
+}
+
+function onImageBackendChange() {
+    var sel = document.getElementById('imageBackendSelect');
+    if (sel && sel.value) syncImageBackendSelects(sel.value);
+    else updateGptQualityRowVisibility();
+}
+
+function updateGptQualityRowVisibility() {
+    var row = document.getElementById('gptQualityRow');
+    if (!row) return;
+    var backend = getSelectedImageBackend() || '';
+    var show = backend.indexOf('gpt:') === 0 || backend === 'gpt';
+    row.style.display = show ? '' : 'none';
+    if (show) {
+        var sel = document.getElementById('gptOutputQualitySelect');
+        if (sel) {
+            var saved = localStorage.getItem('gptOutputQuality') || 'medium';
+            if (['low', 'medium', 'high', 'auto'].indexOf(saved) >= 0) sel.value = saved;
+        }
+    }
+}
+
+function appendGptOutputQuality(formData) {
+    var backend = getSelectedImageBackend() || '';
+    if (backend.indexOf('gpt:') === 0 || backend === 'gpt') {
+        formData.append('gpt_output_quality', getSelectedGptOutputQuality());
+    }
 }
 
 function fillImageBackendSelects(backends) {
@@ -2819,6 +2872,7 @@ function fillImageBackendSelects(backends) {
         var row = document.getElementById(id);
         if (row) row.style.display = backends.length ? '' : 'none';
     });
+    updateGptQualityRowVisibility();
     updateEditImageButtonState();
 }
 
@@ -4198,6 +4252,7 @@ async function generateWithKeyword() {
     var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '1';
     formData.append('count', String(count));
     formData.append('image_backend', getSelectedImageBackend());
+    appendGptOutputQuality(formData);
     appendProjectContext(formData);
     try {
         appendGenerationSize(formData);
@@ -4226,6 +4281,7 @@ async function generateVariants() {
     var count = document.getElementById('countSelect') ? document.getElementById('countSelect').value : '1';
     formData.append('count', String(count));
     formData.append('image_backend', getSelectedImageBackend());
+    appendGptOutputQuality(formData);
     appendProjectContext(formData);
     try {
         appendGenerationSize(formData);
@@ -5172,6 +5228,7 @@ async function startEditImage() {
             description: editDesc,
             keepElements: keepElements,
             image_backend: getSelectedEditImageBackend(),
+            gpt_output_quality: getSelectedGptOutputQuality(),
             project: getSelectedProjectName()
         };
         if (regions.length > 0) {

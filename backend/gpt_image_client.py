@@ -240,13 +240,19 @@ def resolve_gpt_api_size(target_w: int, target_h: int, model: str | None = None)
     return map_dimensions_to_size(target_w, target_h)
 
 
-def resolve_gpt_image_output_quality(model: str | None = None) -> str | None:
+def resolve_gpt_image_output_quality(
+    model: str | None = None,
+    override: str | None = None,
+) -> str | None:
     if not is_gpt_image2_model(model):
         return None
-    raw = (os.environ.get("OPENAI_IMAGE_OUTPUT_QUALITY") or "high").strip().lower()
+    raw = (
+        (override or "").strip().lower()
+        or (os.environ.get("OPENAI_IMAGE_OUTPUT_QUALITY") or "medium").strip().lower()
+    )
     if raw in GPT_IMAGE2_OUTPUT_QUALITIES:
         return raw
-    return "high"
+    return "medium"
 
 
 def parse_gpt_size_preset(size: str) -> tuple[int, int]:
@@ -522,8 +528,8 @@ class GptImageClient:
         self.timeout = max(min_timeout, int(timeout))
         self.temp_dir = temp_dir or Path("outputs")
 
-    def _gpt_quality_fields(self, model: str) -> list[tuple[str, str]]:
-        quality = resolve_gpt_image_output_quality(model)
+    def _gpt_quality_fields(self, model: str, output_quality: str | None = None) -> list[tuple[str, str]]:
+        quality = resolve_gpt_image_output_quality(model, override=output_quality)
         if quality:
             return [("quality", quality)]
         return []
@@ -536,6 +542,7 @@ class GptImageClient:
         image_paths: list[Path],
         retries: int,
         mask_path: Path | None = None,
+        output_quality: str | None = None,
     ) -> tuple[Optional[str], Optional[str]]:
         """官方 Image API：/v1/images/edits，支持多张参考图与扩边蒙版。"""
         url = f"{self.base_url}/v1/images/edits"
@@ -544,7 +551,7 @@ class GptImageClient:
             ("prompt", prompt),
             ("size", size),
         ]
-        fields.extend(self._gpt_quality_fields(model))
+        fields.extend(self._gpt_quality_fields(model, output_quality))
         files: list[tuple[str, str, bytes, str]] = []
         for path in image_paths:
             files.append(("image[]", path.name, path.read_bytes(), _guess_mime(path)))
@@ -605,6 +612,7 @@ class GptImageClient:
         model: str,
         size: str,
         retries: int,
+        output_quality: str | None = None,
     ) -> tuple[Optional[str], Optional[str]]:
         payload = {
             "model": model,
@@ -612,7 +620,7 @@ class GptImageClient:
             "size": size,
             "n": 1,
         }
-        quality = resolve_gpt_image_output_quality(model)
+        quality = resolve_gpt_image_output_quality(model, override=output_quality)
         if quality:
             payload["quality"] = quality
         if self.provider == "azure":
@@ -655,6 +663,7 @@ class GptImageClient:
         mask_path: Path | None = None,
         retries: int = 3,
         prefer_responses: bool = False,
+        output_quality: str | None = None,
     ) -> tuple[Optional[str], Optional[str]]:
         if not self.auth.bearer and not self.auth.api_key_header:
             return None, "未配置 OPENAI_API_KEY（或 OPENAI_APP_KEY）"
@@ -662,7 +671,11 @@ class GptImageClient:
         refs = _normalize_image_paths(image_paths)
         # 始终按用户选择的线上尺寸请求 GPT，避免「固定预设生成 + 后台再裁切」
         size = resolve_gpt_api_size(width, height, model)
-        print(f"[GPT] request size={size} model={model} refs={len(refs)} mask={bool(mask_path)}")
+        quality = resolve_gpt_image_output_quality(model, override=output_quality)
+        print(
+            f"[GPT] request size={size} model={model} quality={quality or '-'} "
+            f"refs={len(refs)} mask={bool(mask_path)}"
+        )
         if refs:
             if prefer_responses and not mask_path:
                 result = self._generate_with_responses(prompt, model, refs, retries)
@@ -671,7 +684,10 @@ class GptImageClient:
                 err_lower = (result[1] or "").lower()
                 if "unsupported" not in err_lower and "404" not in err_lower:
                     return result
-            result = self._generate_with_edits(prompt, model, size, refs, retries, mask_path=mask_path)
+            result = self._generate_with_edits(
+                prompt, model, size, refs, retries,
+                mask_path=mask_path, output_quality=output_quality,
+            )
             if result[0]:
                 return result
             if mask_path:
@@ -683,7 +699,9 @@ class GptImageClient:
                 return None, fallback[1] or result[1]
             return result
 
-        return self._generate_text_to_image(prompt, model, size, retries)
+        return self._generate_text_to_image(
+            prompt, model, size, retries, output_quality=output_quality,
+        )
 
 
 def model_uses_max_completion_tokens(model: str) -> bool:
