@@ -64,3 +64,19 @@ def list_client_jobs(
     out = list(by_id.values())
     out.sort(key=lambda x: x.get("created_at") or 0, reverse=True)
     return out
+
+
+def queue_status_summary(
+    lovart_queue: LovartQueue,
+    gpt_queue: LovartQueue,
+) -> dict[str, Any]:
+    """双队列公开状态，供前端实时展示。"""
+    lovart = lovart_queue.stats()
+    gpt = gpt_queue.stats()
+    return {
+        "lovart": lovart,
+        "gpt": gpt,
+        "queued": int(lovart["queued"]) + int(gpt["queued"]),
+        "running": int(lovart["running"]) + int(gpt["running"]),
+        "active": int(lovart["active"]) + int(gpt["active"]),
+    }

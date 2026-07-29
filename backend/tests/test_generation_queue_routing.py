@@ -23,6 +23,23 @@ class RoutingTests(unittest.TestCase):
         self.assertIs(queue_for_backend("lovart", self.lovart, self.gpt), self.lovart)
         self.assertIs(queue_for_backend("dreamina", self.lovart, self.gpt), self.lovart)
 
+    def test_queue_status_summary(self):
+        from generation_queues import queue_status_summary
+
+        blocker = threading.Event()
+
+        def slow(_job):
+            blocker.wait(timeout=2)
+
+        self.gpt.submit_generation(
+            {"client_id": "c1", "kind": "variants", "count": 1}, runner=slow
+        )
+        summary = queue_status_summary(self.lovart, self.gpt)
+        self.assertGreaterEqual(summary["gpt"]["active"], 1)
+        self.assertEqual(summary["lovart"]["queued"], 0)
+        self.assertEqual(summary["active"], summary["queued"] + summary["running"])
+        blocker.set()
+
     def test_owning_queue_prefers_existing_job_over_backend(self):
         job_id = self.lovart.submit_generation(
             {"client_id": "c1", "kind": "variants", "count": 1},

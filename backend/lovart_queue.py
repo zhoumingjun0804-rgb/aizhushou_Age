@@ -80,6 +80,17 @@ class LovartQueue:
             )
         return active
 
+    def stats(self) -> dict[str, int]:
+        """公开队列计数：queued / running / active。"""
+        with self._jobs_lock:
+            queued = sum(1 for j in self._jobs.values() if j.get("status") == "queued")
+            running = sum(1 for j in self._jobs.values() if j.get("status") == "running")
+        return {
+            "queued": queued,
+            "running": running,
+            "active": queued + running,
+            "max_workers": self.max_workers,
+        }
     def _position_for_job_locked(self, job_id: str) -> int:
         with self._jobs_lock:
             job = self._jobs.get(job_id)

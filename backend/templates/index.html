@@ -424,6 +424,19 @@
             padding: 6px 10px; border-radius: 8px;
             background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); }
         .app-top-sound-toggle:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); }
+        .app-top-queue-status { position: absolute; top: 0; left: 0; z-index: 20;
+            max-width: min(58vw, 320px); padding: 6px 10px; border-radius: 8px;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            font-size: 12px; line-height: 1.35; color: rgba(255,255,255,0.55);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            pointer-events: none; user-select: none; }
+        .app-top-queue-status.active { color: rgba(196,181,253,0.95);
+            border-color: rgba(167,139,250,0.35); background: rgba(129,140,248,0.12); }
+        .app-top-queue-status .q-sep { opacity: 0.35; margin: 0 6px; }
+        @media (max-width: 640px) {
+            .app-top-queue-status { font-size: 11px; max-width: 52vw; padding: 5px 8px; }
+            .app-header { padding-top: 28px; }
+        }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         @media (max-width: 640px) {
@@ -1063,6 +1076,7 @@
         </div>
     </div>
     <div id="appMain" class="container__APP_MAIN_EXTRA__">
+        <div id="queueStatusBadge" class="app-top-queue-status" title="全站生图排队实时状态">队列加载中…</div>
         <label class="tool-sound-toggle app-top-sound-toggle" title="工具任务完成后播放提示音">
             <input type="checkbox" id="taskCompleteSoundToggle" onchange="setTaskCompleteSoundEnabled(this.checked)">
             <span>🔔 完成铃声</span>
@@ -2473,6 +2487,7 @@ function initUnlockedApp(data) {
         updateEditImageButtonState();
     });
     refreshGenerationJobs();
+    startQueueStatusPolling();
     onSizeCategoryChange();
     loadSplashSizePresets();
     updateEditImageButtonState();
@@ -2485,6 +2500,7 @@ function initAppWithoutGate() {
         loadSplashSizePresets();
     });
     refreshGenerationJobs();
+    startQueueStatusPolling();
 }
 
 function getSelectedProjectName() {
@@ -2907,6 +2923,67 @@ function getClientId() {
         localStorage.setItem(key, id);
     }
     return id;
+}
+
+var queueStatusTimer = null;
+var QUEUE_STATUS_POLL_MS = 3000;
+
+function _queueBackendLabel(name, stats) {
+    var queued = (stats && stats.queued) || 0;
+    var running = (stats && stats.running) || 0;
+    if (!queued && !running) return name + ' 空闲';
+    var parts = [];
+    if (queued) parts.push(queued + '排队');
+    if (running) parts.push(running + '生成中');
+    return name + ' ' + parts.join('·');
+}
+
+function renderQueueStatusBadge(data) {
+    var el = document.getElementById('queueStatusBadge');
+    if (!el) return;
+    if (!data) {
+        el.textContent = '队列暂不可用';
+        el.classList.remove('active');
+        el.title = '无法读取生图队列状态';
+        return;
+    }
+    var gpt = data.gpt || {};
+    var lovart = data.lovart || {};
+    var queued = data.queued || 0;
+    var running = data.running || 0;
+    var active = queued + running;
+    el.innerHTML = _queueBackendLabel('GPT', gpt)
+        + '<span class="q-sep">|</span>'
+        + _queueBackendLabel('Lovart', lovart);
+    el.classList.toggle('active', active > 0);
+    el.title = '全站生图：排队 ' + queued + ' · 生成中 ' + running
+        + '（每人同时仅 1 个主生图任务）';
+}
+
+async function refreshQueueStatus() {
+    try {
+        var res = await authFetch('/api/generation/queue-status');
+        if (!res.ok) {
+            if (res.status === 401) {
+                renderQueueStatusBadge(null);
+                return;
+            }
+            throw new Error('HTTP ' + res.status);
+        }
+        var data = await res.json();
+        renderQueueStatusBadge(data);
+    } catch (e) {
+        var el = document.getElementById('queueStatusBadge');
+        if (el && !el.classList.contains('active')) {
+            el.textContent = '队列…';
+        }
+    }
+}
+
+function startQueueStatusPolling() {
+    if (queueStatusTimer) return;
+    refreshQueueStatus();
+    queueStatusTimer = setInterval(refreshQueueStatus, QUEUE_STATUS_POLL_MS);
 }
 
 function appendClientId(formData) {

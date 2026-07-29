@@ -58,6 +58,7 @@ from generation_queues import (
     list_client_jobs,
     owning_queue,
     queue_for_backend,
+    queue_status_summary,
     raise_if_duplicate_high,
 )
 from gpt_parallel import run_variants_parallel
@@ -3157,6 +3158,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
         elif path == '/api/system-info':
             self._handle_system_info()
+        elif path == '/api/generation/queue-status':
+            if not self._auth_any():
+                return
+            self._send_json(queue_status_summary(lovart_queue, gpt_queue))
         elif path.startswith('/api/generation/jobs/'):
             if not self._auth_any():
                 return
