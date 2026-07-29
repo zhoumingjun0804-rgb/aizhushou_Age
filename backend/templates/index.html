@@ -4302,6 +4302,11 @@ async function openVariantRefine(idx) {
             baseIdx: idx,
             currentFilename: v.filename,
             currentDataUrl: dataUrl,
+            historyId: '',
+            rootPrompt: (v.prompt || '').trim(),
+            rootImage: v.filename,
+            seedPrompt: (v.prompt || '').trim(),
+            editChain: [],
             messages: [{ role: 'system', text: '已载入「魔法图 ' + (idx + 1) + '」，输入修改要求后可多轮迭代。' }]
         };
         document.getElementById('refinePreviewImg').src = '/outputs/' + v.filename + '?t=' + Date.now();
@@ -4349,7 +4354,12 @@ async function submitVariantRefine() {
             description: fullPrompt,
             keepElements: '未提及的文字、Logo、配色与构图',
             image_backend: getSelectedImageBackend(),
-            project: getSelectedProjectName()
+            project: getSelectedProjectName(),
+            parent_history_id: variantRefineState.historyId || '',
+            root_prompt: variantRefineState.rootPrompt || variantRefineState.seedPrompt || '',
+            root_image: variantRefineState.rootImage || '',
+            base_output_image: variantRefineState.currentFilename || '',
+            edit_chain: Array.isArray(variantRefineState.editChain) ? variantRefineState.editChain : []
         };
         var response = await authFetch('/api/edit-image', {
             method: 'POST',
@@ -4364,6 +4374,18 @@ async function submitVariantRefine() {
         }
         variantRefineState.currentFilename = data.output_image;
         variantRefineState.currentDataUrl = await urlToDataUrl('/outputs/' + data.output_image);
+        if (data.history_id) variantRefineState.historyId = data.history_id;
+        if (!variantRefineState.rootPrompt && (data.root_prompt || variantRefineState.seedPrompt)) {
+            variantRefineState.rootPrompt = data.root_prompt || variantRefineState.seedPrompt;
+        }
+        if (!variantRefineState.rootImage) {
+            variantRefineState.rootImage = data.root_image || data.base_image || variantRefineState.rootImage || '';
+        }
+        if (Array.isArray(data.edit_chain)) {
+            variantRefineState.editChain = data.edit_chain;
+        } else {
+            variantRefineState.editChain = (variantRefineState.editChain || []).concat([{ text: fullPrompt }]);
+        }
         document.getElementById('refinePreviewImg').src = '/outputs/' + data.output_image + '?t=' + Date.now();
         variantRefineState.messages.push({ role: 'system', text: '修改完成，可继续输入新要求或点击「采纳此图」。' });
         renderRefineHistory();
@@ -4418,6 +4440,33 @@ function _filenameFromOutputUrl(url) {
     return name;
 }
 
+function _historyEditChainFromItem(item) {
+    if (!item) return [];
+    if (Array.isArray(item.edit_chain) && item.edit_chain.length) {
+        return item.edit_chain.map(function(step) {
+            if (typeof step === 'string') return { text: step };
+            return {
+                text: String((step && (step.text || step.description)) || '').trim(),
+                id: step && step.id,
+                timestamp: step && step.timestamp,
+                output_image: step && step.output_image,
+                edit_type: step && step.edit_type
+            };
+        }).filter(function(step) { return !!(step.text); });
+    }
+    var desc = (item.description || '').trim();
+    if (desc && item.mode === 'edit') {
+        return [{
+            text: desc,
+            id: item.id,
+            timestamp: item.timestamp,
+            output_image: item.output_image || ((item.output_images || [])[0]),
+            edit_type: item.edit_type
+        }];
+    }
+    return [];
+}
+
 function _historyContinueContextMessages(item) {
     var messages = [];
     messages.push({ role: 'system', text: '已从历史记录载入该图。可像 ChatGPT 一样继续描述修改要求，多轮迭代。' });
@@ -4426,13 +4475,23 @@ function _historyContinueContextMessages(item) {
         ? item.meta_tags.join(' · ')
         : _historyModeText(item.mode);
     if (tags) messages.push({ role: 'system', text: '原类型：' + tags });
+    var rootPrompt = (item.root_prompt || '').trim();
     var desc = (item.description || '').trim();
     var prompt = (item.prompt || '').trim();
-    if (desc) messages.push({ role: 'user', text: '原修改说明：' + desc });
-    if (prompt && prompt !== desc && prompt.indexOf(desc) !== 0) {
-        messages.push({ role: 'system', text: '原 Prompt：' + prompt });
+    var chain = _historyEditChainFromItem(item);
+    if (rootPrompt) {
+        messages.push({ role: 'system', text: '原始 Prompt：' + rootPrompt });
     } else if (prompt && !desc) {
         messages.push({ role: 'system', text: '原 Prompt：' + prompt });
+    } else if (prompt && prompt !== desc && prompt.indexOf(desc) !== 0) {
+        messages.push({ role: 'system', text: '原 Prompt：' + prompt });
+    }
+    if (chain.length) {
+        chain.forEach(function(step, idx) {
+            messages.push({ role: 'user', text: '第' + (idx + 1) + '次修改：' + step.text });
+        });
+    } else if (desc) {
+        messages.push({ role: 'user', text: '上次修改说明：' + desc });
     }
     return messages;
 }
@@ -4495,13 +4554,26 @@ async function _startContinueEditSession(item, filename, imgUrl) {
         var dataUrl = await urlToDataUrl(imgUrl.indexOf('/') === 0 || imgUrl.indexOf('http') === 0
             ? imgUrl
             : ('/outputs/' + filename));
+        var rootPrompt = '';
+        var rootImage = filename;
+        if (item) {
+            rootPrompt = (item.root_prompt || item.prompt || '').trim();
+            rootImage = item.root_image || item.base_image || filename;
+            if (item.mode === 'edit' && !item.root_prompt && item.description) {
+                // 旧版改图记录的 prompt 可能是 AI 修图指令；优先保留 description 以外的上下文
+                rootPrompt = (item.prompt || '').trim();
+            }
+        }
         variantRefineState = {
             fromHistory: true,
             historyId: item && item.id ? item.id : '',
             baseIdx: null,
             currentFilename: filename,
             currentDataUrl: dataUrl,
-            seedPrompt: (item && (item.description || item.prompt)) || '',
+            rootPrompt: rootPrompt,
+            rootImage: String(rootImage || filename).split('?')[0],
+            seedPrompt: rootPrompt || ((item && (item.description || item.prompt)) || ''),
+            editChain: _historyEditChainFromItem(item),
             messages: _historyContinueContextMessages(item)
         };
         document.getElementById('refinePreviewImg').src = '/outputs/' + filename + '?t=' + Date.now();
@@ -5178,7 +5250,32 @@ function openHistoryThumb(el) {
         var index = parseInt(el.getAttribute('data-index'), 10) || 0;
         var historyId = el.getAttribute('data-history-id') || '';
         fullscreenHistoryItem = historyId ? (historyItemsById[historyId] || null) : null;
-        openFullscreen(images, index);
+        var labels = [];
+        var item = fullscreenHistoryItem;
+        if (item && (item.root_image || item.base_image)) {
+            var resultName = _filenameFromOutputUrl(images[index] || images[0] || '');
+            var gallery = [];
+            var galleryLabels = [];
+            function pushUnique(name, label) {
+                if (!name) return;
+                name = String(name).split('?')[0];
+                var url = '/outputs/' + name;
+                if (gallery.indexOf(url) >= 0) return;
+                gallery.push(url);
+                galleryLabels.push(label);
+            }
+            pushUnique(item.root_image, '初始原图');
+            if (item.base_image && item.base_image !== item.root_image) {
+                pushUnique(item.base_image, '基于图片');
+            }
+            pushUnique(resultName, '本次结果');
+            if (gallery.length > 1) {
+                var resultIdx = Math.max(0, gallery.indexOf('/outputs/' + resultName));
+                openFullscreen(gallery, resultIdx, galleryLabels, { preserveHistoryItem: true });
+                return;
+            }
+        }
+        openFullscreen(images, index, labels, { preserveHistoryItem: true });
     } catch (e) {
         console.error('历史图片打开失败', e);
     }
@@ -5207,7 +5304,7 @@ function _syncFullscreenContinueBtn() {
     btn.classList.toggle('visible', !!fullscreenHistoryItem);
 }
 
-function openFullscreen(images, startIndex, labels) {
+function openFullscreen(images, startIndex, labels, options) {
     if (typeof images === 'string') {
         try {
             var parsed = JSON.parse(images);
@@ -5216,7 +5313,8 @@ function openFullscreen(images, startIndex, labels) {
             images = [images];
         }
     }
-    if (labels !== undefined) {
+    options = options || {};
+    if (labels !== undefined && !options.preserveHistoryItem) {
         fullscreenHistoryItem = null;
     }
     fullscreenImages = normalizeImageUrls(images);
@@ -5492,10 +5590,30 @@ function _buildHistoryDetailsPlainText(item) {
     if (item.project) lines.push('项目组：' + item.project);
     if (item.edit_type) lines.push('修图类型：' + item.edit_type);
     if (item.variants_count > 1) lines.push('张数：' + item.variants_count);
+    if (item.parent_id) lines.push('父记录：' + item.parent_id);
+    if (item.root_image) lines.push('初始原图：' + item.root_image);
+    if (item.base_image) lines.push('基于图片：' + item.base_image);
     var mainTitleText = _historyDetailMainTitle(item);
     if (mainTitleText) lines.push('主标题：' + mainTitleText);
-    if ((item.description || '').trim()) lines.push('修改说明：' + String(item.description).trim());
-    if (item.prompt) lines.push('', 'Prompt：', String(item.prompt));
+    if ((item.description || '').trim()) lines.push('本次修改：' + String(item.description).trim());
+    var rootPrompt = (item.root_prompt || '').trim();
+    if (rootPrompt) {
+        lines.push('', '原始 Prompt：', rootPrompt);
+        if (item.prompt && String(item.prompt).trim() !== rootPrompt) {
+            lines.push('', '记录 Prompt：', String(item.prompt));
+        }
+    } else if (item.prompt) {
+        lines.push('', 'Prompt：', String(item.prompt));
+    }
+    var chain = Array.isArray(item.edit_chain) ? item.edit_chain : [];
+    if (chain.length) {
+        lines.push('', '修改历程：');
+        chain.forEach(function(step, idx) {
+            var text = typeof step === 'string' ? step : String((step && (step.text || step.description)) || '');
+            if (!text.trim()) return;
+            lines.push((idx + 1) + '. ' + text.trim());
+        });
+    }
     return lines.join('\n');
 }
 
@@ -5544,7 +5662,9 @@ function renderFullscreenDetails(item) {
         ? item.meta_tags.join(' · ')
         : _historyModeText(item.mode);
     var desc = (item.description || '').trim();
+    var rootPrompt = (item.root_prompt || '').trim();
     var promptText = item.prompt || '';
+    var editChain = Array.isArray(item.edit_chain) ? item.edit_chain : [];
     var rows = [
         ['时间', _formatHistoryTimestamp(item.timestamp)],
         ['类型', tags]
@@ -5552,6 +5672,8 @@ function renderFullscreenDetails(item) {
     if (item.project) rows.push(['项目组', item.project]);
     if (item.edit_type) rows.push(['修图类型', item.edit_type]);
     if (item.variants_count > 1) rows.push(['张数', String(item.variants_count)]);
+    if (item.parent_id) rows.push(['父记录', String(item.parent_id)]);
+    if (editChain.length > 1) rows.push(['修改次数', String(editChain.length)]);
     var rowsHtml = rows.map(function(r) {
         return '<div class="fullscreen-detail-row"><span class="fullscreen-detail-label">' +
             _escapeHtml(r[0]) + '</span><span class="fullscreen-detail-value">' +
@@ -5562,11 +5684,51 @@ function renderFullscreenDetails(item) {
         ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">主标题</span>' +
           '<pre class="fullscreen-detail-pre">' + _escapeHtml(mainTitleText) + '</pre></div>'
         : '';
-    var descHtml = desc
-        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">修改说明</span>' +
+    var lineageImgs = [];
+    if (item.root_image) {
+        lineageImgs.push({ label: '初始原图', name: String(item.root_image).split('?')[0] });
+    }
+    if (item.base_image && item.base_image !== item.root_image) {
+        lineageImgs.push({ label: '基于图片', name: String(item.base_image).split('?')[0] });
+    }
+    var lineageHtml = lineageImgs.length
+        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">上下文图片</span>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">' +
+          lineageImgs.map(function(it) {
+              var src = '/outputs/' + it.name;
+              return '<div style="text-align:center;">' +
+                  '<div style="font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:4px;">' + _escapeHtml(it.label) + '</div>' +
+                  '<img src="' + src + '" alt="' + _escapeHtml(it.label) + '" ' +
+                  'style="max-width:140px;max-height:140px;border-radius:8px;border:1px solid rgba(167,139,250,0.35);cursor:zoom-in;background:rgba(0,0,0,0.25);" ' +
+                  'onclick="event.stopPropagation(); openFullscreen([\'' + src.replace(/'/g, "\\'") + '\'], 0)">' +
+                  '</div>';
+          }).join('') +
+          '</div></div>'
+        : '';
+    var chainHtml = '';
+    if (editChain.length) {
+        chainHtml = '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">修改历程</span>' +
+            editChain.map(function(step, idx) {
+                var text = typeof step === 'string' ? step : String((step && (step.text || step.description)) || '');
+                if (!text.trim()) return '';
+                var isLast = idx === editChain.length - 1;
+                var label = isLast ? ('第' + (idx + 1) + '次（本次）') : ('第' + (idx + 1) + '次');
+                return '<div style="margin-top:8px;"><div style="font-size:12px;color:' +
+                    (isLast ? '#a7f3d0' : 'rgba(255,255,255,0.55)') + ';margin-bottom:4px;">' +
+                    _escapeHtml(label) + '</div>' +
+                    '<pre class="fullscreen-detail-pre">' + _escapeHtml(text.trim()) + '</pre></div>';
+            }).join('') +
+            '</div>';
+    }
+    var descHtml = (!editChain.length && desc)
+        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">本次修改</span>' +
           '<pre class="fullscreen-detail-pre">' + _escapeHtml(desc) + '</pre></div>'
         : '';
-    var promptHtml = promptText
+    var rootPromptHtml = rootPrompt
+        ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">原始 Prompt</span>' +
+          '<pre class="fullscreen-detail-pre">' + _escapeHtml(rootPrompt) + '</pre></div>'
+        : '';
+    var promptHtml = (!rootPrompt && promptText)
         ? '<div class="fullscreen-detail-block"><span class="fullscreen-detail-label">Prompt</span>' +
           '<pre class="fullscreen-detail-pre">' + _escapeHtml(promptText) + '</pre></div>'
         : '';
@@ -5577,7 +5739,7 @@ function renderFullscreenDetails(item) {
         '<button type="button" class="fullscreen-details-continue" onclick="event.stopPropagation(); continueEditFromHistory()">✏️ 继续编辑</button>' +
         '<button type="button" class="fullscreen-details-copy" onclick="event.stopPropagation(); copyFullscreenHistoryDetails()">复制全部</button>' +
         '</div>' +
-        '</div>' + rowsHtml + mainTitleHtml + descHtml + promptHtml;
+        '</div>' + rowsHtml + mainTitleHtml + lineageHtml + rootPromptHtml + chainHtml + descHtml + promptHtml;
     panel.classList.add('open');
     _syncFullscreenContinueBtn();
 }

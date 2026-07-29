@@ -442,6 +442,110 @@ def add_history(entry):
     save_history(history)
 
 
+def find_history_entry(history_id: str):
+    hid = str(history_id or "").strip()
+    if not hid:
+        return None
+    for item in load_history():
+        if str(item.get("id") or "") == hid:
+            return item
+    return None
+
+
+def _normalize_edit_chain_item(raw) -> dict | None:
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        return {"text": text}
+    if not isinstance(raw, dict):
+        return None
+    text = str(raw.get("text") or raw.get("description") or "").strip()
+    if not text:
+        return None
+    item = {"text": text}
+    for key in ("id", "timestamp", "output_image", "edit_type"):
+        val = raw.get(key)
+        if val is not None and val != "":
+            item[key] = val
+    return item
+
+
+def build_edit_chain(
+    *,
+    parent_id: str = "",
+    incoming_chain=None,
+    current_description: str = "",
+    current_output: str = "",
+    current_edit_type: str = "",
+    current_id: str = "",
+    current_timestamp: str = "",
+) -> list:
+    """累计往期修改说明：优先沿父记录回溯，避免只剩原始 Prompt 与本次修改。"""
+    chain: list = []
+
+    # 1) 沿 parent_id 回溯；若某一级已有完整 edit_chain，直接采用
+    walk_id = str(parent_id or "").strip()
+    seen: set[str] = set()
+    stack: list = []
+    while walk_id and walk_id not in seen:
+        seen.add(walk_id)
+        parent = find_history_entry(walk_id)
+        if not parent:
+            break
+        prev = parent.get("edit_chain")
+        if isinstance(prev, list) and prev:
+            chain = []
+            for raw in prev:
+                item = _normalize_edit_chain_item(raw)
+                if item:
+                    chain.append(item)
+            stack = []
+            break
+        if parent.get("mode") == "edit":
+            prev_desc = str(parent.get("description") or "").strip()
+            if prev_desc:
+                item = {
+                    "text": prev_desc,
+                    "id": parent.get("id"),
+                    "timestamp": parent.get("timestamp"),
+                    "output_image": parent.get("output_image")
+                    or (
+                        (parent.get("output_images") or [None])[0]
+                        if parent.get("output_images")
+                        else None
+                    ),
+                    "edit_type": parent.get("edit_type"),
+                }
+                stack.append({k: v for k, v in item.items() if v is not None and v != ""})
+        walk_id = str(parent.get("parent_id") or "").strip()
+    if stack:
+        stack.reverse()
+        chain = stack
+
+    # 2) 父记录缺失时，回退到前端传入的链
+    if not chain and isinstance(incoming_chain, list) and incoming_chain:
+        for raw in incoming_chain:
+            item = _normalize_edit_chain_item(raw)
+            if item:
+                chain.append(item)
+
+    current_text = str(current_description or "").strip()
+    if current_text:
+        if not chain or chain[-1].get("text") != current_text:
+            step = {"text": current_text}
+            if current_id:
+                step["id"] = current_id
+            if current_timestamp:
+                step["timestamp"] = current_timestamp
+            if current_output:
+                step["output_image"] = pathlib.Path(str(current_output)).name
+            if current_edit_type:
+                step["edit_type"] = current_edit_type
+            chain.append(step)
+    return chain
+
+
 def _history_title_from_prompt(prompt: str, limit: int = 28) -> str:
     if prompt is None:
         text = ""
@@ -4507,23 +4611,64 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             print(f"[EDIT] 尺寸恢复失败: {str(e)}")
 
-        # 添加历史记录
+        # 血缘：继续编辑时带上原 Prompt / 初始图 / 父记录 / 往期修改链
+        parent_history_id = str(data.get("parent_history_id") or data.get("parent_id") or "").strip()
+        root_prompt = str(data.get("root_prompt") or "").strip()
+        root_image = str(data.get("root_image") or "").strip()
+        base_output_image = str(data.get("base_output_image") or data.get("base_image") or "").strip()
+        incoming_edit_chain = data.get("edit_chain")
+        if base_output_image:
+            base_output_image = pathlib.Path(base_output_image).name
+        if root_image:
+            root_image = pathlib.Path(root_image).name
+        if not root_image and base_output_image:
+            root_image = base_output_image
+
+        history_prompt = root_prompt or prompt
+        entry_id = uuid.uuid4().hex[:8]
+        entry_ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        edit_chain = build_edit_chain(
+            parent_id=parent_history_id,
+            incoming_chain=incoming_edit_chain,
+            current_description=description,
+            current_output=output_filename,
+            current_edit_type=edit_type,
+            current_id=entry_id,
+            current_timestamp=entry_ts,
+        )
         entry = build_history_entry(
+            id=entry_id,
+            timestamp=entry_ts,
             mode="edit",
-            prompt=prompt,
+            prompt=history_prompt,
             description=description,
             source="edit",
             project=auth_project,
             input_image=input_filename,
             output_image=output_filename,
             edit_type=edit_type,
+            edit_prompt=prompt,
+            parent_id=parent_history_id or None,
+            root_prompt=root_prompt or None,
+            root_image=root_image or None,
+            base_image=base_output_image or None,
+            edit_chain=edit_chain or None,
         )
         try:
             add_history(entry)
         except Exception as e:
             print(f"[EDIT] 添加历史失败: {str(e)}")
 
-        self._send_json({"success": True, "output_image": output_filename})
+        self._send_json({
+            "success": True,
+            "output_image": output_filename,
+            "history_id": entry.get("id"),
+            "parent_id": entry.get("parent_id"),
+            "root_prompt": entry.get("root_prompt"),
+            "root_image": entry.get("root_image"),
+            "base_image": entry.get("base_image"),
+            "edit_chain": entry.get("edit_chain") or [],
+        })
 
     def _send_html(self, html):
         self.send_response(200)
