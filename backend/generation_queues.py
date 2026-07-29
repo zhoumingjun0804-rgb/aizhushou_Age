@@ -17,6 +17,22 @@ def queue_for_backend(
     return lovart_queue
 
 
+def owning_queue(
+    job_id: str,
+    lovart_queue: LovartQueue,
+    gpt_queue: LovartQueue,
+    backend: str = "",
+) -> LovartQueue:
+    """返回持有 job 的队列，避免热加载后写入新队列。"""
+    with lovart_queue._jobs_lock:
+        if job_id in lovart_queue._jobs:
+            return lovart_queue
+    with gpt_queue._jobs_lock:
+        if job_id in gpt_queue._jobs:
+            return gpt_queue
+    return queue_for_backend(backend, lovart_queue, gpt_queue)
+
+
 def raise_if_duplicate_high(
     client_id: str,
     lovart_queue: LovartQueue,

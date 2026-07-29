@@ -16,7 +16,7 @@ import shutil
 import errno
 import threading
 import concurrent.futures
-from typing import Optional
+from typing import Callable, Optional
 
 from lovart_client import (
     LovartClient,
@@ -56,6 +56,7 @@ from lovart_queue import (
 from generation_queues import (
     find_job,
     list_client_jobs,
+    owning_queue,
     queue_for_backend,
     raise_if_duplicate_high,
 )
@@ -218,6 +219,13 @@ def _reload_runtime_env():
     GPT_QUEUE_MAX = max(1, int(os.environ.get("GPT_QUEUE_MAX", "20")))
     GPT_ETA_AVG_SECONDS = max(10, int(os.environ.get("GPT_ETA_AVG_SECONDS", "45")))
     GPT_VARIANT_PARALLEL = max(1, int(os.environ.get("GPT_VARIANT_PARALLEL", "4")))
+    def _queue_busy(q: LovartQueue) -> bool:
+        with q._jobs_lock:
+            return any(
+                job.get("status") in ("queued", "running")
+                for job in q._jobs.values()
+            )
+
     if lovart_queue_settings != (
         LOVART_MAX_CONCURRENCY,
         LOVART_QUEUE_MAX,
@@ -225,14 +233,20 @@ def _reload_runtime_env():
         LOVART_JOB_MAX_SECONDS,
         LOVART_ETA_AVG_SECONDS,
     ):
-        lovart_queue = _make_lovart_queue()
+        if _queue_busy(lovart_queue):
+            print("[Queue] Lovart queue settings changed; delaying rebuild until idle")
+        else:
+            lovart_queue = _make_lovart_queue()
     if gpt_queue_settings != (
         GPT_MAX_CONCURRENCY,
         GPT_QUEUE_MAX,
         GPT_ETA_AVG_SECONDS,
     ):
-        gpt_queue = _make_gpt_queue()
-        gpt_slot.configure(GPT_MAX_CONCURRENCY)
+        if _queue_busy(gpt_queue):
+            print("[Queue] GPT queue settings changed; delaying rebuild until idle")
+        else:
+            gpt_queue = _make_gpt_queue()
+            gpt_slot.configure(GPT_MAX_CONCURRENCY)
 
 
 _load_env_file()
@@ -291,6 +305,7 @@ def _make_gpt_queue() -> LovartQueue:
 lovart_queue = _make_lovart_queue()
 gpt_queue = _make_gpt_queue()
 gpt_slot.configure(GPT_MAX_CONCURRENCY)
+_generation_admit_lock = threading.Lock()
 
 from ssl_utils import make_ssl_context
 
@@ -1541,6 +1556,7 @@ def call_gpt(
     gpt_model=None,
     mask_path=None,
     prefer_responses=False,
+    should_abort: Callable[[], bool] | None = None,
 ):
     if not local_project:
         return None, "GPT 生图请先选择项目组"
@@ -1571,6 +1587,8 @@ def call_gpt(
     )
     try:
         with gpt_slot.hold():
+            if should_abort and should_abort():
+                return None, "任务已取消或超时"
             return client.generate_image(
                 prompt,
                 model=model,
@@ -1603,6 +1621,7 @@ def call_image_generator(
     lovart_task_kind=None,
     mask_path=None,
     prefer_responses=False,
+    should_abort: Callable[[], bool] | None = None,
 ):
     backend = normalize_image_backend(image_backend)
     if backend == "gpt":
@@ -1618,6 +1637,7 @@ def call_image_generator(
             gpt_model=gpt_model,
             mask_path=mask_path,
             prefer_responses=prefer_responses,
+            should_abort=should_abort,
         )
     if backend == "lovart":
         return call_lovart(
@@ -1850,7 +1870,7 @@ def execute_generation_job(job: dict) -> None:
     payload = job["payload"]
     job_id = job["job_id"]
     backend = normalize_image_backend(payload.get("image_backend"))
-    q = queue_for_backend(backend, lovart_queue, gpt_queue)
+    q = owning_queue(job_id, lovart_queue, gpt_queue, backend)
     started = time.time()
     with q._jobs_lock:
         stored = q._jobs.get(job_id)
@@ -1891,6 +1911,10 @@ def execute_generation_job(job: dict) -> None:
             size_mode=size_mode,
             dpi=dpi,
             gpt_model=payload.get("gpt_model"),
+            should_abort=(
+                lambda: q.check_job_timeout(job_id)
+                or (time.time() - started > LOVART_JOB_MAX_SECONDS)
+            ) if backend == "gpt" else None,
         )
         if image_url:
             output_filename = f"variant_{uuid.uuid4().hex}.png"
@@ -3512,9 +3536,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             payload["client_id"] = client_id
 
             backend = normalize_image_backend(payload.get("image_backend"))
-            raise_if_duplicate_high(client_id, lovart_queue, gpt_queue)
-            target_q = queue_for_backend(backend, lovart_queue, gpt_queue)
-            job_id = target_q.submit_generation(payload, execute_generation_job)
+            with _generation_admit_lock:
+                raise_if_duplicate_high(client_id, lovart_queue, gpt_queue)
+                target_q = queue_for_backend(backend, lovart_queue, gpt_queue)
+                job_id = target_q.submit_generation(payload, execute_generation_job)
             view = target_q.get_job(job_id)
             self._send_json(
                 {

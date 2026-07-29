@@ -6,6 +6,7 @@ import unittest
 from generation_queues import (
     find_job,
     list_client_jobs,
+    owning_queue,
     queue_for_backend,
     raise_if_duplicate_high,
 )
@@ -21,6 +22,13 @@ class RoutingTests(unittest.TestCase):
         self.assertIs(queue_for_backend("gpt", self.lovart, self.gpt), self.gpt)
         self.assertIs(queue_for_backend("lovart", self.lovart, self.gpt), self.lovart)
         self.assertIs(queue_for_backend("dreamina", self.lovart, self.gpt), self.lovart)
+
+    def test_owning_queue_prefers_existing_job_over_backend(self):
+        job_id = self.lovart.submit_generation(
+            {"client_id": "c1", "kind": "variants", "count": 1},
+            runner=lambda _job: None,
+        )
+        self.assertIs(owning_queue(job_id, self.lovart, self.gpt, "gpt"), self.lovart)
 
     def test_cross_queue_duplicate(self):
         blocker = threading.Event()
