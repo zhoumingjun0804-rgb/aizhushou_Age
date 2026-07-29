@@ -122,7 +122,8 @@ cd backend
 |------|------|
 | `PORT` | 服务端口，默认 `8000`（远程部署时按你的环境填写） |
 | `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 主 Key；可用 `LOVART_ACCESS_KEY_2` 等配置备用，并发/额度受限时自动切换 |
-| `LOVART_MAX_CONCURRENCY` / `LOVART_QUEUE_MAX` | 生图 worker 数（默认 1）与全局排队上限（默认 20） |
+| `LOVART_MAX_CONCURRENCY` / `LOVART_QUEUE_MAX` | Lovart 生图 worker 数（默认 1）与全局排队上限（默认 20） |
+| `GPT_MAX_CONCURRENCY` / `GPT_QUEUE_MAX` | GPT 生图 worker/API 并发（默认 4）与排队上限（默认 20） |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 测试机出网经代理访问 Lovart 时使用（会随 `.env` 同步到远端） |
 | `TEST_SERVICE_URL` / `TEST_ACCOUNT` / `TEST_PASSWORD` | `./deploy.sh remote` 的 SSH 目标 |
 | `DEEPSEEK_API_KEY` 等 | 至少配置一个，用于 AI 关键词分析 |

@@ -214,6 +214,8 @@ curl -I https://lgw.lovart.ai -x http://proxy.example.com:1080
 
 测试环境团队共用单 PM2 进程时，Lovart 生图经内存队列串行（`LOVART_MAX_CONCURRENCY`，默认 1）。前端提交 `POST /api/generation/jobs` 后立即返回 `job_id`，可轮询排队位置与进度；浏览器 `localStorage` 中的 `client_id` 用于「每人同时仅 1 个主生图任务」。`pm2 reload` 或 `./deploy.sh update` 会清空内存队列，进行中的任务标记失败，需用户重新生成。可选变量：`LOVART_QUEUE_MAX`、`LOVART_JOB_TTL`、`LOVART_JOB_MAX_SECONDS`、`LOVART_ETA_AVG_SECONDS`（见 `.env.example`）。
 
+GPT 生图走独立内存队列（与 Lovart 分池，互不占用 worker）。`GPT_MAX_CONCURRENCY` 默认 4，同时是全站 GPT Image API 并发上限；`GPT_VARIANT_PARALLEL` 控制单任务内多张变体并行数；`GPT_QUEUE_MAX` / `GPT_ETA_AVG_SECONDS` 见 `.env.example`。开发态热加载仅在队列参数变化时重建队列；`pm2 reload` 仍会清空两队列。规格见 [docs/superpowers/specs/2026-07-29-gpt-generation-queue-design.md](./docs/superpowers/specs/2026-07-29-gpt-generation-queue-design.md)。
+
 设计规格详见 [docs/superpowers/specs/2026-05-25-remote-deploy-design.md](./docs/superpowers/specs/2026-05-25-remote-deploy-design.md)。
 
 ---
