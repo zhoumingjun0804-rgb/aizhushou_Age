@@ -172,6 +172,18 @@ def _reload_runtime_env():
     global QIANWEN_BASE_URL, QIANWEN_MODEL
     global KIMI_BASE_URL, KIMI_MODEL
     global DOUBAO_BASE_URL, DOUBAO_MODEL, DOUBAO_VISION_MODEL
+    lovart_queue_settings = (
+        LOVART_MAX_CONCURRENCY,
+        LOVART_QUEUE_MAX,
+        LOVART_JOB_TTL,
+        LOVART_JOB_MAX_SECONDS,
+        LOVART_ETA_AVG_SECONDS,
+    )
+    gpt_queue_settings = (
+        GPT_MAX_CONCURRENCY,
+        GPT_QUEUE_MAX,
+        GPT_ETA_AVG_SECONDS,
+    )
     _load_env_file(overwrite=True)
     LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai").strip()
     LOVART_POLL_TIMEOUT = int(os.environ.get("LOVART_POLL_TIMEOUT", "300"))
@@ -205,9 +217,21 @@ def _reload_runtime_env():
     GPT_QUEUE_MAX = max(1, int(os.environ.get("GPT_QUEUE_MAX", "20")))
     GPT_ETA_AVG_SECONDS = max(10, int(os.environ.get("GPT_ETA_AVG_SECONDS", "45")))
     GPT_VARIANT_PARALLEL = max(1, int(os.environ.get("GPT_VARIANT_PARALLEL", "4")))
-    lovart_queue = _make_lovart_queue()
-    gpt_queue = _make_gpt_queue()
-    gpt_slot.configure(GPT_MAX_CONCURRENCY)
+    if lovart_queue_settings != (
+        LOVART_MAX_CONCURRENCY,
+        LOVART_QUEUE_MAX,
+        LOVART_JOB_TTL,
+        LOVART_JOB_MAX_SECONDS,
+        LOVART_ETA_AVG_SECONDS,
+    ):
+        lovart_queue = _make_lovart_queue()
+    if gpt_queue_settings != (
+        GPT_MAX_CONCURRENCY,
+        GPT_QUEUE_MAX,
+        GPT_ETA_AVG_SECONDS,
+    ):
+        gpt_queue = _make_gpt_queue()
+        gpt_slot.configure(GPT_MAX_CONCURRENCY)
 
 
 _load_env_file()
