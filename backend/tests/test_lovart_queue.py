@@ -47,6 +47,20 @@ class LovartQueueGenerationTests(unittest.TestCase):
         blocker.set()
         time.sleep(0.2)
 
+    def test_has_active_high_job(self):
+        q = LovartQueue(max_workers=1, queue_max=10, job_ttl=60, eta_avg_seconds=1)
+        blocker = threading.Event()
+
+        def slow(_job):
+            blocker.wait(timeout=2)
+
+        self.assertIsNone(q.has_active_high_job("c1"))
+        j1 = q.submit_generation({"client_id": "c1", "kind": "variants", "count": 1}, runner=slow)
+        self.assertEqual(q.has_active_high_job("c1"), j1)
+        self.assertIsNone(q.has_active_high_job("c2"))
+        blocker.set()
+        time.sleep(0.2)
+
     def test_queue_full(self):
         q = LovartQueue(max_workers=1, queue_max=1, job_ttl=60, eta_avg_seconds=1)
         hold = threading.Event()

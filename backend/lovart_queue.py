@@ -170,6 +170,21 @@ class LovartQueue:
             raise box["error"]
         return box.get("result")
 
+    def has_active_high_job(self, client_id: str) -> Optional[str]:
+        """若该 client 有 queued/running 的 high 任务，返回 job_id，否则 None。"""
+        cid = (client_id or "").strip()
+        if not cid:
+            return None
+        with self._jobs_lock:
+            for j in self._jobs.values():
+                if (
+                    j.get("client_id") == cid
+                    and j.get("priority") == PRIORITY_HIGH
+                    and j.get("status") in ("queued", "running")
+                ):
+                    return j["job_id"]
+        return None
+
     def submit_generation(
         self,
         payload: dict[str, Any],
@@ -179,14 +194,9 @@ class LovartQueue:
         if not client_id:
             raise ValueError("缺少 client_id")
 
-        with self._jobs_lock:
-            for j in self._jobs.values():
-                if (
-                    j.get("client_id") == client_id
-                    and j.get("priority") == PRIORITY_HIGH
-                    and j.get("status") in ("queued", "running")
-                ):
-                    raise DuplicateHighJobError(j["job_id"])
+        existing = self.has_active_high_job(client_id)
+        if existing:
+            raise DuplicateHighJobError(existing)
 
         job_id = uuid.uuid4().hex[:12]
         total = int(payload.get("count") or 1)
