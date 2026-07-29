@@ -157,7 +157,8 @@ pm2 save
 | `TEST_SERVICE_URL` | `your-server.example.com` | 目标 IP 或 hostname |
 | `TEST_ACCOUNT` | `deploy_user` | SSH 用户 |
 | `TEST_PASSWORD` | `***` | SSH 密码 |
-| `PORT` | `<your-port>` | 小灯塔：原样同步到远端；画啦啦：`remote-hll` 会把远端写成 `8629`（不改本机） |
+| `PORT` | `<your-port>` | 写在各自环境文件中；`remote-hll` 会再强制远端 `PORT=8629` |
+| `FIXED_PROJECT` | `小灯塔` / `画啦啦` | 部署时写入对应远端 `.env` |
 
 **本机需安装：** `ssh`、`rsync`、`sshpass`
 
@@ -172,22 +173,24 @@ apt install sshpass rsync
 **命令：**
 
 ```bash
-./deploy.sh remote         # 小灯塔：同步 + 远端 deploy + PM2（/home/xiaoA）
-./deploy.sh remote sync    # 仅 rsync 小灯塔目录，不重启
-./deploy.sh remote-hll     # 画啦啦：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+./deploy.sh remote         # 小灯塔：.env → /home/xiaoA
+./deploy.sh remote sync
+./deploy.sh remote-hll     # 画啦啦：.env.hll → /home/xiaoA-hll:8629
 ./deploy.sh remote-hll sync
 ```
 
 **远端路径：**
 
-| 实例 | 目录 | PM2 | 端口 |
-|------|------|-----|------|
-| 小灯塔 | `/home/xiaoA` | `aizhushou-age` | `.env` 的 `PORT` |
-| 画啦啦 | `/home/xiaoA-hll` | `aizhushou-hll` | 固定 `8629` |
+| 实例 | 本机配置 | 目录 | PM2 | 端口 |
+|------|----------|------|-----|------|
+| 小灯塔 | `.env` | `/home/xiaoA` | `aizhushou-age` | `.env` 的 `PORT` |
+| 画啦啦 | `.env.hll` | `/home/xiaoA-hll` | `aizhushou-hll` | `8629` |
+
 **同步规则：**
 
-- **包含：** 项目代码、`.env`、`projects/`、`deploy.sh` 等
-- **排除：** `backend/.venv/`、`.git/`、`uploads/`、`outputs/`、`logs/`、`ecosystem.config.cjs` 等
+- **包含：** 项目代码、`projects/`、`deploy.sh` 等
+- **环境文件：** 单独上传为远端 `.env`（`.env` 或 `.env.hll`，不互相覆盖）
+- **排除：** `backend/.venv/`、`.git/`、`uploads/`、`outputs/`、`logs/`、本机 `.env`/`.env.hll`、`ecosystem.config.cjs` 等
 
 **CentOS 7 测试机额外行为：**
 
@@ -238,20 +241,16 @@ GPT 生图走独立内存队列（与 Lovart 分池，互不占用 worker）。`
 | `stable_diffusion` | 本地 SD WebUI（`SD_API_URL`） |
 | `auto` | 有 Lovart Key 时优先 Lovart，否则即梦 |
 
-### 项目组门禁
+### 实例锁定项目组
 
 | 变量 | 说明 |
 |------|------|
-| `PROJECT_GATE_ENABLED` | `1`（默认）开启门禁；`0` / `false` 关闭（恢复项目组下拉，API 不校验 Bearer） |
+| `FIXED_PROJECT` | `小灯塔` 或 `画啦啦`。锁定后标题为「A-智绘 · \<项目组\>」，隐藏项目组选择；已移除门禁与 Bearer |
 
-门禁**开启**时，打开或刷新页面需先选择项目组并输入密码（内存 Token，刷新后需重登）：
-
-| 项目组 | 环境变量 | 示例 |
-|--------|----------|------|
-| 画啦啦 | `PROJECT_PASSWORD_HLL` | `hll2026` |
-| 小灯塔 | `PROJECT_PASSWORD_XDT` | `xdt2026` |
-
-解锁后 API 请求须带：`Authorization: Bearer <token>`。
+| 本机文件 | 用途 | 部署命令 |
+|----------|------|----------|
+| `.env` | 小灯塔 | `./deploy.sh remote` |
+| `.env.hll` | 画啦啦 | `./deploy.sh remote-hll` |
 
 ### 项目组大模型 / Lovart Key（必须分组，禁止回落无后缀全局 Key）
 

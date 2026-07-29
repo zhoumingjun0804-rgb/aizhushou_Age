@@ -1,4 +1,5 @@
 .env
+.env.hll
 backend/.venv/
 uploads/
 outputs/

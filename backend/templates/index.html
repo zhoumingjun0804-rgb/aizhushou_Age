@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A-智绘</title>
+    <title>__PAGE_TITLE__</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -1060,29 +1060,14 @@
     </style>
 </head>
 <body>
-    <div id="projectGateOverlay" class="project-gate-overlay__GATE_OVERLAY_EXTRA__">
-        <div class="project-gate-card">
-            <h2>选择项目组</h2>
-            <label>项目组</label>
-            <div class="project-pick-group" id="gateProjectPickGroup">
-                <button type="button" class="project-pick-btn" data-project="小灯塔" onclick="setGateProject('小灯塔')">小灯塔</button>
-                <button type="button" class="project-pick-btn" data-project="画啦啦" onclick="setGateProject('画啦啦')">画啦啦</button>
-            </div>
-            <input type="hidden" id="gateProjectSelect" value="">
-            <label for="gatePassword">密码</label>
-            <input type="password" id="gatePassword" autocomplete="current-password" placeholder="请输入项目组密码" />
-            <p id="gateError" class="gate-error"></p>
-            <button type="button" id="gateSubmitBtn">进入</button>
-        </div>
-    </div>
-    <div id="appMain" class="container__APP_MAIN_EXTRA__">
+        <div id="appMain" class="container">
         <div id="queueStatusBadge" class="app-top-queue-status" title="全站生图排队实时状态">队列加载中…</div>
         <label class="tool-sound-toggle app-top-sound-toggle" title="工具任务完成后播放提示音">
             <input type="checkbox" id="taskCompleteSoundToggle" onchange="setTaskCompleteSoundEnabled(this.checked)">
             <span>🔔 完成铃声</span>
         </label>
         <header class="app-header">
-            <h1>🎨 A-智绘</h1>
+            <h1>__PAGE_BRAND__</h1>
             <p class="subtitle">填写需求，一键生成多张变体</p>
         </header>
         <nav class="nav-primary" aria-label="主要功能">
@@ -1103,8 +1088,8 @@
             <button type="button" class="tab-btn-tool" data-tab="cutout" onclick="switchTab('cutout', this)">🪄 抠图</button>
         </nav>
 
-        <!-- 项目组（生图 / 修图共用） -->
-        <div class="card shared-project-card">
+        <!-- 项目组（有 FIXED_PROJECT 时隐藏，由实例锁定） -->
+        <div class="card shared-project-card__PROJECT_CARD_EXTRA__">
             <div class="project-bar" style="margin:0;padding:0;background:none;border:none;">
                 <div class="project-bar-field">
                     <label>📁 项目组</label>
@@ -2329,25 +2314,10 @@ var loadedProjectsByName = {};
 var projectPickLocked = false;
 
 var currentProjectCatalog = '';
-var projectAuthToken = null;
-var unlockedProjectData = null;
-var projectGateEnabled = __PROJECT_GATE_ENABLED__;
+var fixedProjectName = '__FIXED_PROJECT__';
 
 function authFetch(url, options) {
-    options = options || {};
-    var headers = new Headers(options.headers || {});
-    if (projectAuthToken) {
-        headers.set('Authorization', 'Bearer ' + projectAuthToken);
-    }
-    options.headers = headers;
-    return fetch(url, options).then(function(res) {
-        if (res.status === 401 && projectGateEnabled) {
-            projectAuthToken = null;
-            showProjectGate('登录已失效，请重新输入密码');
-            return Promise.reject(new Error('unauthorized'));
-        }
-        return res;
-    });
+    return fetch(url, options || {});
 }
 
 function sortProjectsForPick(projects) {
@@ -2412,66 +2382,8 @@ async function pickProject(name) {
     await onProjectSelectChange();
 }
 
-function setGateProject(name) {
-    var hidden = document.getElementById('gateProjectSelect');
-    if (hidden) hidden.value = name || '';
-    highlightProjectPickGroup('gateProjectPickGroup', name);
-}
-
-function showProjectGate(message) {
-    var overlay = document.getElementById('projectGateOverlay');
-    var appMain = document.getElementById('appMain');
-    var err = document.getElementById('gateError');
-    if (overlay) overlay.classList.remove('hidden');
-    if (appMain) appMain.classList.add('app-locked');
-    if (err) err.textContent = message || '';
-    var preset = defaultProjectFromUrl();
-    if (preset) setGateProject(preset);
-}
-
-function hideProjectGate() {
-    var overlay = document.getElementById('projectGateOverlay');
-    var appMain = document.getElementById('appMain');
-    if (overlay) overlay.classList.add('hidden');
-    if (appMain) appMain.classList.remove('app-locked');
-    var err = document.getElementById('gateError');
-    if (err) err.textContent = '';
-}
-
-function submitProjectGate() {
-    var hidden = document.getElementById('gateProjectSelect');
-    var pwd = document.getElementById('gatePassword');
-    var err = document.getElementById('gateError');
-    var project = hidden ? hidden.value : '';
-    var password = pwd ? pwd.value : '';
-    if (!project) {
-        if (err) err.textContent = '请选择项目组';
-        return;
-    }
-    if (err) err.textContent = '';
-    fetch('/api/project-unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: project, password: password })
-    }).then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
-    .then(function(result) {
-        if (!result.ok) {
-            if (err) err.textContent = (result.data && result.data.error) || '密码错误';
-            return;
-        }
-        projectAuthToken = result.data.token;
-        unlockedProjectData = result.data;
-        if (pwd) pwd.value = '';
-        hideProjectGate();
-        initUnlockedApp(result.data);
-    })
-    .catch(function() {
-        if (err) err.textContent = '网络错误，请重试';
-    });
-}
-
-function applyUnlockedProject(data) {
-    if (!data) return;
+function applyFixedProject(data) {
+    if (!data || !data.project) return;
     projectPickLocked = true;
     loadedProjectsByName[data.project] = {
         name: data.project,
@@ -2490,21 +2402,37 @@ function applyUnlockedProject(data) {
     updateEditImageButtonState();
 }
 
-function initUnlockedApp(data) {
-    applyUnlockedProject(data);
-    applyAvailableModels(data.available_models);
-    loadDesignTypesForProject(data.project).then(function() {
-        updateProjectRefsVisibility();
-        updateEditImageButtonState();
-    });
-    refreshGenerationJobs();
-    startQueueStatusPolling();
-    onSizeCategoryChange();
-    loadSplashSizePresets();
-    updateEditImageButtonState();
+function initFixedProjectApp(projectName) {
+    return authFetch('/api/design-types?project=' + encodeURIComponent(projectName))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            applyFixedProject({
+                project: projectName,
+                catalog: data.catalog,
+                product_type: data.product_type
+            });
+            applyAvailableModels(data.available_models);
+            return loadDesignTypesForProject(projectName);
+        })
+        .then(function() {
+            updateProjectRefsVisibility();
+            updateEditImageButtonState();
+            refreshGenerationJobs();
+            startQueueStatusPolling();
+            onSizeCategoryChange();
+            loadSplashSizePresets();
+        })
+        .catch(function(err) {
+            console.error('初始化固定项目失败', err);
+            refreshGenerationJobs();
+            startQueueStatusPolling();
+        });
 }
 
 function initAppWithoutGate() {
+    if (fixedProjectName) {
+        return initFixedProjectApp(fixedProjectName);
+    }
     projectPickLocked = false;
     loadProjects().then(function() {
         onSizeCategoryChange();
@@ -2515,14 +2443,40 @@ function initAppWithoutGate() {
 }
 
 function getSelectedProjectName() {
+    if (fixedProjectName) return fixedProjectName;
     var sel = document.getElementById('projectSelect');
     return sel && sel.value ? sel.value : '';
 }
 
 function getSelectedProjectMeta() {
+    var name = getSelectedProjectName();
+    if (!name) return null;
+    var cached = loadedProjectsByName[name];
+    if (cached) {
+        return {
+            name: cached.name,
+            displayName: cached.name,
+            catalog: cached.catalog || 'static_types',
+            productType: cached.product_type || 'xdt',
+            tags: (cached.style_tags || []).join(', '),
+            desc: cached.description || ''
+        };
+    }
     var sel = document.getElementById('projectSelect');
     var opt = sel && sel.selectedOptions[0];
-    if (!opt || !opt.value) return null;
+    if (!opt || !opt.value) {
+        if (fixedProjectName) {
+            return {
+                name: fixedProjectName,
+                displayName: fixedProjectName,
+                catalog: currentProjectCatalog || 'static_types',
+                productType: fixedProjectName === '画啦啦' ? 'hll' : 'xdt',
+                tags: '',
+                desc: ''
+            };
+        }
+        return null;
+    }
     return {
         name: opt.value,
         displayName: opt.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim(),
@@ -2549,8 +2503,10 @@ function apiProjectQuery() {
 
 function applyProductBranding() {
     var meta = getSelectedProjectMeta();
-    var label = meta ? meta.displayName : 'A-智绘';
+    var label = meta ? meta.displayName : (fixedProjectName || 'A-智绘');
     document.title = 'A-智绘 · ' + label;
+    var h1 = document.querySelector('.app-header h1');
+    if (h1 && meta) h1.textContent = '🎨 A-智绘 · ' + label;
 }
 
 function updateMultiHint(count) {
@@ -2638,18 +2594,7 @@ function switchTab(tab, btnEl) {
 // 初始化
 window.onload = function() {
     initImageBackendSelect();
-    var gateBtn = document.getElementById('gateSubmitBtn');
-    var gatePwd = document.getElementById('gatePassword');
-    if (gateBtn) gateBtn.addEventListener('click', submitProjectGate);
-    if (gatePwd) gatePwd.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') submitProjectGate();
-    });
-    if (projectGateEnabled) {
-        showProjectGate();
-    } else {
-        hideProjectGate();
-        initAppWithoutGate();
-    }
+    initAppWithoutGate();
     var printDpiSel = document.getElementById('printDpiSelect');
     if (printDpiSel) printDpiSel.addEventListener('change', onPrintSizeChange);
     initTaskCompleteSoundToggle();

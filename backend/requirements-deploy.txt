@@ -4,7 +4,8 @@
 beautifulsoup4
 certifi
 lxml
-Pillow
+# Pillow 12+ 不再提供 CentOS 7（manylinux2014）wheel，会退回旧 GCC 源码编译并失败。
+Pillow<12
 watchdog
 protobuf
 psd-tools

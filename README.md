@@ -73,18 +73,19 @@ chmod +x deploy.sh
 # 若测试机直连 Lovart 失败，配置 HTTP 代理（见下方）
 
 chmod +x deploy.sh
-./deploy.sh remote       # 小灯塔：/home/xiaoA + 远端部署 + PM2 重载
+./deploy.sh remote       # 小灯塔：.env → /home/xiaoA，FIXED_PROJECT=小灯塔
 ./deploy.sh remote sync  # 仅同步小灯塔目录，不重启
-./deploy.sh remote-hll   # 画啦啦：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+./deploy.sh remote-hll   # 画啦啦：.env.hll → /home/xiaoA-hll，PORT=8629
 ./deploy.sh remote-hll sync  # 仅同步画啦啦目录，不重启
 ```
 
 | 项 | 说明 |
 |----|------|
-| 小灯塔远端 | `/home/xiaoA`，PM2 `aizhushou-age`，端口用本机 `.env` 的 `PORT` |
-| 画啦啦远端 | `/home/xiaoA-hll`，PM2 `aizhushou-hll`，远端固定 `PORT=8629`（不改本机 `.env`） |
+| 小灯塔 | 本机 `.env`，远端 `/home/xiaoA`，PM2 `aizhushou-age`，标题「A-智绘 · 小灯塔」 |
+| 画啦啦 | 本机 `.env.hll`，远端 `/home/xiaoA-hll`，PM2 `aizhushou-hll`，端口 `8629`，标题「A-智绘 · 画啦啦」 |
+| 项目锁定 | 各文件设 `FIXED_PROJECT=小灯塔|画啦啦`，页面不再选项目组，已移除门禁 |
 | 本机依赖 | `sshpass`、`rsync`、`ssh`（macOS: `brew install hudochenkov/sshpass/sshpass`） |
-| 同步内容 | 含 `.env`；排除 `.git`、`backend/.venv`、`uploads/`、`outputs/` 等 |
+| 同步内容 | 代码与 projects；环境文件单独上传为远端 `.env`（排除本机 `.env` / `.env.hll` 混传） |
 | CentOS 7 | 自动用 Miniconda Python 3.10 + 精简依赖，并补装 **rembg**；Playwright 浏览器因 glibc 过旧不可用 |
 
 测试机访问 Lovart 若报 `Network is unreachable`，在 `.env` 增加代理后重新 `./deploy.sh remote`：
@@ -99,14 +100,14 @@ NO_PROXY=127.0.0.1,localhost
 
 ### 项目组与设计类型
 
-在页面 **项目组** 下拉框切换（不再依赖 URL 区分设计类型列表）：
+每个部署实例用 `FIXED_PROJECT` 锁定一个项目组（页面不再切换）：
 
 | 项目组 | 模式 | 设计类型来源 | 参考图位置 |
 |--------|------|--------------|------------|
 | 小灯塔 | `static_types` | 海报、Banner、传单等固定列表 | `projects/小灯塔/refs/` 或根目录 |
 | 画啦啦 | `folder_types` | `projects/画啦啦/types/` 下各子文件夹名 | 对应 `types/06-开屏/` 等文件夹内 |
 
-可选 URL：`?project=画啦啦` 或 `?type=hll` 打开时默认选中画啦啦。目录说明见 [projects/README.md](./projects/README.md)。
+目录说明见 [projects/README.md](./projects/README.md)。
 
 ### 可选：Playwright 浏览器
 
@@ -119,20 +120,21 @@ cd backend
 
 ## 配置说明
 
-复制 `.env.example` 为 `.env` 后按需修改，常用项如下：
+复制 `.env.example` 为 `.env`（小灯塔），复制 `.env.hll.example` 为 `.env.hll`（画啦啦）后按需修改：
 
 | 变量 | 说明 |
 |------|------|
-| `PORT` | 服务端口，默认 `8000`（远程部署时按你的环境填写） |
-| `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` | Lovart 主 Key；可用 `LOVART_ACCESS_KEY_2` 等配置备用，并发/额度受限时自动切换 |
+| `FIXED_PROJECT` | `小灯塔` 或 `画啦啦`，锁定实例项目组与页面标题 |
+| `PORT` | 服务端口；画啦啦远端由 `remote-hll` 固定为 `8629` |
+| `LOVART_ACCESS_KEY_XDT` / `_HLL` | 按实例配置对应组 Lovart Key |
 | `LOVART_MAX_CONCURRENCY` / `LOVART_QUEUE_MAX` | Lovart 生图 worker 数（默认 1）与全局排队上限（默认 20） |
 | `GPT_MAX_CONCURRENCY` / `GPT_QUEUE_MAX` | GPT 生图 worker/API 并发（默认 4）与排队上限（默认 20） |
 | `OPENAI_IMAGE_OUTPUT_QUALITY` | gpt-image-2 画质：`low` / `medium` / `high`（默认 `medium`） |
-| `HTTP_PROXY` / `HTTPS_PROXY` | 测试机出网经代理访问 Lovart 时使用（会随 `.env` 同步到远端） |
-| `TEST_SERVICE_URL` / `TEST_ACCOUNT` / `TEST_PASSWORD` | `./deploy.sh remote` 的 SSH 目标 |
-| `DEEPSEEK_API_KEY` 等 | 至少配置一个，用于 AI 关键词分析 |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 测试机出网经代理访问 Lovart 时使用 |
+| `TEST_SERVICE_URL` / `TEST_ACCOUNT` / `TEST_PASSWORD` | 写在 `.env`，供 `remote` / `remote-hll` SSH |
+| `DEEPSEEK_API_KEY_XDT` / `_HLL` | 对应实例的 AI 关键词分析 Key |
 
-完整项与注释见 [.env.example](./.env.example)。**请勿将 `.env` 提交到 Git。**
+完整项与注释见 [.env.example](./.env.example)、[.env.hll.example](./.env.hll.example)。**请勿将 `.env` / `.env.hll` 提交到 Git。**
 
 ## 目录结构
 
@@ -140,7 +142,7 @@ cd backend
 ai-design-modifier-delivery/
 ├── deploy.sh             # 服务器 / 远程一键部署（PM2）
 ├── start.sh              # 本机前台启动
-├── .env / .env.example   # 环境变量
+├── .env / .env.hll / .env.example / .env.hll.example
 ├── dev.sh                # 开发模式（热重载）
 ├── backend/
 │   ├── app.py            # 主服务（start.sh 启动此文件）

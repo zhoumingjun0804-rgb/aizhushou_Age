@@ -1,25 +1,11 @@
-"""项目组门禁：密码校验 + 内存 token。"""
+"""项目组常量与实例固定项目（FIXED_PROJECT）。"""
 from __future__ import annotations
 
 import os
-import secrets
-import time
-import uuid
 from typing import Optional
-
-TOKEN_TTL_SECONDS = 12 * 3600
 
 ALLOWED_PROJECTS = ("画啦啦", "小灯塔")
 _PROJECT_SLUG = {"画啦啦": "HLL", "小灯塔": "XDT"}
-_PASSWORD_ENV = {"画啦啦": "PROJECT_PASSWORD_HLL", "小灯塔": "PROJECT_PASSWORD_XDT"}
-
-_tokens: dict[str, dict] = {}
-
-
-def is_gate_enabled() -> bool:
-    """PROJECT_GATE_ENABLED=0|false|no|off 时关闭门禁（不校验 token，前端不弹密码层）。"""
-    value = os.environ.get("PROJECT_GATE_ENABLED", "1").strip().lower()
-    return value not in ("0", "false", "no", "off")
 
 
 def project_slug(project: str) -> str:
@@ -29,34 +15,9 @@ def project_slug(project: str) -> str:
     return slug
 
 
-def password_for(project: str) -> Optional[str]:
-    env_name = _PASSWORD_ENV.get(project)
-    if not env_name:
-        return None
-    value = os.environ.get(env_name, "").strip()
-    return value or None
-
-
-def unlock(project: str, password: str) -> Optional[str]:
-    if project not in ALLOWED_PROJECTS:
-        return None
-    expected = password_for(project)
-    if not expected:
-        return None
-    if not secrets.compare_digest(password, expected):
-        return None
-    token = uuid.uuid4().hex
-    _tokens[token] = {"project": project, "created_at": time.time()}
-    return token
-
-
-def resolve_token(token: str) -> Optional[dict]:
-    if not token:
-        return None
-    entry = _tokens.get(token)
-    if not entry:
-        return None
-    if time.time() - entry["created_at"] > TOKEN_TTL_SECONDS:
-        _tokens.pop(token, None)
-        return None
-    return {"project": entry["project"]}
+def fixed_project() -> Optional[str]:
+    """实例锁定的项目组。未配置或非法值时返回 None。"""
+    value = os.environ.get("FIXED_PROJECT", "").strip()
+    if value in ALLOWED_PROJECTS:
+        return value
+    return None
