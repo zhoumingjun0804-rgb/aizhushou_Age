@@ -53,6 +53,13 @@ from lovart_queue import (
     PRIORITY_LOW,
     QueueFullError,
 )
+from generation_queues import (
+    find_job,
+    list_client_jobs,
+    queue_for_backend,
+    raise_if_duplicate_high,
+)
+import gpt_slot
 from comfyui_client import ComfyUIClient, ComfyUIClientError
 from gpt_image_client import (
     GptImageClient,
@@ -158,7 +165,8 @@ def _reload_runtime_env():
     global LOVART_POLL_TIMEOUT, LOVART_MAX_CONCURRENCY, LOVART_TASK_RETRY
     global LOVART_TASK_RETRY_WAIT, LOVART_MODE, LOVART_QUALITY_HINT, IMAGE_BACKEND
     global LOVART_QUEUE_MAX, LOVART_JOB_TTL, LOVART_JOB_MAX_SECONDS, LOVART_ETA_AVG_SECONDS
-    global lovart_queue
+    global GPT_MAX_CONCURRENCY, GPT_QUEUE_MAX, GPT_ETA_AVG_SECONDS, GPT_VARIANT_PARALLEL
+    global lovart_queue, gpt_queue
     global COMFYUI_API_URL, COMFYUI_CHECKPOINT, SD_API_URL, LOCAL_GENERATION_TIMEOUT
     global DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
     global QIANWEN_BASE_URL, QIANWEN_MODEL
@@ -193,7 +201,13 @@ def _reload_runtime_env():
     LOVART_JOB_TTL = max(60, int(os.environ.get("LOVART_JOB_TTL", "3600")))
     LOVART_JOB_MAX_SECONDS = max(60, int(os.environ.get("LOVART_JOB_MAX_SECONDS", "1800")))
     LOVART_ETA_AVG_SECONDS = max(10, int(os.environ.get("LOVART_ETA_AVG_SECONDS", "90")))
+    GPT_MAX_CONCURRENCY = max(1, int(os.environ.get("GPT_MAX_CONCURRENCY", "4")))
+    GPT_QUEUE_MAX = max(1, int(os.environ.get("GPT_QUEUE_MAX", "20")))
+    GPT_ETA_AVG_SECONDS = max(10, int(os.environ.get("GPT_ETA_AVG_SECONDS", "45")))
+    GPT_VARIANT_PARALLEL = max(1, int(os.environ.get("GPT_VARIANT_PARALLEL", "4")))
     lovart_queue = _make_lovart_queue()
+    gpt_queue = _make_gpt_queue()
+    gpt_slot.configure(GPT_MAX_CONCURRENCY)
 
 
 _load_env_file()
@@ -213,6 +227,10 @@ LOVART_QUEUE_MAX = max(1, int(os.environ.get("LOVART_QUEUE_MAX", "20")))
 LOVART_JOB_TTL = max(60, int(os.environ.get("LOVART_JOB_TTL", "3600")))
 LOVART_JOB_MAX_SECONDS = max(60, int(os.environ.get("LOVART_JOB_MAX_SECONDS", "1800")))
 LOVART_ETA_AVG_SECONDS = max(10, int(os.environ.get("LOVART_ETA_AVG_SECONDS", "90")))
+GPT_MAX_CONCURRENCY = max(1, int(os.environ.get("GPT_MAX_CONCURRENCY", "4")))
+GPT_QUEUE_MAX = max(1, int(os.environ.get("GPT_QUEUE_MAX", "20")))
+GPT_ETA_AVG_SECONDS = max(10, int(os.environ.get("GPT_ETA_AVG_SECONDS", "45")))
+GPT_VARIANT_PARALLEL = max(1, int(os.environ.get("GPT_VARIANT_PARALLEL", "4")))
 SMART_CUTOUT_JOB_DIR = UPLOAD_DIR / "smart_cutout_jobs"
 COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").strip()
 COMFYUI_CHECKPOINT = os.environ.get("COMFYUI_CHECKPOINT", "").strip()
@@ -235,7 +253,19 @@ def _make_lovart_queue() -> LovartQueue:
     )
 
 
+def _make_gpt_queue() -> LovartQueue:
+    return LovartQueue(
+        max_workers=GPT_MAX_CONCURRENCY,
+        queue_max=GPT_QUEUE_MAX,
+        job_ttl=LOVART_JOB_TTL,
+        job_max_seconds=LOVART_JOB_MAX_SECONDS,
+        eta_avg_seconds=GPT_ETA_AVG_SECONDS,
+    )
+
+
 lovart_queue = _make_lovart_queue()
+gpt_queue = _make_gpt_queue()
+gpt_slot.configure(GPT_MAX_CONCURRENCY)
 
 from ssl_utils import make_ssl_context
 
@@ -3066,7 +3096,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not client_id:
                 self._send_json({"error": "缺少 client_id"}, status=400)
                 return
-            self._send_json({"jobs": lovart_queue.list_jobs(client_id)})
+            self._send_json({"jobs": list_client_jobs(client_id, lovart_queue, gpt_queue)})
         elif path == '/api/smart-cutout/status':
             if not self._auth_any():
                 return
@@ -3443,10 +3473,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             payload["project"] = auth_project
             payload["client_id"] = client_id
 
-            # GPT / Lovart 统一走异步队列：GPT Image 2 单张常需 2–3 分钟，
-            # 同步阻塞 HTTP 易超时，导致前端收不到图。
-            job_id = lovart_queue.submit_generation(payload, execute_generation_job)
-            view = lovart_queue.get_job(job_id)
+            backend = normalize_image_backend(payload.get("image_backend"))
+            raise_if_duplicate_high(client_id, lovart_queue, gpt_queue)
+            target_q = queue_for_backend(backend, lovart_queue, gpt_queue)
+            job_id = target_q.submit_generation(payload, execute_generation_job)
+            view = target_q.get_job(job_id)
             self._send_json(
                 {
                     "ok": True,
@@ -3476,7 +3507,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not job_id:
             self._send_json({"error": "缺少 job_id"}, status=400)
             return
-        view = lovart_queue.get_job(job_id)
+        view = find_job(job_id, lovart_queue, gpt_queue)
         if not view:
             self._send_json({"error": "任务不存在或已过期"}, status=404)
             return
