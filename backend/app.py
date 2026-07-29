@@ -174,18 +174,6 @@ def _reload_runtime_env():
     global QIANWEN_BASE_URL, QIANWEN_MODEL
     global KIMI_BASE_URL, KIMI_MODEL
     global DOUBAO_BASE_URL, DOUBAO_MODEL, DOUBAO_VISION_MODEL
-    lovart_queue_settings = (
-        LOVART_MAX_CONCURRENCY,
-        LOVART_QUEUE_MAX,
-        LOVART_JOB_TTL,
-        LOVART_JOB_MAX_SECONDS,
-        LOVART_ETA_AVG_SECONDS,
-    )
-    gpt_queue_settings = (
-        GPT_MAX_CONCURRENCY,
-        GPT_QUEUE_MAX,
-        GPT_ETA_AVG_SECONDS,
-    )
     _load_env_file(overwrite=True)
     LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai").strip()
     LOVART_POLL_TIMEOUT = int(os.environ.get("LOVART_POLL_TIMEOUT", "300"))
@@ -219,6 +207,7 @@ def _reload_runtime_env():
     GPT_QUEUE_MAX = max(1, int(os.environ.get("GPT_QUEUE_MAX", "20")))
     GPT_ETA_AVG_SECONDS = max(10, int(os.environ.get("GPT_ETA_AVG_SECONDS", "45")))
     GPT_VARIANT_PARALLEL = max(1, int(os.environ.get("GPT_VARIANT_PARALLEL", "4")))
+
     def _queue_busy(q: LovartQueue) -> bool:
         with q._jobs_lock:
             return any(
@@ -226,27 +215,50 @@ def _reload_runtime_env():
                 for job in q._jobs.values()
             )
 
-    if lovart_queue_settings != (
+    # Compare desired settings against the live queue instance so a deferred
+    # rebuild (busy) is retried on a later reload once idle.
+    lovart_desired = (
         LOVART_MAX_CONCURRENCY,
         LOVART_QUEUE_MAX,
         LOVART_JOB_TTL,
         LOVART_JOB_MAX_SECONDS,
         LOVART_ETA_AVG_SECONDS,
-    ):
+    )
+    lovart_live = (
+        lovart_queue.max_workers,
+        lovart_queue.queue_max,
+        lovart_queue.job_ttl,
+        lovart_queue.job_max_seconds,
+        lovart_queue.eta_avg_seconds,
+    )
+    if lovart_desired != lovart_live:
         if _queue_busy(lovart_queue):
             print("[Queue] Lovart queue settings changed; delaying rebuild until idle")
         else:
             lovart_queue = _make_lovart_queue()
-    if gpt_queue_settings != (
+
+    gpt_desired = (
         GPT_MAX_CONCURRENCY,
         GPT_QUEUE_MAX,
+        LOVART_JOB_TTL,
+        LOVART_JOB_MAX_SECONDS,
         GPT_ETA_AVG_SECONDS,
-    ):
+    )
+    gpt_live = (
+        gpt_queue.max_workers,
+        gpt_queue.queue_max,
+        gpt_queue.job_ttl,
+        gpt_queue.job_max_seconds,
+        gpt_queue.eta_avg_seconds,
+    )
+    if gpt_desired != gpt_live:
         if _queue_busy(gpt_queue):
             print("[Queue] GPT queue settings changed; delaying rebuild until idle")
         else:
             gpt_queue = _make_gpt_queue()
             gpt_slot.configure(GPT_MAX_CONCURRENCY)
+    elif gpt_slot.current_limit() != GPT_MAX_CONCURRENCY:
+        gpt_slot.configure(GPT_MAX_CONCURRENCY)
 
 
 _load_env_file()
