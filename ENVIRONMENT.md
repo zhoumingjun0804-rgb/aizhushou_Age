@@ -158,6 +158,7 @@ pm2 save
 | `TEST_ACCOUNT` | `deploy_user` | SSH 用户 |
 | `TEST_PASSWORD` | `***` | SSH 密码 |
 | `PORT` | `<your-port>` | 小灯塔：原样同步到远端；画啦啦：`remote-hll` 会把远端写成 `8629`（不改本机） |
+| `FIXED_PROJECT` | `小灯塔` / `画啦啦` | 部署时由脚本写入远端 `.env`；锁定实例项目组并隐藏切换栏 |
 
 **本机需安装：** `ssh`、`rsync`、`sshpass`
 
@@ -172,22 +173,25 @@ apt install sshpass rsync
 **命令：**
 
 ```bash
-./deploy.sh remote         # 小灯塔：同步 + 远端 deploy + PM2（/home/xiaoA）
+./deploy.sh remote         # 小灯塔：同步 + 写 FIXED_PROJECT=小灯塔 + 远端 deploy
 ./deploy.sh remote sync    # 仅 rsync 小灯塔目录，不重启
-./deploy.sh remote-hll     # 画啦啦：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+./deploy.sh remote-hll     # 画啦啦：写 FIXED_PROJECT=画啦啦、PORT=8629
 ./deploy.sh remote-hll sync
 ```
 
+两个命令共用本机 `.env`，不读取 `.env.hll`。
+
 **远端路径：**
 
-| 实例 | 目录 | PM2 | 端口 |
-|------|------|-----|------|
-| 小灯塔 | `/home/xiaoA` | `aizhushou-age` | `.env` 的 `PORT` |
-| 画啦啦 | `/home/xiaoA-hll` | `aizhushou-hll` | 固定 `8629` |
+| 实例 | 目录 | PM2 | 端口 | 固定项目 |
+|------|------|-----|------|----------|
+| 小灯塔 | `/home/xiaoA` | `aizhushou-age` | `.env` 的 `PORT` | `FIXED_PROJECT=小灯塔` |
+| 画啦啦 | `/home/xiaoA-hll` | `aizhushou-hll` | 固定 `8629` | `FIXED_PROJECT=画啦啦` |
+
 **同步规则：**
 
 - **包含：** 项目代码、`.env`、`projects/`、`deploy.sh` 等
-- **排除：** `backend/.venv/`、`.git/`、`uploads/`、`outputs/`、`logs/`、`ecosystem.config.cjs` 等
+- **排除：** `backend/.venv/`、`.git/`、`uploads/`、`outputs/`、`logs/`、`ecosystem.config.cjs`、`.env.hll` 等
 
 **CentOS 7 测试机额外行为：**
 

@@ -9,8 +9,8 @@ cp .env.example .env
 ./dev.sh          # 开发（推荐）
 ./start.sh        # 本机前台
 ./deploy.sh       # 服务器 PM2 部署
-./deploy.sh remote    # 小灯塔 → 测试机
-./deploy.sh remote-hll  # 画啦啦 → 测试机 :8629
+./deploy.sh remote    # 小灯塔 → 测试机（FIXED_PROJECT=小灯塔）
+./deploy.sh remote-hll  # 画啦啦 → 测试机 :8629（FIXED_PROJECT=画啦啦）
 ```
 
 | 修改 | 操作 |

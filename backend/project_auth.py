@@ -21,6 +21,11 @@ def is_gate_enabled() -> bool:
     return False
 
 
+def fixed_project() -> Optional[str]:
+    value = os.environ.get("FIXED_PROJECT", "").strip()
+    return value if value in ALLOWED_PROJECTS else None
+
+
 def project_slug(project: str) -> str:
     slug = _PROJECT_SLUG.get(project)
     if not slug:

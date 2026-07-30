@@ -73,18 +73,18 @@ chmod +x deploy.sh
 # 若测试机直连 Lovart 失败，配置 HTTP 代理（见下方）
 
 chmod +x deploy.sh
-./deploy.sh remote       # 小灯塔：/home/xiaoA + 远端部署 + PM2 重载
+./deploy.sh remote       # 小灯塔：/home/xiaoA + 写 FIXED_PROJECT=小灯塔 + 远端部署
 ./deploy.sh remote sync  # 仅同步小灯塔目录，不重启
-./deploy.sh remote-hll   # 画啦啦：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+./deploy.sh remote-hll   # 画啦啦：/home/xiaoA-hll，写 FIXED_PROJECT=画啦啦、PORT=8629
 ./deploy.sh remote-hll sync  # 仅同步画啦啦目录，不重启
 ```
 
 | 项 | 说明 |
 |----|------|
-| 小灯塔远端 | `/home/xiaoA`，PM2 `aizhushou-age`，端口用本机 `.env` 的 `PORT` |
-| 画啦啦远端 | `/home/xiaoA-hll`，PM2 `aizhushou-hll`，远端固定 `PORT=8629`（不改本机 `.env`） |
+| 小灯塔远端 | `/home/xiaoA`，PM2 `aizhushou-age`，端口用本机 `.env` 的 `PORT`，远端写 `FIXED_PROJECT=小灯塔`（只显示小灯塔） |
+| 画啦啦远端 | `/home/xiaoA-hll`，PM2 `aizhushou-hll`，远端固定 `PORT=8629` 与 `FIXED_PROJECT=画啦啦`（只显示画啦啦；不改本机 `.env`） |
 | 本机依赖 | `sshpass`、`rsync`、`ssh`（macOS: `brew install hudochenkov/sshpass/sshpass`） |
-| 同步内容 | 含 `.env`；排除 `.git`、`backend/.venv`、`uploads/`、`outputs/` 等 |
+| 同步内容 | 含 `.env`；排除 `.git`、`backend/.venv`、`uploads/`、`outputs/`、`.env.hll` 等 |
 | CentOS 7 | 自动用 Miniconda Python 3.10 + 精简依赖，并补装 **rembg**；Playwright 浏览器因 glibc 过旧不可用 |
 
 测试机访问 Lovart 若报 `Network is unreachable`，在 `.env` 增加代理后重新 `./deploy.sh remote`：

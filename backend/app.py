@@ -32,6 +32,7 @@ from project_auth import (
     ALLOWED_PROJECTS,
     project_slug,
     is_gate_enabled,
+    fixed_project,
 )
 from project_credentials import (
     ProjectCredentialsError,
@@ -2945,12 +2946,23 @@ STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _html_cache = {"mtime": 0.0, "content": ""}
 
 
-def _inject_project_gate_flag(html: str) -> str:
+def _inject_instance_flags(html: str) -> str:
     gate_on = is_gate_enabled()
+    locked = fixed_project() or ""
     html = html.replace("__PROJECT_GATE_ENABLED__", "true" if gate_on else "false")
     html = html.replace("__GATE_OVERLAY_EXTRA__", "" if gate_on else " hidden")
     html = html.replace("__APP_MAIN_EXTRA__", " app-locked" if gate_on else "")
+    html = html.replace("__PAGE_TITLE__", f"A-智绘 · {locked}" if locked else "A-智绘")
+    html = html.replace("__PAGE_BRAND__", f"🎨 A-智绘 · {locked}" if locked else "🎨 A-智绘")
+    html = html.replace("__PROJECT_CARD_EXTRA__", " feature-hidden" if locked else "")
     return html
+
+
+def _filter_for_fixed_project(items: list[dict], key: str = "project") -> list[dict]:
+    locked = fixed_project()
+    if not locked:
+        return items
+    return [item for item in items if item.get(key) == locked]
 
 
 def get_html_page():
@@ -2959,14 +2971,14 @@ def get_html_page():
         return "<html><body><h1>缺少 templates/index.html</h1></body></html>"
     dev = os.environ.get("DEV_RELOAD", "").strip().lower() in ("1", "true", "yes")
     if dev:
-        return _inject_project_gate_flag(HTML_TEMPLATE.read_text(encoding="utf-8"))
+        return _inject_instance_flags(HTML_TEMPLATE.read_text(encoding="utf-8"))
     mtime = HTML_TEMPLATE.stat().st_mtime
     if _html_cache["content"] and _html_cache["mtime"] == mtime:
-        return _inject_project_gate_flag(_html_cache["content"])
+        return _inject_instance_flags(_html_cache["content"])
     content = HTML_TEMPLATE.read_text(encoding="utf-8")
     _html_cache["mtime"] = mtime
     _html_cache["content"] = content
-    return _inject_project_gate_flag(content)
+    return _inject_instance_flags(content)
 
 
 
@@ -3024,6 +3036,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     ) -> Optional[str]:
         """解析当前请求的项目组；门禁关闭时允许从 type 参数推断小灯塔/画啦啦。"""
         project_name = (project_name or "").strip()
+        locked = fixed_project()
+        if locked:
+            if project_name:
+                return self._auth_project(project_name)
+            return locked
+
         if project_name:
             return self._auth_project(project_name)
 
@@ -3052,6 +3070,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _auth_project(self, project_name: str) -> Optional[str]:
         project_name = (project_name or "").strip()
+        locked = fixed_project()
+        if locked:
+            if project_name and project_name != locked:
+                self._send_json({"error": f"本实例仅支持项目组「{locked}」"}, status=403)
+                return None
+            return locked
         if not is_gate_enabled():
             if not project_name:
                 self._send_json({"error": "请先选择项目组"}, status=400)
@@ -3111,7 +3135,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif path == '/projects':
-            if is_gate_enabled():
+            locked = fixed_project()
+            if locked:
+                self._send_json({
+                    "projects": _filter_for_fixed_project(list_projects(), key="name"),
+                })
+            elif is_gate_enabled():
                 auth = self._token_project()
                 if not auth:
                     self._send_json({"error": "未登录或登录已失效"}, status=401)
@@ -3150,7 +3179,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif path == '/history':
-            if is_gate_enabled():
+            locked = fixed_project()
+            if locked:
+                items = _filter_for_fixed_project(filter_history_items(load_history()))
+            elif is_gate_enabled():
                 auth = self._token_project()
                 if not auth:
                     self._send_json({"error": "未登录或登录已失效"}, status=401)
@@ -3170,6 +3202,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ptype = self._product_type_from_query()
             if project:
                 ptype = project_product_type(project)
+            else:
+                locked = fixed_project()
+                if locked:
+                    ptype = project_product_type(locked)
             self._send_json({
                 "type": ptype,
                 "sizes": load_output_sizes(product_type=ptype),
