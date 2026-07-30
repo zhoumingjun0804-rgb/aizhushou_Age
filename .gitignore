@@ -11,3 +11,4 @@ logs/
 .DS_Store
 GITHUB_SSH_KEY.txt
 history.json
+gpt_chat_threads.json
