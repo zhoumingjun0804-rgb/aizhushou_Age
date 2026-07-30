@@ -18,6 +18,7 @@ import threading
 import concurrent.futures
 from typing import Callable, Optional
 
+import gpt_chat
 from lovart_client import (
     LovartClient,
     LovartError,
@@ -1518,6 +1519,7 @@ ONLINE_RATIO_TO_SIZE = {
     "4:3": (1024, 768),
     "3:4": (768, 1024),
 }
+GPT_CHAT_RATIOS = {"1:1", "16:9", "9:16"}
 
 
 def ratio_to_size(ratio: str):
@@ -1855,6 +1857,24 @@ def _save_ref_images_from_fields(fields: dict) -> list:
     return paths
 
 
+def _save_gpt_chat_ref_images_from_fields(fields: dict) -> list:
+    paths = []
+    ref_items = []
+    for key, value in fields.items():
+        if not isinstance(value, dict):
+            continue
+        m = re.match(r"^ref_image_(\d+)$", str(key))
+        if m:
+            ref_items.append((int(m.group(1)), value))
+    for _, ref_data in sorted(ref_items)[:3]:
+        file_ext = pathlib.Path(ref_data.get("filename", ".png")).suffix or ".png"
+        ref_filename = f"ref_{uuid.uuid4().hex}{file_ext}"
+        ref_path = UPLOAD_DIR / ref_filename
+        ref_path.write_bytes(ref_data["data"])
+        paths.append(_normalize_reference_upload(ref_path))
+    return paths
+
+
 GENERATION_REF_PROMPT_SUFFIX = (
     "请严格参考上传参考图的画风、角色/IP 造型、配色与构图，保持视觉风格一致，"
     "仅按需求文案替换主题内容，不要换成另一种插画风格。"
@@ -1953,6 +1973,47 @@ def build_generation_payload(fields: dict, kind: str) -> dict:
     payload["input_filename"] = input_filename
     payload["mode"] = "img2img" if image_paths else "text2img"
     return payload
+
+
+def build_gpt_chat_generation_payload(
+    *,
+    project: str,
+    client_id: str,
+    prompt: str,
+    ratio: str,
+    quality: str,
+    image_paths: list,
+    thread_id: str,
+    assistant_id: str,
+) -> dict:
+    width, height = ONLINE_RATIO_TO_SIZE[ratio]
+    refs = [str(p) for p in (image_paths or [])]
+    return {
+        "kind": "with_prompt",
+        "client_id": client_id,
+        "project": project,
+        "count": 1,
+        "ratio": ratio,
+        "output_width": width,
+        "output_height": height,
+        "size_mode": "online",
+        "dpi": None,
+        "size_label": "",
+        "width_mm": None,
+        "height_mm": None,
+        "image_backend": "gpt",
+        "image_backend_raw": "gpt",
+        "gpt_model": resolve_gpt_model("gpt"),
+        "gpt_output_quality": resolve_gpt_output_quality(explicit=quality or "medium"),
+        "prompt": prompt,
+        "image_paths": refs,
+        "logo_path": None,
+        "logo_position": "",
+        "input_filename": None,
+        "mode": "img2img" if refs else "text2img",
+        "gpt_chat_thread_id": thread_id,
+        "gpt_chat_assistant_id": assistant_id,
+    }
 
 
 def execute_generation_job(job: dict) -> None:
@@ -3173,7 +3234,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     '/generate-variants', '/generate-with-prompt', '/upscale', '/api/gif-to-svga',
                     '/api/multi-size-export', '/api/crop-image', '/api/magic-cutout',
                     '/api/smart-cutout', '/api/make-breathing-gif', '/api/layout-extend',
-                    '/api/generation/jobs', '/api/project-unlock'):
+                    '/api/generation/jobs', '/api/project-unlock',
+                    '/api/gpt-chat/threads') or (
+                        path.startswith('/api/gpt-chat/threads/')
+                        and (path.endswith('/messages') or path.count('/') == 4)
+                    ):
             self.send_response(204)
             self._send_cors_headers()
             self.end_headers()
@@ -3302,6 +3367,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "缺少 client_id"}, status=400)
                 return
             self._send_json({"jobs": list_client_jobs(client_id, lovart_queue, gpt_queue)})
+        elif path.startswith('/api/gpt-chat/threads/'):
+            thread_id = path[len('/api/gpt-chat/threads/'):].strip('/')
+            if '/' in thread_id:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self._handle_gpt_chat_get_thread(thread_id)
         elif path == '/api/smart-cutout/status':
             if not self._auth_any():
                 return
@@ -3351,10 +3423,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/make-breathing-gif': self._handle_make_breathing_gif,
             '/api/layout-extend': self._handle_layout_extend,
             '/api/generation/jobs': self._handle_generation_jobs_post,
+            '/api/gpt-chat/threads': self._handle_gpt_chat_create_thread,
         }
         handler = post_routes.get(path)
         if handler:
             handler()
+        elif path.startswith('/api/gpt-chat/threads/') and path.endswith('/messages'):
+            thread_id = path[len('/api/gpt-chat/threads/'):-len('/messages')].strip('/')
+            if not thread_id or '/' in thread_id:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self._handle_gpt_chat_post_message(thread_id)
         else:
             print(f"[404] POST {self.path}")
             self.send_response(404)
@@ -3638,6 +3718,138 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if warning:
             payload["warning"] = warning
         self._send_json(payload)
+
+    def _handle_gpt_chat_create_thread(self):
+        data = self._read_json_body()
+        auth_project = self._auth_project(str(data.get("project", "") or "").strip())
+        if not auth_project:
+            return
+        thread = gpt_chat.create_thread(project=auth_project)
+        self._send_json({"thread": thread}, status=201)
+
+    def _handle_gpt_chat_get_thread(self, thread_id: str):
+        params = self._query_params()
+        auth_project = self._auth_project((params.get("project", [""])[0] or "").strip())
+        if not auth_project:
+            return
+        thread = gpt_chat.get_thread(thread_id)
+        if not thread:
+            self._send_json({"error": "线程不存在"}, status=404)
+            return
+        if thread.get("project") != auth_project:
+            self._send_json({"error": "无权访问该线程"}, status=403)
+            return
+        self._send_json({"thread": thread})
+
+    def _handle_gpt_chat_post_message(self, thread_id: str):
+        try:
+            _reload_runtime_env()
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "请使用 multipart 上传"}, status=400)
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            boundary = content_type.split("boundary=")[-1].encode()
+            fields = parse_multipart(body, boundary)
+
+            auth_project = self._auth_project(str(fields.get("project", "") or "").strip())
+            if not auth_project:
+                return
+            thread = gpt_chat.get_thread(thread_id)
+            if not thread:
+                self._send_json({"error": "线程不存在"}, status=404)
+                return
+            if thread.get("project") != auth_project:
+                self._send_json({"error": "无权访问该线程"}, status=403)
+                return
+
+            client_id = str(fields.get("client_id", "") or "").strip()
+            if not client_id:
+                client_id = self.headers.get("X-Client-Id", "").strip()
+            if not client_id:
+                self._send_json({"error": "缺少 client_id"}, status=400)
+                return
+
+            prompt = str(fields.get("text", "") or "").strip()
+            if not prompt:
+                self._send_json({"error": "请输入消息内容"}, status=400)
+                return
+
+            ratio = str(fields.get("ratio", "1:1") or "1:1").strip()
+            if ratio not in GPT_CHAT_RATIOS:
+                self._send_json({"error": "GPT 聊天仅支持 1:1、16:9、9:16"}, status=400)
+                return
+
+            quality = str(fields.get("gpt_output_quality", "medium") or "medium").strip()
+            if gpt_chat.thread_has_pending(thread_id):
+                self._send_json({"error": "该对话已有进行中的生成任务，请等待完成"}, status=409)
+                return
+            if not gpt_image_available_for_project(auth_project):
+                self._send_json({"error": f"{auth_project} 未启用 GPT 生图模型"}, status=400)
+                return
+
+            ref_keys = [
+                key for key, value in fields.items()
+                if isinstance(value, dict) and re.match(r"^ref_image_\d+$", str(key))
+            ]
+            if len(ref_keys) > 3:
+                self._send_json({"error": "GPT 聊天最多上传 3 张参考图"}, status=400)
+                return
+
+            user_ref_paths = _save_gpt_chat_ref_images_from_fields(fields)
+            image_paths = [str(p) for p in user_ref_paths]
+            image_urls = [pathlib.Path(p).name for p in user_ref_paths]
+            if not image_paths:
+                last_image = gpt_chat.last_success_image(thread_id)
+                if last_image:
+                    previous = OUTPUT_DIR / pathlib.Path(last_image).name
+                    if previous.is_file():
+                        image_paths = [str(previous)]
+
+            assistant_id = uuid.uuid4().hex[:10]
+            payload = build_gpt_chat_generation_payload(
+                project=auth_project,
+                client_id=client_id,
+                prompt=prompt,
+                ratio=ratio,
+                quality=quality,
+                image_paths=image_paths,
+                thread_id=thread_id,
+                assistant_id=assistant_id,
+            )
+            with _generation_admit_lock:
+                raise_if_duplicate_high(client_id, lovart_queue, gpt_queue)
+                job_id = gpt_queue.submit_generation(payload, execute_generation_job)
+
+            gpt_chat.append_user_message(thread_id, text=prompt, image_urls=image_urls)
+            gpt_chat.append_assistant_pending(thread_id, job_id=job_id, message_id=assistant_id)
+            gpt_chat.set_thread_prefs(thread_id, size=ratio, quality=quality)
+            view = gpt_queue.get_job(job_id)
+            thread = gpt_chat.get_thread(thread_id)
+            self._send_json(
+                {
+                    "ok": True,
+                    "thread": thread,
+                    "job_id": job_id,
+                    "status_url": f"/api/generation/jobs/{job_id}",
+                    "status": view.get("status", "queued") if view else "queued",
+                },
+                status=201,
+            )
+        except DuplicateHighJobError as e:
+            self._send_json(
+                {
+                    "error": "您已有进行中的生图任务，请等待完成或查看任务状态",
+                    "job_id": e.job_id,
+                },
+                status=409,
+            )
+        except QueueFullError as e:
+            self._send_json({"error": str(e)}, status=503)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._send_json({"error": str(e)}, status=500)
 
     def _handle_generation_jobs_post(self):
         """异步生图：创建队列任务。"""

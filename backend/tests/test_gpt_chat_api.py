@@ -1,0 +1,174 @@
+import io
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import app
+import gpt_chat
+
+
+class FakeQueue:
+    def __init__(self):
+        self.payloads = []
+
+    def submit_generation(self, payload, runner):
+        self.payloads.append(payload)
+        return "job123"
+
+    def get_job(self, job_id):
+        return {"status": "queued", "position": 0}
+
+
+def multipart(fields):
+    boundary = "----gpt-chat-test"
+    chunks = []
+    for name, value in fields.items():
+        chunks.append(f"--{boundary}\r\n".encode())
+        if isinstance(value, tuple):
+            filename, data = value
+            chunks.append(
+                (
+                    f'Content-Disposition: form-data; name="{name}"; '
+                    f'filename="{filename}"\r\n'
+                    "Content-Type: application/octet-stream\r\n\r\n"
+                ).encode()
+            )
+            chunks.append(data)
+            chunks.append(b"\r\n")
+        else:
+            chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            chunks.append(str(value).encode())
+            chunks.append(b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return boundary, b"".join(chunks)
+
+
+class GptChatApiTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.threads = Path(self.tmp.name) / "threads.json"
+        self.upload_dir = Path(self.tmp.name) / "uploads"
+        self.output_dir = Path(self.tmp.name) / "outputs"
+        self.upload_dir.mkdir()
+        self.output_dir.mkdir()
+        self.patchers = [
+            mock.patch.object(gpt_chat, "THREADS_FILE", self.threads),
+            mock.patch.object(app, "UPLOAD_DIR", self.upload_dir),
+            mock.patch.object(app, "OUTPUT_DIR", self.output_dir),
+            mock.patch.object(app, "is_gate_enabled", return_value=False),
+            mock.patch.object(app, "fixed_project", return_value=""),
+        ]
+        for patcher in self.patchers:
+            patcher.start()
+
+    def tearDown(self):
+        for patcher in reversed(self.patchers):
+            patcher.stop()
+        self.tmp.cleanup()
+
+    def make_handler(self, path, body=b"", content_type="application/json"):
+        handler = app.Handler.__new__(app.Handler)
+        handler.path = path
+        handler.rfile = io.BytesIO(body)
+        handler.headers = {
+            "Content-Length": str(len(body)),
+            "Content-Type": content_type,
+        }
+        handler.sent = None
+        handler._send_json = lambda payload, status=200: setattr(
+            handler, "sent", (payload, status)
+        )
+        handler.send_response = lambda status: setattr(handler, "sent", ({}, status))
+        handler.end_headers = lambda: None
+        return handler
+
+    def post_json(self, path, payload):
+        body = json.dumps(payload).encode("utf-8")
+        handler = self.make_handler(path, body, "application/json")
+        handler.do_POST()
+        return handler.sent
+
+    def post_multipart(self, path, fields):
+        boundary, body = multipart(fields)
+        handler = self.make_handler(
+            path,
+            body,
+            f"multipart/form-data; boundary={boundary}",
+        )
+        handler.do_POST()
+        return handler.sent
+
+    def test_create_thread(self):
+        payload, status = self.post_json("/api/gpt-chat/threads", {"project": "小灯塔"})
+
+        self.assertEqual(status, 201)
+        self.assertEqual(payload["thread"]["project"], "小灯塔")
+        self.assertTrue(gpt_chat.get_thread(payload["thread"]["id"]))
+
+    def test_text2img_submit_appends_messages_and_payload(self):
+        fake_queue = FakeQueue()
+        with (
+            mock.patch.object(app, "_reload_runtime_env", return_value=None),
+            mock.patch.object(app, "gpt_image_available_for_project", return_value=True),
+            mock.patch.object(app, "raise_if_duplicate_high", return_value=None),
+            mock.patch.object(app, "gpt_queue", fake_queue),
+        ):
+            thread = gpt_chat.create_thread(project="小灯塔")
+            payload, status = self.post_multipart(
+                f"/api/gpt-chat/threads/{thread['id']}/messages",
+                {
+                    "project": "小灯塔",
+                    "client_id": "client-a",
+                    "text": "画一只猫",
+                    "ratio": "16:9",
+                },
+            )
+
+        self.assertEqual(status, 201)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["job_id"], "job123")
+        self.assertEqual(payload["status_url"], "/api/generation/jobs/job123")
+        submitted = fake_queue.payloads[0]
+        self.assertEqual(submitted["image_backend"], "gpt")
+        self.assertEqual(submitted["count"], 1)
+        self.assertEqual(submitted["kind"], "with_prompt")
+        self.assertEqual(submitted["mode"], "text2img")
+        self.assertEqual(submitted["ratio"], "16:9")
+        self.assertEqual(submitted["output_width"], 1920)
+        self.assertEqual(submitted["output_height"], 1080)
+        self.assertEqual(submitted["image_paths"], [])
+        self.assertEqual(submitted["gpt_chat_thread_id"], thread["id"])
+        stored = gpt_chat.get_thread(thread["id"])
+        self.assertEqual([m["role"] for m in stored["messages"]], ["user", "assistant"])
+        self.assertEqual(stored["messages"][1]["id"], submitted["gpt_chat_assistant_id"])
+
+    def test_reject_pending_assistant(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        gpt_chat.append_assistant_pending(thread["id"], job_id="job-old")
+
+        payload, status = self.post_multipart(
+            f"/api/gpt-chat/threads/{thread['id']}/messages",
+            {
+                "project": "小灯塔",
+                "client_id": "client-a",
+                "text": "继续画",
+            },
+        )
+
+        self.assertEqual(status, 409)
+        self.assertIn("进行中", payload["error"])
+
+    def test_get_thread_wrong_project_403(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        handler = self.make_handler(f"/api/gpt-chat/threads/{thread['id']}?project=画啦啦")
+        handler.do_GET()
+
+        payload, status = handler.sent
+        self.assertEqual(status, 403)
+        self.assertIn("无权访问", payload["error"])
+
+
+if __name__ == "__main__":
+    unittest.main()
