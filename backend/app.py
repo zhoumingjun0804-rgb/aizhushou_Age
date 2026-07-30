@@ -730,6 +730,24 @@ def upsert_gpt_chat_history(*, thread_id: str, project: str, prompt: str, output
     return history_id
 
 
+def _notify_gpt_chat_job(payload: dict, *, status: str, output_images=None, error: str = "") -> None:
+    tid = str((payload or {}).get("gpt_chat_thread_id") or "").strip()
+    mid = str((payload or {}).get("gpt_chat_assistant_id") or "").strip()
+    if not tid or not mid:
+        return
+    import gpt_chat
+    gpt_chat.complete_assistant_message(
+        tid, mid, status=status, image_urls=list(output_images or []), error=error or ""
+    )
+    if status == "done" and output_images:
+        upsert_gpt_chat_history(
+            thread_id=tid,
+            project=str(payload.get("project") or ""),
+            prompt=str(payload.get("prompt") or ""),
+            output_images=list(output_images),
+        )
+
+
 def _subframe_history_tool_label(tool: str) -> str:
     if tool == "landing_extend":
         return "📄头图延展"
@@ -1949,10 +1967,14 @@ def execute_generation_job(job: dict) -> None:
         if stored:
             stored["started_at"] = started
 
+    def fail(msg: str):
+        q.fail_job(job_id, msg)
+        _notify_gpt_chat_job(payload, status="error", error=msg)
+
     project = payload.get("project") or None
     lovart_err = lovart_project_required_error(project or "")
     if lovart_err:
-        q.fail_job(job_id, lovart_err)
+        fail(lovart_err)
         return
 
     prompt = payload.get("prompt", "")
@@ -2037,7 +2059,7 @@ def execute_generation_job(job: dict) -> None:
             if q.check_job_timeout(job_id):
                 return
             if time.time() - started > LOVART_JOB_MAX_SECONDS:
-                q.fail_job(job_id, f"任务超时（超过 {LOVART_JOB_MAX_SECONDS} 秒）")
+                fail(f"任务超时（超过 {LOVART_JOB_MAX_SECONDS} 秒）")
                 return
             variants.append(one(idx))
             q.set_progress(job_id, idx + 1, count)
@@ -2065,8 +2087,17 @@ def execute_generation_job(job: dict) -> None:
             stored["finished_at"] = time.time()
             stored["size_notice"] = size_notice
 
+    is_gpt_chat = bool(str(payload.get("gpt_chat_thread_id") or "").strip())
+    output_images = [v["filename"] for v in variants if v.get("filename")]
+    if is_gpt_chat:
+        if output_images:
+            _notify_gpt_chat_job(payload, status="done", output_images=output_images)
+        else:
+            err = next((v.get("error") for v in variants if v.get("error")), None) or "生成失败"
+            _notify_gpt_chat_job(payload, status="error", output_images=[], error=err)
+        return
+
     if variants and variants[0].get("filename"):
-        output_images = [v["filename"] for v in variants if v.get("filename")]
         summary = payload.get("summary") or {}
         entry = build_history_entry(
             mode=mode,
