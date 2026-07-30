@@ -24,6 +24,15 @@ class GptChatUiTests(unittest.TestCase):
         self.assertIn('id="gptChatRatioSelect"', self.html)
         self.assertIn('id="gptChatQualitySelect"', self.html)
 
+    def test_gpt_chat_js_helpers_exist(self):
+        for name in (
+            "sendGptChatMessage",
+            "renderGptChatThread",
+            "openGptChatThread",
+            "pollGptChatJob",
+        ):
+            self.assertIn("function " + name, self.html)
+
     def test_gpt_tab_has_no_logo_or_structured_fields(self):
         m = re.search(r'id="gptTab"[\s\S]*?(?=<div class="card tab-content"|$)', self.html)
         self.assertIsNotNone(m)

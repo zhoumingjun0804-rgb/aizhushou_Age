@@ -450,6 +450,17 @@
         #gptChatInput:focus { outline: none; border-color: #667eea; }
         #gptChatSendBtn { padding: 10px 18px; border: none; border-radius: 8px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
         #gptChatSendBtn:hover { opacity: 0.92; }
+        #gptChatSendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .gpt-chat-empty { margin: auto; color: rgba(255,255,255,0.42); font-size: 13px; text-align: center; }
+        .gpt-chat-bubble { max-width: min(88%, 720px); padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+        .gpt-chat-bubble.user { align-self: flex-end; background: rgba(102,126,234,0.22); border: 1px solid rgba(129,140,248,0.28); color: rgba(255,255,255,0.92); }
+        .gpt-chat-bubble.assistant { align-self: flex-start; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.88); }
+        .gpt-chat-bubble.error { border-color: rgba(248,113,113,0.35); color: #fca5a5; }
+        .gpt-chat-role { display: block; margin-bottom: 4px; font-size: 11px; color: rgba(255,255,255,0.45); }
+        .gpt-chat-images { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .gpt-chat-images img, .gpt-chat-attach-preview img { width: 92px; height: 92px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); cursor: pointer; }
+        .gpt-chat-attach-item { position: relative; }
+        .gpt-chat-attach-remove { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(15,23,42,0.9); color: white; cursor: pointer; font-size: 12px; line-height: 18px; padding: 0; }
         .gpt-chat-hint { margin: 8px 0 0; font-size: 12px; color: rgba(255,255,255,0.45); line-height: 1.5; }
         @media (max-width: 640px) {
             .nav-primary { flex-wrap: wrap; gap: 10px; }
@@ -2692,6 +2703,290 @@ function switchTab(tab, btnEl) {
     if (panel) panel.classList.add('active');
 }
 
+var gptChatThreadId = null;
+var gptChatAttachFiles = [];
+var gptChatSending = false;
+var gptChatPollJobId = null;
+
+function gptChatOutputUrl(name) {
+    if (!name) return '';
+    if (/^(https?:|blob:|data:|\/)/.test(name)) return name;
+    return '/outputs/' + name;
+}
+
+function setGptChatSendDisabled(disabled) {
+    var btn = document.getElementById('gptChatSendBtn');
+    if (btn) btn.disabled = !!disabled;
+}
+
+function renderGptChatAttachPreview() {
+    var box = document.getElementById('gptChatAttachPreview');
+    if (!box) return;
+    box.innerHTML = '';
+    gptChatAttachFiles.forEach(function(file, idx) {
+        var wrap = document.createElement('div');
+        wrap.className = 'gpt-chat-attach-item';
+        var img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.title = file.name || ('参考图 ' + (idx + 1));
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'gpt-chat-attach-remove';
+        btn.textContent = '×';
+        btn.onclick = function() {
+            gptChatAttachFiles.splice(idx, 1);
+            renderGptChatAttachPreview();
+        };
+        wrap.appendChild(img);
+        wrap.appendChild(btn);
+        box.appendChild(wrap);
+    });
+}
+
+function addGptChatFiles(files) {
+    Array.prototype.forEach.call(files || [], function(file) {
+        if (gptChatAttachFiles.length >= 3) return;
+        if (file && file.type && file.type.indexOf('image/') === 0) {
+            gptChatAttachFiles.push(file);
+        }
+    });
+    renderGptChatAttachPreview();
+}
+
+function clearGptChatComposer() {
+    var input = document.getElementById('gptChatInput');
+    var fileInput = document.getElementById('gptChatFileInput');
+    if (input) input.value = '';
+    if (fileInput) fileInput.value = '';
+    gptChatAttachFiles = [];
+    renderGptChatAttachPreview();
+}
+
+async function readGptChatError(res, fallback) {
+    try {
+        var data = await res.json();
+        return (data && (data.error || data.message)) || fallback;
+    } catch (e) {
+        return fallback;
+    }
+}
+
+function renderGptChatThread(thread) {
+    var box = document.getElementById('gptChatMessages');
+    if (!box) return;
+    box.innerHTML = '';
+    if (thread && thread.id) gptChatThreadId = thread.id;
+    var messages = (thread && thread.messages) || [];
+    if (!messages.length) {
+        var empty = document.createElement('div');
+        empty.className = 'gpt-chat-empty';
+        empty.textContent = '发一条消息开始 GPT 生图对话';
+        box.appendChild(empty);
+        return;
+    }
+    messages.forEach(function(msg) {
+        var role = msg.role === 'assistant' ? 'assistant' : 'user';
+        var bubble = document.createElement('div');
+        bubble.className = 'gpt-chat-bubble ' + role;
+        if (msg.status === 'error') bubble.className += ' error';
+
+        var label = document.createElement('span');
+        label.className = 'gpt-chat-role';
+        label.textContent = role === 'assistant' ? 'GPT' : '你';
+        bubble.appendChild(label);
+
+        var text = document.createElement('div');
+        if (role === 'assistant') {
+            if (msg.status === 'pending') text.textContent = '生成中…';
+            else if (msg.status === 'error') text.textContent = msg.error || '生成失败';
+            else text.textContent = msg.text || '';
+        } else {
+            text.textContent = msg.text || '';
+        }
+        if (text.textContent) bubble.appendChild(text);
+
+        var images = msg.image_urls || [];
+        if (images.length) {
+            var grid = document.createElement('div');
+            grid.className = 'gpt-chat-images';
+            images.forEach(function(name, idx) {
+                var img = document.createElement('img');
+                img.src = gptChatOutputUrl(name);
+                img.title = '查看图片';
+                img.onclick = function() {
+                    if (typeof openFullscreen === 'function') {
+                        openFullscreen(images.map(gptChatOutputUrl), idx);
+                    }
+                };
+                grid.appendChild(img);
+            });
+            bubble.appendChild(grid);
+        }
+        box.appendChild(bubble);
+    });
+    box.scrollTop = box.scrollHeight;
+}
+
+function updateGptChatPendingText(text) {
+    var box = document.getElementById('gptChatMessages');
+    if (!box) return;
+    var pending = box.querySelector('.gpt-chat-bubble.assistant:last-child div');
+    if (pending) pending.textContent = text;
+}
+
+async function fetchGptChatThread(threadId) {
+    var project = getSelectedProjectName();
+    if (!project) throw new Error('请先选择项目组');
+    var res = await authFetch('/api/gpt-chat/threads/' + encodeURIComponent(threadId) + '?project=' + encodeURIComponent(project));
+    if (!res.ok) throw new Error(await readGptChatError(res, '读取对话失败'));
+    var data = await res.json();
+    return data.thread;
+}
+
+async function pollGptChatJob(jobId) {
+    if (!jobId) return;
+    gptChatPollJobId = jobId;
+    var maxWait = 1800;
+    var started = Date.now();
+    try {
+        while (Date.now() - started < maxWait * 1000) {
+            var res = await authFetch('/api/generation/jobs/' + encodeURIComponent(jobId));
+            if (!res.ok) throw new Error(await readGptChatError(res, '读取任务状态失败'));
+            var data = await res.json();
+            if (data.status === 'queued') {
+                updateGptChatPendingText('排队中，前面还有 ' + (data.position || 0) + ' 人…');
+            } else if (data.status === 'running') {
+                var p = data.progress || {};
+                updateGptChatPendingText('生成中 ' + (p.current || 0) + '/' + (p.total || '?') + '…');
+            } else if (data.status === 'done' || data.status === 'failed') {
+                if (gptChatThreadId) renderGptChatThread(await fetchGptChatThread(gptChatThreadId));
+                if (data.status === 'done' && typeof loadHistory === 'function') loadHistory();
+                if (typeof refreshGenerationJobs === 'function') refreshGenerationJobs();
+                if (data.status === 'done') notifyToolTaskComplete(true);
+                return;
+            }
+            await new Promise(function(resolve) { setTimeout(resolve, 2500); });
+        }
+        throw new Error('等待超时，请稍后打开对话或历史记录查看任务状态');
+    } catch (e) {
+        if (gptChatThreadId) {
+            try {
+                renderGptChatThread(await fetchGptChatThread(gptChatThreadId));
+            } catch (ignore) {}
+        }
+        alert('GPT 任务轮询失败: ' + e.message);
+    } finally {
+        gptChatPollJobId = null;
+    }
+}
+
+async function sendGptChatMessage() {
+    if (gptChatSending) return;
+    var input = document.getElementById('gptChatInput');
+    var text = input ? input.value.trim() : '';
+    var project = getSelectedProjectName();
+    if (!text) {
+        alert('请输入消息内容');
+        return;
+    }
+    if (!project) {
+        alert('请先选择项目组');
+        return;
+    }
+    gptChatSending = true;
+    setGptChatSendDisabled(true);
+    try {
+        if (!gptChatThreadId) {
+            var createRes = await authFetch('/api/gpt-chat/threads', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: project })
+            });
+            if (!createRes.ok) throw new Error(await readGptChatError(createRes, '创建对话失败'));
+            var created = await createRes.json();
+            gptChatThreadId = created.thread && created.thread.id;
+        }
+
+        var ratioSel = document.getElementById('gptChatRatioSelect');
+        var qualitySel = document.getElementById('gptChatQualitySelect');
+        var formData = new FormData();
+        formData.append('project', project);
+        if (typeof appendClientId === 'function') appendClientId(formData);
+        else formData.append('client_id', getClientId());
+        formData.append('text', text);
+        formData.append('ratio', ratioSel ? (ratioSel.value || '1:1') : '1:1');
+        formData.append('gpt_output_quality', qualitySel ? (qualitySel.value || 'medium') : 'medium');
+        gptChatAttachFiles.slice(0, 3).forEach(function(file, idx) {
+            formData.append('ref_image_' + idx, file, file.name || ('ref_' + idx + '.png'));
+        });
+
+        var res = await authFetch('/api/gpt-chat/threads/' + encodeURIComponent(gptChatThreadId) + '/messages', {
+            method: 'POST',
+            body: formData
+        });
+        if (!res.ok) throw new Error(await readGptChatError(res, '发送失败'));
+        var data = await res.json();
+        if (data.thread && data.thread.id) gptChatThreadId = data.thread.id;
+        clearGptChatComposer();
+        renderGptChatThread(data.thread);
+        if (data.job_id) pollGptChatJob(data.job_id);
+    } catch (e) {
+        alert('GPT 聊天发送失败: ' + e.message);
+    } finally {
+        gptChatSending = false;
+        setGptChatSendDisabled(false);
+    }
+}
+
+async function openGptChatThread(threadId) {
+    if (!threadId) return;
+    switchTab('gpt');
+    try {
+        gptChatThreadId = threadId;
+        var thread = await fetchGptChatThread(threadId);
+        var ratioSel = document.getElementById('gptChatRatioSelect');
+        var qualitySel = document.getElementById('gptChatQualitySelect');
+        if (ratioSel && thread.size) ratioSel.value = thread.size;
+        if (qualitySel && thread.quality) qualitySel.value = thread.quality;
+        renderGptChatThread(thread);
+    } catch (e) {
+        alert('打开 GPT 对话失败: ' + e.message);
+    }
+}
+
+function initGptChat() {
+    var attachBtn = document.getElementById('gptChatAttachBtn');
+    var fileInput = document.getElementById('gptChatFileInput');
+    var input = document.getElementById('gptChatInput');
+    if (attachBtn && fileInput) {
+        attachBtn.addEventListener('click', function() { fileInput.click(); });
+        fileInput.addEventListener('change', function() {
+            addGptChatFiles(fileInput.files);
+            fileInput.value = '';
+        });
+    }
+    if (input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                sendGptChatMessage();
+            }
+        });
+    }
+    document.addEventListener('paste', function(e) {
+        var tab = document.getElementById('gptTab');
+        if (!tab || !tab.classList.contains('active') || !e.clipboardData) return;
+        var files = [];
+        Array.prototype.forEach.call(e.clipboardData.items || [], function(item) {
+            if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+                files.push(item.getAsFile());
+            }
+        });
+        if (files.length) addGptChatFiles(files);
+    });
+    renderGptChatThread(null);
+}
+
 // 初始化
 window.onload = function() {
     initImageBackendSelect();
@@ -2724,6 +3019,7 @@ window.onload = function() {
     initEditUploadZone();
     bindGifLayoutInteractions();
     initGifUploadZones();
+    initGptChat();
     updateGifGenBtnState();
     updateEditImageButtonState();
 };
