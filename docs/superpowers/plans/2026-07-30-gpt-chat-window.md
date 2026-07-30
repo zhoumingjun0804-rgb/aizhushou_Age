@@ -1130,7 +1130,7 @@ EOF
 - Modify: `.gitignore`（若需要忽略 `gpt_chat_threads.json`）
 - Verify: 全量相关单测
 
-- [ ] **Step 1: 忽略运行时文件**
+- [x] **Step 1: 忽略运行时文件**
 
 若根 `.gitignore` 未包含，追加：
 
@@ -1138,7 +1138,7 @@ EOF
 gpt_chat_threads.json
 ```
 
-- [ ] **Step 2: 跑全部 GPT 聊天相关测试 + 既有队列冒烟**
+- [x] **Step 2: 跑全部 GPT 聊天相关测试 + 既有队列冒烟**
 
 ```bash
 cd /Users/jenson/eva/aizhushou_Age/backend && python3 -m unittest \
@@ -1163,7 +1163,7 @@ Expected: 全部 PASS
 6. 打开「生图/修图记录」→ 见 💬GPT对话 → 打开对话可续聊。
 7. 「生图」「修图」原流程无回归。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .gitignore
