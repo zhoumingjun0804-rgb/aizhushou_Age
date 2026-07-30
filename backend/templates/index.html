@@ -434,6 +434,23 @@
         }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+
+        /* GPT 聊天 */
+        #gptTab { display: flex; flex-direction: column; min-height: 420px; }
+        #gptTab.active { display: flex; }
+        .gpt-chat-messages { flex: 1; min-height: 240px; max-height: 52vh; overflow-y: auto; padding: 12px 4px; display: flex; flex-direction: column; gap: 12px; }
+        .gpt-chat-composer { margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
+        .gpt-chat-attach-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; min-height: 0; }
+        .gpt-chat-composer-row { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+        .gpt-chat-composer-row select { padding: 8px 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 13px; }
+        .gpt-chat-composer-row select option { background: #1a1a3e; color: #eee; }
+        #gptChatAttachBtn { padding: 8px 12px; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); cursor: pointer; font-size: 16px; line-height: 1; }
+        #gptChatAttachBtn:hover { background: rgba(167,139,250,0.2); border-color: rgba(167,139,250,0.4); }
+        #gptChatInput { flex: 1; min-width: 160px; min-height: 44px; padding: 10px 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 14px; resize: vertical; font-family: inherit; }
+        #gptChatInput:focus { outline: none; border-color: #667eea; }
+        #gptChatSendBtn { padding: 10px 18px; border: none; border-radius: 8px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        #gptChatSendBtn:hover { opacity: 0.92; }
+        .gpt-chat-hint { margin: 8px 0 0; font-size: 12px; color: rgba(255,255,255,0.45); line-height: 1.5; }
         @media (max-width: 640px) {
             .nav-primary { flex-wrap: wrap; gap: 10px; }
             .nav-primary-tabs { width: 100%; }
@@ -1051,6 +1068,7 @@
             <div class="nav-primary-tabs">
                 <button type="button" class="tab-btn active" data-tab="generate" onclick="switchTab('generate', this)">🖼️ 生图</button>
                 <button type="button" class="tab-btn" data-tab="edit" onclick="switchTab('edit', this)">✏️ 修图</button>
+                <button type="button" class="tab-btn" data-tab="gpt" onclick="switchTab('gpt', this)">💬 GPT</button>
             </div>
             <button type="button" class="history-entry" onclick="toggleHistory()" title="查看生图与修图的历史记录">生图 / 修图记录</button>
         </nav>
@@ -1360,6 +1378,30 @@
                     <div class="spinner"></div>
                     <p class="loading-text">AI 正在修改中，约需 1-2 分钟…</p>
                 </div>
+            </div>
+        </div>
+
+        <div class="card tab-content" id="gptTab">
+            <div id="gptChatMessages" class="gpt-chat-messages" aria-live="polite"></div>
+            <div class="gpt-chat-composer">
+                <div id="gptChatAttachPreview" class="gpt-chat-attach-preview"></div>
+                <div class="gpt-chat-composer-row">
+                    <input type="file" id="gptChatFileInput" accept="image/*" multiple hidden>
+                    <button type="button" id="gptChatAttachBtn" title="上传参考图">📎</button>
+                    <select id="gptChatRatioSelect" title="比例">
+                        <option value="1:1" selected>1:1</option>
+                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16</option>
+                    </select>
+                    <select id="gptChatQualitySelect" title="画质">
+                        <option value="medium" selected>中等</option>
+                        <option value="high">高</option>
+                        <option value="low">低</option>
+                    </select>
+                    <textarea id="gptChatInput" rows="2" placeholder="描述你想生成或修改的画面…"></textarea>
+                    <button type="button" id="gptChatSendBtn" onclick="sendGptChatMessage()">发送</button>
+                </div>
+                <p class="gpt-chat-hint">可不选比例/画质（默认 1024×1024 · 中等）。续聊不附图时自动基于上一张结果修改。</p>
             </div>
         </div>
         
