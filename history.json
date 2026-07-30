@@ -1,5 +1,23 @@
 [
   {
+    "id": "f057cf81",
+    "timestamp": "2026-07-30T13:35:09",
+    "mode": "text2img",
+    "prompt": "扁平插画风格,天气主题海报,标题文字\"今天天气真好\",晴朗蓝天背景,金色阳光光线,绿色植物草地,白色卡通云朵,温暖愉悦氛围,简洁清爽排版,户外郊游场景",
+    "title": "扁平插画风格,天气主题海报,标题文字\"今天天气真好\",晴...",
+    "description": "",
+    "meta_tags": [
+      "✨文字生图"
+    ],
+    "source": "job",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "output_images": [
+      "variant_303cefee635e4482ac7654fdf916b3d4.png"
+    ],
+    "variants_count": 1
+  },
+  {
     "id": "6fa62e0a",
     "timestamp": "2026-06-24T11:03:09",
     "mode": "edit",

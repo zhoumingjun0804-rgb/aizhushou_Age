@@ -2963,7 +2963,7 @@ function getClientId() {
 }
 
 var queueStatusTimer = null;
-var QUEUE_STATUS_POLL_MS = 3000;
+var QUEUE_STATUS_POLL_MS = 60000;
 
 function _queueBackendLabel(name, stats) {
     var queued = (stats && stats.queued) || 0;
