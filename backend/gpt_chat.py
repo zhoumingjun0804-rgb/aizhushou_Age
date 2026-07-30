@@ -148,6 +148,22 @@ def complete_assistant_message(
     return updated.get("msg")
 
 
+def set_assistant_job_id(thread_id: str, message_id: str, job_id: str) -> Optional[dict]:
+    updated = {"ok": False}
+
+    def upd(t):
+        for m in t.get("messages") or []:
+            if m.get("id") == message_id and m.get("role") == "assistant":
+                m["job_id"] = job_id
+                updated["ok"] = True
+                updated["msg"] = m
+                break
+
+    if _mutate(thread_id, upd) is None:
+        return None
+    return updated.get("msg")
+
+
 def last_success_image(thread_id: str) -> Optional[str]:
     t = get_thread(thread_id)
     if not t:

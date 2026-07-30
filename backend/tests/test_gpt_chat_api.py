@@ -10,11 +10,17 @@ import gpt_chat
 
 
 class FakeQueue:
-    def __init__(self):
+    def __init__(self, on_submit=None, submit_error=None):
         self.payloads = []
+        self.on_submit = on_submit
+        self.submit_error = submit_error
 
     def submit_generation(self, payload, runner):
         self.payloads.append(payload)
+        if self.on_submit:
+            self.on_submit(payload)
+        if self.submit_error:
+            raise self.submit_error
         return "job123"
 
     def get_job(self, job_id):
@@ -143,6 +149,80 @@ class GptChatApiTests(unittest.TestCase):
         stored = gpt_chat.get_thread(thread["id"])
         self.assertEqual([m["role"] for m in stored["messages"]], ["user", "assistant"])
         self.assertEqual(stored["messages"][1]["id"], submitted["gpt_chat_assistant_id"])
+        self.assertEqual(stored["messages"][1]["job_id"], "job123")
+
+    def test_assistant_exists_before_submit_allows_fast_completion(self):
+        seen = {"pending": False}
+
+        def complete_during_submit(payload):
+            stored = gpt_chat.get_thread(payload["gpt_chat_thread_id"])
+            messages = stored.get("messages") or []
+            seen["pending"] = any(
+                m.get("id") == payload["gpt_chat_assistant_id"]
+                and m.get("role") == "assistant"
+                and m.get("status") == "pending"
+                for m in messages
+            )
+            gpt_chat.complete_assistant_message(
+                payload["gpt_chat_thread_id"],
+                payload["gpt_chat_assistant_id"],
+                status="done",
+                image_urls=["fast.png"],
+                error="",
+            )
+
+        fake_queue = FakeQueue(on_submit=complete_during_submit)
+        with (
+            mock.patch.object(app, "_reload_runtime_env", return_value=None),
+            mock.patch.object(app, "gpt_image_available_for_project", return_value=True),
+            mock.patch.object(app, "raise_if_duplicate_high", return_value=None),
+            mock.patch.object(app, "gpt_queue", fake_queue),
+        ):
+            thread = gpt_chat.create_thread(project="小灯塔")
+            payload, status = self.post_multipart(
+                f"/api/gpt-chat/threads/{thread['id']}/messages",
+                {
+                    "project": "小灯塔",
+                    "client_id": "client-a",
+                    "text": "画一只猫",
+                },
+            )
+
+        self.assertEqual(status, 201)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(seen["pending"])
+        stored = gpt_chat.get_thread(thread["id"])
+        assistant = stored["messages"][1]
+        self.assertEqual(assistant["status"], "done")
+        self.assertEqual(assistant["image_urls"], ["fast.png"])
+        self.assertEqual(assistant["job_id"], "job123")
+
+    def test_submit_failure_marks_placeholder_assistant_error(self):
+        fake_queue = FakeQueue(submit_error=app.QueueFullError(1))
+        with (
+            mock.patch.object(app, "_reload_runtime_env", return_value=None),
+            mock.patch.object(app, "gpt_image_available_for_project", return_value=True),
+            mock.patch.object(app, "raise_if_duplicate_high", return_value=None),
+            mock.patch.object(app, "gpt_queue", fake_queue),
+        ):
+            thread = gpt_chat.create_thread(project="小灯塔")
+            payload, status = self.post_multipart(
+                f"/api/gpt-chat/threads/{thread['id']}/messages",
+                {
+                    "project": "小灯塔",
+                    "client_id": "client-a",
+                    "text": "画一只猫",
+                },
+            )
+
+        self.assertEqual(status, 503)
+        self.assertIn("队列已满", payload["error"])
+        stored = gpt_chat.get_thread(thread["id"])
+        self.assertEqual(len(stored["messages"]), 2)
+        assistant = stored["messages"][1]
+        self.assertEqual(assistant["status"], "error")
+        self.assertIn("队列已满", assistant["error"])
+        self.assertFalse(gpt_chat.thread_has_pending(thread["id"]))
 
     def test_reject_pending_assistant(self):
         thread = gpt_chat.create_thread(project="小灯塔")

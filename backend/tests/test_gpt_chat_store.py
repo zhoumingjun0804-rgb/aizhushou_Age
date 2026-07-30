@@ -48,6 +48,20 @@ class GptChatStoreTests(unittest.TestCase):
         )
         self.assertFalse(gpt_chat.thread_has_pending(thread["id"]))
 
+    def test_set_assistant_job_id_preserves_status(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        asst = gpt_chat.append_assistant_pending(thread["id"], job_id="")
+        gpt_chat.complete_assistant_message(
+            thread["id"], asst["id"], status="done", image_urls=["fast.png"], error=""
+        )
+        gpt_chat.set_assistant_job_id(thread["id"], asst["id"], "job123")
+
+        stored = gpt_chat.get_thread(thread["id"])
+        assistant = stored["messages"][0]
+        self.assertEqual(assistant["status"], "done")
+        self.assertEqual(assistant["job_id"], "job123")
+        self.assertEqual(assistant["image_urls"], ["fast.png"])
+
 
 if __name__ == "__main__":
     unittest.main()

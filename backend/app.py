@@ -3742,6 +3742,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send_json({"thread": thread})
 
     def _handle_gpt_chat_post_message(self, thread_id: str):
+        assistant_id = ""
         try:
             _reload_runtime_env()
             content_type = self.headers.get("Content-Type", "")
@@ -3817,13 +3818,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 thread_id=thread_id,
                 assistant_id=assistant_id,
             )
+
+            gpt_chat.append_user_message(thread_id, text=prompt, image_urls=image_urls)
+            gpt_chat.append_assistant_pending(thread_id, job_id="", message_id=assistant_id)
+            gpt_chat.set_thread_prefs(thread_id, size=ratio, quality=quality)
             with _generation_admit_lock:
                 raise_if_duplicate_high(client_id, lovart_queue, gpt_queue)
                 job_id = gpt_queue.submit_generation(payload, execute_generation_job)
 
-            gpt_chat.append_user_message(thread_id, text=prompt, image_urls=image_urls)
-            gpt_chat.append_assistant_pending(thread_id, job_id=job_id, message_id=assistant_id)
-            gpt_chat.set_thread_prefs(thread_id, size=ratio, quality=quality)
+            gpt_chat.set_assistant_job_id(thread_id, assistant_id, job_id)
             view = gpt_queue.get_job(job_id)
             thread = gpt_chat.get_thread(thread_id)
             self._send_json(
@@ -3837,6 +3840,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 status=201,
             )
         except DuplicateHighJobError as e:
+            if assistant_id:
+                gpt_chat.complete_assistant_message(
+                    thread_id, assistant_id, status="error", image_urls=[], error=str(e)
+                )
             self._send_json(
                 {
                     "error": "您已有进行中的生图任务，请等待完成或查看任务状态",
@@ -3845,8 +3852,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 status=409,
             )
         except QueueFullError as e:
+            if assistant_id:
+                gpt_chat.complete_assistant_message(
+                    thread_id, assistant_id, status="error", image_urls=[], error=str(e)
+                )
             self._send_json({"error": str(e)}, status=503)
         except Exception as e:
+            if assistant_id:
+                gpt_chat.complete_assistant_message(
+                    thread_id, assistant_id, status="error", image_urls=[], error=str(e)
+                )
             import traceback
             traceback.print_exc()
             self._send_json({"error": str(e)}, status=500)
