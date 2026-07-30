@@ -113,6 +113,55 @@ def append_assistant_pending(thread_id: str, *, job_id: str, message_id: str | N
     return msg
 
 
+def try_append_turn(
+    thread_id: str,
+    *,
+    text: str,
+    image_urls: list | None = None,
+    assistant_id: str | None = None,
+    job_id: str = "",
+) -> Optional[dict]:
+    user_msg = {
+        "id": uuid.uuid4().hex[:10],
+        "role": "user",
+        "text": (text or "").strip(),
+        "image_urls": list(image_urls or []),
+        "created_at": _now(),
+    }
+    assistant_msg = {
+        "id": assistant_id or uuid.uuid4().hex[:10],
+        "role": "assistant",
+        "text": "",
+        "image_urls": [],
+        "job_id": job_id,
+        "status": "pending",
+        "error": "",
+        "created_at": _now(),
+    }
+
+    with _lock:
+        data = _read_all()
+        t = data["threads"].get(thread_id)
+        if not isinstance(t, dict):
+            raise KeyError(thread_id)
+        for m in t.get("messages") or []:
+            if m.get("role") == "assistant" and m.get("status") == "pending":
+                return None
+        messages = t.setdefault("messages", [])
+        messages.append(user_msg)
+        messages.append(assistant_msg)
+        if not t.get("title") or t["title"] == "新对话":
+            t["title"] = (user_msg["text"][:28] or t.get("title") or "新对话")
+        t["updated_at"] = _now()
+        data["threads"][thread_id] = t
+        _write_all(data)
+        return {
+            "thread": dict(t),
+            "user": dict(user_msg),
+            "assistant": dict(assistant_msg),
+        }
+
+
 def thread_has_pending(thread_id: str) -> bool:
     t = get_thread(thread_id)
     if not t:
@@ -146,6 +195,31 @@ def complete_assistant_message(
     if _mutate(thread_id, upd) is None:
         return None
     return updated.get("msg")
+
+
+def fail_stale_pending(
+    thread_id: str,
+    *,
+    reason: str,
+    job_ids: list | None = None,
+) -> bool:
+    stale_ids = {str(j) for j in (job_ids or [])}
+    changed = {"ok": False}
+
+    def upd(t):
+        for m in t.get("messages") or []:
+            if m.get("role") != "assistant" or m.get("status") != "pending":
+                continue
+            if stale_ids and str(m.get("job_id") or "") not in stale_ids:
+                continue
+            m["status"] = "error"
+            m["image_urls"] = []
+            m["error"] = reason or "任务不存在或已过期，请重新发送消息继续对话"
+            changed["ok"] = True
+
+    if _mutate(thread_id, upd) is None:
+        return False
+    return bool(changed["ok"])
 
 
 def set_assistant_job_id(thread_id: str, message_id: str, job_id: str) -> Optional[dict]:

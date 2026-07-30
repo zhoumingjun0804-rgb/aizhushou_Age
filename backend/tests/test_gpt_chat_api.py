@@ -249,6 +249,21 @@ class GptChatApiTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertIn("无权访问", payload["error"])
 
+    def test_get_thread_recovers_pending_when_job_missing(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        gpt_chat.append_assistant_pending(thread["id"], job_id="missing-job")
+        handler = self.make_handler(f"/api/gpt-chat/threads/{thread['id']}?project=小灯塔")
+
+        with mock.patch.object(app, "find_job", return_value=None):
+            handler.do_GET()
+
+        payload, status = handler.sent
+        self.assertEqual(status, 200)
+        assistant = payload["thread"]["messages"][0]
+        self.assertEqual(assistant["status"], "error")
+        self.assertIn("任务不存在或已过期", assistant["error"])
+        self.assertFalse(gpt_chat.thread_has_pending(thread["id"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2851,6 +2851,11 @@ async function pollGptChatJob(jobId) {
     try {
         while (Date.now() - started < maxWait * 1000) {
             var res = await authFetch('/api/generation/jobs/' + encodeURIComponent(jobId));
+            if (res.status === 404) {
+                if (gptChatThreadId) renderGptChatThread(await fetchGptChatThread(gptChatThreadId));
+                if (typeof refreshGenerationJobs === 'function') refreshGenerationJobs();
+                return;
+            }
             if (!res.ok) throw new Error(await readGptChatError(res, '读取任务状态失败'));
             var data = await res.json();
             if (data.status === 'queued') {

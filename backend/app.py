@@ -3739,6 +3739,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if thread.get("project") != auth_project:
             self._send_json({"error": "无权访问该线程"}, status=403)
             return
+        stale_job_ids = []
+        for msg in thread.get("messages") or []:
+            if msg.get("role") != "assistant" or msg.get("status") != "pending":
+                continue
+            job_id = str(msg.get("job_id") or "").strip()
+            if job_id and not find_job(job_id, lovart_queue, gpt_queue):
+                stale_job_ids.append(job_id)
+        if stale_job_ids:
+            gpt_chat.fail_stale_pending(
+                thread_id,
+                reason="任务不存在或已过期，请重新发送消息继续对话",
+                job_ids=stale_job_ids,
+            )
+            thread = gpt_chat.get_thread(thread_id) or thread
         self._send_json({"thread": thread})
 
     def _handle_gpt_chat_post_message(self, thread_id: str):
@@ -3782,9 +3796,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             quality = str(fields.get("gpt_output_quality", "medium") or "medium").strip()
-            if gpt_chat.thread_has_pending(thread_id):
-                self._send_json({"error": "该对话已有进行中的生成任务，请等待完成"}, status=409)
-                return
             if not gpt_image_available_for_project(auth_project):
                 self._send_json({"error": f"{auth_project} 未启用 GPT 生图模型"}, status=400)
                 return
@@ -3819,8 +3830,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 assistant_id=assistant_id,
             )
 
-            gpt_chat.append_user_message(thread_id, text=prompt, image_urls=image_urls)
-            gpt_chat.append_assistant_pending(thread_id, job_id="", message_id=assistant_id)
+            turn = gpt_chat.try_append_turn(
+                thread_id,
+                text=prompt,
+                image_urls=image_urls,
+                assistant_id=assistant_id,
+            )
+            if turn is None:
+                self._send_json({"error": "该对话已有进行中的生成任务，请等待完成"}, status=409)
+                return
             gpt_chat.set_thread_prefs(thread_id, size=ratio, quality=quality)
             with _generation_admit_lock:
                 raise_if_duplicate_high(client_id, lovart_queue, gpt_queue)

@@ -45,6 +45,13 @@ class GptChatUiTests(unittest.TestCase):
         self.assertIn("openGptChatThread", self.html)
         self.assertIn("gpt_chat", self.html)
 
+    def test_poll_job_404_refreshes_thread(self):
+        m = re.search(r'async function pollGptChatJob\(jobId\) \{[\s\S]*?\n\}', self.html)
+        self.assertIsNotNone(m)
+        block = m.group(0)
+        self.assertIn("res.status === 404", block)
+        self.assertIn("fetchGptChatThread(gptChatThreadId)", block)
+
 
 if __name__ == "__main__":
     unittest.main()

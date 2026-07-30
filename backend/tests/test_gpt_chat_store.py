@@ -62,6 +62,34 @@ class GptChatStoreTests(unittest.TestCase):
         self.assertEqual(assistant["job_id"], "job123")
         self.assertEqual(assistant["image_urls"], ["fast.png"])
 
+    def test_fail_stale_pending_marks_missing_job_error(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        gpt_chat.append_assistant_pending(thread["id"], job_id="missing-job")
+
+        changed = gpt_chat.fail_stale_pending(thread["id"], reason="任务不存在或已过期")
+
+        self.assertTrue(changed)
+        stored = gpt_chat.get_thread(thread["id"])
+        assistant = stored["messages"][0]
+        self.assertEqual(assistant["status"], "error")
+        self.assertIn("任务不存在或已过期", assistant["error"])
+        self.assertFalse(gpt_chat.thread_has_pending(thread["id"]))
+
+    def test_try_append_turn_rejects_existing_pending_atomically(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        gpt_chat.append_assistant_pending(thread["id"], job_id="j1")
+
+        result = gpt_chat.try_append_turn(
+            thread["id"],
+            text="继续画",
+            image_urls=[],
+            assistant_id="assistant2",
+        )
+
+        self.assertIsNone(result)
+        stored = gpt_chat.get_thread(thread["id"])
+        self.assertEqual(len(stored["messages"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
