@@ -26,9 +26,12 @@ from lovart_client import (
     mask_access_key,
 )
 from project_auth import (
+    unlock,
+    resolve_token,
+    password_for,
     ALLOWED_PROJECTS,
-    fixed_project,
     project_slug,
+    is_gate_enabled,
 )
 from project_credentials import (
     ProjectCredentialsError,
@@ -2942,15 +2945,11 @@ STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _html_cache = {"mtime": 0.0, "content": ""}
 
 
-def _inject_instance_flags(html: str) -> str:
-    locked = fixed_project() or ""
-    # JS string literal; projects are Chinese names without quotes.
-    html = html.replace("__FIXED_PROJECT__", locked.replace("\\", "\\\\").replace("'", "\\'"))
-    title_suffix = locked or "A-智绘"
-    html = html.replace("__PAGE_TITLE__", f"A-智绘 · {title_suffix}" if locked else "A-智绘")
-    html = html.replace("__PAGE_BRAND__", f"🎨 A-智绘 · {locked}" if locked else "🎨 A-智绘")
-    hide_picker = " feature-hidden" if locked else ""
-    html = html.replace("__PROJECT_CARD_EXTRA__", hide_picker)
+def _inject_project_gate_flag(html: str) -> str:
+    gate_on = is_gate_enabled()
+    html = html.replace("__PROJECT_GATE_ENABLED__", "true" if gate_on else "false")
+    html = html.replace("__GATE_OVERLAY_EXTRA__", "" if gate_on else " hidden")
+    html = html.replace("__APP_MAIN_EXTRA__", " app-locked" if gate_on else "")
     return html
 
 
@@ -2960,14 +2959,14 @@ def get_html_page():
         return "<html><body><h1>缺少 templates/index.html</h1></body></html>"
     dev = os.environ.get("DEV_RELOAD", "").strip().lower() in ("1", "true", "yes")
     if dev:
-        return _inject_instance_flags(HTML_TEMPLATE.read_text(encoding="utf-8"))
+        return _inject_project_gate_flag(HTML_TEMPLATE.read_text(encoding="utf-8"))
     mtime = HTML_TEMPLATE.stat().st_mtime
     if _html_cache["content"] and _html_cache["mtime"] == mtime:
-        return _inject_instance_flags(_html_cache["content"])
+        return _inject_project_gate_flag(_html_cache["content"])
     content = HTML_TEMPLATE.read_text(encoding="utf-8")
     _html_cache["mtime"] = mtime
     _html_cache["content"] = content
-    return _inject_instance_flags(content)
+    return _inject_project_gate_flag(content)
 
 
 
@@ -3002,20 +3001,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return {}
 
+    def _bearer_token(self) -> str:
+        auth = (self.headers.get("Authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+        return ""
+
+    def _token_project(self) -> Optional[str]:
+        info = resolve_token(self._bearer_token())
+        return info["project"] if info else None
+
     def _auth_any(self) -> bool:
-        return True
+        if not is_gate_enabled():
+            return True
+        if self._token_project():
+            return True
+        self._send_json({"error": "未登录或登录已失效"}, status=401)
+        return False
 
     def _resolve_project_for_request(
         self, project_name: str, fields: dict | None = None
     ) -> Optional[str]:
-        """解析当前请求的项目组；有 FIXED_PROJECT 时强制使用实例锁定项目。"""
-        locked = fixed_project()
-        if locked:
-            return locked
-
+        """解析当前请求的项目组；门禁关闭时允许从 type 参数推断小灯塔/画啦啦。"""
         project_name = (project_name or "").strip()
         if project_name:
             return self._auth_project(project_name)
+
+        if is_gate_enabled():
+            return self._auth_project("")
 
         params = self._query_params()
         query_project = (params.get("project", [""])[0] or "").strip()
@@ -3034,24 +3047,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if default_name:
             return default_name
 
-        self._send_json({"error": "请配置 FIXED_PROJECT，或指定项目组（小灯塔 / 画啦啦）"})
+        self._send_json({"error": "请先在顶部选择项目组（小灯塔 / 画啦啦）"})
         return None
 
     def _auth_project(self, project_name: str) -> Optional[str]:
-        locked = fixed_project()
-        if locked:
-            if project_name and project_name != locked:
-                self._send_json({"error": f"本实例仅支持项目组「{locked}」"}, status=403)
-                return None
-            return locked
         project_name = (project_name or "").strip()
-        if not project_name:
-            self._send_json({"error": "请先选择项目组"}, status=400)
+        if not is_gate_enabled():
+            if not project_name:
+                self._send_json({"error": "请先选择项目组"}, status=400)
+                return None
+            return project_name
+        auth = self._token_project()
+        if not auth:
+            self._send_json({"error": "未登录或登录已失效"}, status=401)
             return None
-        if project_name not in ALLOWED_PROJECTS:
-            self._send_json({"error": "未知项目组"}, status=400)
+        if project_name and project_name != auth:
+            self._send_json({"error": "无权访问该项目"}, status=403)
             return None
-        return project_name
+        return auth
 
     def _send_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -3064,7 +3077,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     '/generate-variants', '/generate-with-prompt', '/upscale', '/api/gif-to-svga',
                     '/api/multi-size-export', '/api/crop-image', '/api/magic-cutout',
                     '/api/smart-cutout', '/api/make-breathing-gif', '/api/layout-extend',
-                    '/api/generation/jobs'):
+                    '/api/generation/jobs', '/api/project-unlock'):
             self.send_response(204)
             self._send_cors_headers()
             self.end_headers()
@@ -3098,11 +3111,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif path == '/projects':
-            projects = list_projects()
-            locked = fixed_project()
-            if locked:
-                projects = [p for p in projects if p.get("name") == locked]
-            self._send_json({"projects": projects})
+            if is_gate_enabled():
+                auth = self._token_project()
+                if not auth:
+                    self._send_json({"error": "未登录或登录已失效"}, status=401)
+                    return
+                all_projects = list_projects()
+                one = [p for p in all_projects if p.get("name") == auth]
+                self._send_json({"projects": one})
+            else:
+                self._send_json({"projects": list_projects()})
         elif path.startswith('/projects/') and path.endswith('/images'):
             parts = path.split('/')
             project = urllib.parse.unquote(parts[2])
@@ -3132,10 +3150,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif path == '/history':
-            locked = fixed_project()
-            items = filter_history_items(load_history())
-            if locked:
-                items = [i for i in items if i.get("project") == locked]
+            if is_gate_enabled():
+                auth = self._token_project()
+                if not auth:
+                    self._send_json({"error": "未登录或登录已失效"}, status=401)
+                    return
+                items = [
+                    i for i in filter_history_items(load_history())
+                    if i.get("project") == auth
+                ]
+            else:
+                items = filter_history_items(load_history())
             self._send_json({"items": items})
         elif path == '/api/output-sizes':
             params = self._query_params()
@@ -3145,8 +3170,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ptype = self._product_type_from_query()
             if project:
                 ptype = project_product_type(project)
-            elif fixed_project():
-                ptype = project_product_type(fixed_project())
             self._send_json({
                 "type": ptype,
                 "sizes": load_output_sizes(product_type=ptype),
@@ -3181,8 +3204,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             params = self._query_params()
             project = urllib.parse.unquote(params.get("project", [""])[0])
             if not project:
-                project = fixed_project() or ""
-            if not project:
                 self._send_json({"error": "请指定 project 参数"})
                 return
             if self._auth_project(project) is None:
@@ -3206,6 +3227,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self._normalized_path()
         post_routes = {
+            '/api/project-unlock': self._handle_project_unlock,
             '/parse': self._handle_parse,
             '/api/analyze': self._handle_analyze,
             '/generate-variants': self._handle_generate_variants,
@@ -3371,6 +3393,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return text, None
         except Exception as e:
             return None, f"抓取失败: {str(e)}"
+
+    def _handle_project_unlock(self):
+        _reload_runtime_env()
+        if not is_gate_enabled():
+            self._send_json({"error": "项目组门禁已关闭"}, status=400)
+            return
+        body = self._read_json_body()
+        project = (body.get("project") or "").strip()
+        password = body.get("password") or ""
+        if project not in ALLOWED_PROJECTS:
+            self._send_json({"error": "未知项目组"}, status=400)
+            return
+        if not password_for(project):
+            self._send_json({"error": "该项目组未配置密码"}, status=400)
+            return
+        token = unlock(project, password)
+        if not token:
+            self._send_json({"error": "密码错误"}, status=401)
+            return
+        meta = get_project_meta(project) or {}
+        self._send_json({
+            "token": token,
+            "project": project,
+            "display_name": project,
+            "catalog": detect_project_catalog(project),
+            "product_type": project_product_type(project),
+            "credentials_status": credentials_status(project),
+            "available_models": get_available_models(project),
+        })
 
     def _handle_fetch_url(self, url):
         """GET /fetch-url?url=... 抓取网页内容"""
@@ -4025,18 +4076,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _handle_system_info(self):
         _reload_runtime_env()
-        params = self._query_params()
-        project = urllib.parse.unquote(params.get("project", [""])[0]).strip()
-        if not project:
-            project = fixed_project() or ""
-        project = self._auth_project(project)
-        if not project:
-            return
+        if is_gate_enabled():
+            project = self._token_project()
+            if not project:
+                self._send_json({"error": "未登录或登录已失效"}, status=401)
+                return
+        else:
+            params = self._query_params()
+            project = urllib.parse.unquote(params.get("project", [""])[0]).strip()
+            if not project:
+                self._send_json({"error": "请指定 project 参数"}, status=400)
+                return
         ok, msg = check_lovart_reachable(project)
         creds = load_lovart_credentials_for_project(project)
         self._send_json({
             "project": project,
-            "fixedProject": fixed_project() or "",
             "lovartReachable": ok,
             "lovartMessage": msg,
             "lovartKeyCount": len(creds),
@@ -4047,6 +4101,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "lovartBaseUrl": require_project_llm_config(project).lovart_base_url,
             "credentials_status": credentials_status(project),
             "available_models": get_available_models(project),
+            "projectGateEnabled": is_gate_enabled(),
         })
 
     def _handle_smart_cutout_status(self):
@@ -4796,16 +4851,9 @@ if __name__ == '__main__':
     print(f"   打开浏览器访问: http://localhost:{listen_port}")
     print(f"   项目目录: {BASE_DIR}")
     print(f"   项目组目录: {PROJECTS_DIR}")
-    locked = fixed_project()
-    if locked:
-        print(f"   固定项目组: {locked}（FIXED_PROJECT）")
-        projects_to_check = (locked,)
-    else:
-        print(f"   固定项目组: 未设置（请配置 FIXED_PROJECT=小灯塔 或 画啦啦）")
-        projects_to_check = ALLOWED_PROJECTS
     print(f"   生图后端: Lovart（按项目组 Key，见 LOVART_*_HLL / LOVART_*_XDT）")
     print(f"   Lovart API: {LOVART_BASE_URL}")
-    for pname in projects_to_check:
+    for pname in ALLOWED_PROJECTS:
         creds = load_lovart_credentials_for_project(pname)
         print(f"   · {pname}: Lovart {len(creds)} 组 Key")
         try:
@@ -4813,7 +4861,8 @@ if __name__ == '__main__':
             print(f"     DeepSeek: 已配置 DEEPSEEK_API_KEY_{project_slug(pname)}")
         except ProjectCredentialsError:
             print(f"     DeepSeek: 未配置 DEEPSEEK_API_KEY_{project_slug(pname)}")
-    print(f"   功能: 需求解析 · 多图变体 · 风格参考\n")
+    print(f"   门禁: 打开页面需选择项目组并输入密码（PROJECT_PASSWORD_HLL / _XDT）")
+    print(f"   功能: 需求解析 · 多图变体 · 项目组选择 · 风格参考\n")
 
     with httpd:
         httpd.serve_forever()

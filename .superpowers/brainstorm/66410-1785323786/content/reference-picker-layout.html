@@ -1,0 +1,57 @@
+<h2>项目参考图库恢复方式</h2>
+<p class="subtitle">三种布局都支持：小灯塔直接展示项目图片；画啦啦先选设计类型，再展示对应目录；最多勾选 10 张，并可继续上传本地参考图。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px">
+      <div class="mock-nav">📁 项目组　[ 小灯塔 ]　[ 画啦啦 ]</div>
+      <div style="margin:12px 0 6px;font-size:12px;color:#888">设计类型（画啦啦显示）</div>
+      <div class="mock-input">封面　⌄</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px">
+        <div class="placeholder" style="height:55px">✓ 图1</div>
+        <div class="placeholder" style="height:55px">图2</div>
+        <div class="placeholder" style="height:55px">图3</div>
+        <div class="placeholder" style="height:55px">图4</div>
+      </div>
+      <div style="margin-top:12px" class="mock-input">选择文件 / Ctrl+V 粘贴</div>
+    </div>
+    <div class="card-body">
+      <h3>A · 页面内直接恢复（推荐）</h3>
+      <p>沿用现有代码和视觉结构，项目图库位于上传区上方，改动最小、操作最直接。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px">
+      <div class="mock-nav">📁 项目组　[ 小灯塔 ]　[ 画啦啦 ]</div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="mock-button">从项目图库选择（3）</button>
+        <button class="mock-button">上传本地图片</button>
+      </div>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">弹窗：设计类型 / 图片网格</div>
+        <div class="mockup-body"><div class="placeholder" style="height:95px">大图选择区</div></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 弹窗图库</h3>
+      <p>主页面更紧凑，图库可显示更大的缩略图；但操作多一步，新增弹窗逻辑较多。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px">
+      <div class="mock-nav">📁 项目组　[ 小灯塔 ]　[ 画啦啦 ]</div>
+      <div style="display:flex;margin-top:12px;min-height:150px">
+        <div class="mock-sidebar" style="width:34%">封面<br>徽章<br>节假日海报<br>证书</div>
+        <div class="mock-content" style="flex:1">
+          <div class="placeholder" style="height:110px">当前类型图片网格</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 左侧类型 + 右侧图库</h3>
+      <p>画啦啦大量类型切换最快，但占用页面高度和宽度最多，手机端适配成本较高。</p>
+    </div>
+  </div>
+</div>

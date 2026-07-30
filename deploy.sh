@@ -17,8 +17,6 @@ REMOTE_DIR_HLL="/home/xiaoA-hll"
 REMOTE_APP_NAME_HLL="aizhushou-hll"
 REMOTE_PORT_HLL="8629"
 REMOTE_HINT_PORT=""
-REMOTE_ENV_SRC=""
-REMOTE_FIXED_PROJECT=""
 PYTHON_INSTALL_PREFIX="/opt/aizhushou-python"
 
 # 设为 1 时跳过 Node/PM2 自动安装（仅做 Python 环境与 PM2 启动）
@@ -48,10 +46,10 @@ usage() {
   logs     查看 PM2 日志（Ctrl+C 退出）
   update   git pull + 更新依赖 + PM2 重载
   setup    仅安装 Python 依赖并生成 PM2 配置，不启动
-  remote       小灯塔：同步 .env → /home/xiaoA，FIXED_PROJECT=小灯塔
-  remote sync  仅 rsync 小灯塔目录，不在远端启动
-  remote-hll       画啦啦：同步 .env.hll → /home/xiaoA-hll，PORT=8629
-  remote-hll sync  仅同步画啦啦目录，不重启
+  remote       上传到测试服务器并在远端 deploy（小灯塔，/home/xiaoA）
+  remote sync  仅 rsync 到测试服务器，不在远端启动
+  remote-hll       画啦啦实例：/home/xiaoA-hll，PORT=8629，PM2=aizhushou-hll
+  remote-hll sync  仅 rsync 画啦啦目录并写 PORT=8629，不重启
 
 环境变量:
   PM2_APP_NAME=名称     PM2 进程名（默认 aizhushou-age）
@@ -63,7 +61,7 @@ usage() {
   chmod +x deploy.sh
   ./deploy.sh              # 本机部署
   ./deploy.sh remote       # 小灯塔 → /home/xiaoA
-  ./deploy.sh remote-hll   # 画啦啦 → /home/xiaoA-hll:8629（需本机 .env.hll）
+  ./deploy.sh remote-hll   # 画啦啦 → /home/xiaoA-hll:8629
   ./deploy.sh update       # 代码更新后重载
   pm2 startup && pm2 save  # 开机自启（deploy 成功后会提示）
 EOF
@@ -181,8 +179,6 @@ remote_rsync() {
     --exclude '.dev-server.pid' \
     --exclude '.dev-server.log' \
     --exclude 'ecosystem.config.cjs' \
-    --exclude '.env' \
-    --exclude '.env.hll' \
     --exclude '.DS_Store' \
     -e "$ssh_cmd" \
     "$ROOT_DIR/" "${REMOTE_SSH}:${REMOTE_DIR}/"
@@ -202,32 +198,19 @@ remote_run_deploy() {
   remote_ssh "cd '${REMOTE_DIR}' && PM2_APP_NAME='${APP_NAME}' ./deploy.sh"
 }
 
-remote_push_env_file() {
-  local src="$1"
-  [ -f "$src" ] || fail "缺少环境文件: $src"
-  info "上传 $(basename "$src") → ${REMOTE_DIR}/.env ..."
-  local ssh_cmd="ssh $(remote_ssh_opts)"
-  SSHPASS="$TEST_PASSWORD" sshpass -e rsync -avz -e "$ssh_cmd" \
-    "$src" "${REMOTE_SSH}:${REMOTE_DIR}/.env"
-}
-
-remote_set_env_kv() {
-  local key="$1" val="$2"
-  info "远端设置 ${key}=${val}（仅改 ${REMOTE_DIR}/.env）..."
+remote_set_port() {
+  local port="$1"
+  info "远端设置 PORT=${port}（仅改 ${REMOTE_DIR}/.env）..."
   remote_ssh "cd '${REMOTE_DIR}' && \
     if [ -f .env ]; then
-      if grep -qE '^[[:space:]]*${key}=' .env; then
-        sed -i.bak -E 's/^[[:space:]]*${key}=.*/${key}=${val}/' .env && rm -f .env.bak
+      if grep -qE '^[[:space:]]*PORT=' .env; then
+        sed -i.bak -E 's/^[[:space:]]*PORT=.*/PORT=${port}/' .env && rm -f .env.bak
       else
-        printf '\\n%s=%s\\n' '${key}' '${val}' >> .env
+        printf '\\nPORT=%s\\n' '${port}' >> .env
       fi
     else
-      printf '%s=%s\\n' '${key}' '${val}' > .env
+      printf 'PORT=%s\\n' '${port}' > .env
     fi"
-}
-
-remote_set_port() {
-  remote_set_env_kv "PORT" "$1"
 }
 
 remote_health_hint() {
@@ -239,27 +222,10 @@ remote_health_hint() {
   ok "远端部署完成，访问: http://${TEST_SERVICE_URL}:${PORT}/"
 }
 
-apply_remote_xdt_profile() {
-  REMOTE_ENV_SRC="$ROOT_DIR/.env"
-  REMOTE_FIXED_PROJECT="小灯塔"
-}
-
 apply_remote_hll_profile() {
   REMOTE_DIR="${REMOTE_DIR_HLL}"
   APP_NAME="${REMOTE_APP_NAME_HLL}"
   REMOTE_HINT_PORT="${REMOTE_PORT_HLL}"
-  REMOTE_ENV_SRC="$ROOT_DIR/.env.hll"
-  REMOTE_FIXED_PROJECT="画啦啦"
-}
-
-remote_apply_instance_env() {
-  remote_push_env_file "${REMOTE_ENV_SRC:-$ROOT_DIR/.env}"
-  if [ -n "${REMOTE_HINT_PORT}" ]; then
-    remote_set_port "${REMOTE_HINT_PORT}"
-  fi
-  if [ -n "${REMOTE_FIXED_PROJECT:-}" ]; then
-    remote_set_env_kv "FIXED_PROJECT" "${REMOTE_FIXED_PROJECT}"
-  fi
 }
 
 cmd_remote_sync() {
@@ -268,7 +234,9 @@ cmd_remote_sync() {
   remote_prepare_dir
   remote_rsync
   remote_chmod_scripts
-  remote_apply_instance_env
+  if [ -n "${REMOTE_HINT_PORT}" ]; then
+    remote_set_port "${REMOTE_HINT_PORT}"
+  fi
   ok "同步完成（未在远端启动服务）"
 }
 
@@ -276,18 +244,19 @@ cmd_remote_deploy() {
   load_remote_config
   info "========== 远程部署 → ${REMOTE_SSH}:${REMOTE_DIR} =========="
   ensure_remote_tools
-  ok "目标: ${REMOTE_SSH}:${REMOTE_DIR}（PM2: ${APP_NAME}，项目: ${REMOTE_FIXED_PROJECT:-未设}）"
+  ok "目标: ${REMOTE_SSH}:${REMOTE_DIR}（PM2: ${APP_NAME}）"
   remote_prepare_dir
   remote_rsync
   remote_chmod_scripts
-  remote_apply_instance_env
+  if [ -n "${REMOTE_HINT_PORT}" ]; then
+    remote_set_port "${REMOTE_HINT_PORT}"
+  fi
   remote_run_deploy
   remote_health_hint
 }
 
 cmd_remote() {
   local sub="${1:-deploy}"
-  apply_remote_xdt_profile
   case "$sub" in
     sync)       cmd_remote_sync ;;
     deploy|"")  cmd_remote_deploy ;;

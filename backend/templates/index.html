@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>__PAGE_TITLE__</title>
+    <title>A-智绘</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -180,8 +180,7 @@
         .project-pick-btn.active { background: linear-gradient(135deg, #8b5cf6, #6366f1); border-color: transparent;
             color: #fff; box-shadow: 0 4px 16px rgba(139,92,246,0.35); }
         .project-pick-btn:disabled { cursor: default; opacity: 0.92; }
-        .project-gate-card .project-pick-group { margin-bottom: 14px; }
-        .project-info { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 6px; padding-left: 82px; }
+        .project-info { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 6px; }
         
         .project-images-grid { display: none; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 12px; 
             background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(167,139,250,0.2); }
@@ -194,7 +193,7 @@
         .project-images-grid .img-thumb-wrap.selected::after { content: '✓'; position: absolute; top: 50%; left: 50%; 
             transform: translate(-50%, -50%); background: #a78bfa; color: #1a1a3e; border-radius: 50%;
             width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
-        .project-images-grid .select-hint { font-size: 11px; color: rgba(255,255,255,0.4); width: 100%; text-align: center; }
+        .project-images-grid .select-hint { font-size: 11px; color: rgba(255,255,255,0.4); width: 100%; text-align: left; }
         .ref-preview-btn { position: absolute; right: 2px; bottom: 2px; width: 22px; height: 22px; padding: 0;
             border: none; border-radius: 6px; cursor: pointer; font-size: 12px; line-height: 1;
             background: rgba(15,12,41,0.85); color: #e9d5ff; opacity: 0; transition: opacity 0.2s;
@@ -299,10 +298,6 @@
         .keyword-header span:first-child { font-size: 14px; font-weight: 600; color: #a78bfa; }
         .keyword-hint { font-size: 12px; color: rgba(255,255,255,0.4); }
         .keyword-hint.warn { color: #fbbf24; }
-        .design-brief-textarea { width: 100%; min-height: 168px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
-            background: rgba(0,0,0,0.2); color: rgba(255,255,255,0.9); font-size: 13px; line-height: 1.55; resize: vertical;
-            font-family: inherit; }
-        .design-brief-textarea:focus { outline: none; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 12px rgba(167,139,250,0.15); }
         .design-brief-hint { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 6px; line-height: 1.5; }
         .keyword-textarea { width: 100%; min-height: 80px; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
                             font-size: 14px; line-height: 1.6; resize: vertical; background: rgba(255,255,255,0.04);
@@ -1039,35 +1034,17 @@
         /* 暂未开放的功能（延展 / 抠图） */
         .feature-hidden { display: none !important; }
 
-        /* 项目组门禁 */
-        .project-gate-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center;
-            justify-content: center; background: rgba(8,6,24,0.92); backdrop-filter: blur(12px); }
-        .project-gate-overlay.hidden { display: none; }
-        .project-gate-card { width: min(400px, 92vw); padding: 28px 24px; border-radius: 16px;
-            background: rgba(255,255,255,0.06); border: 1px solid rgba(167,139,250,0.35);
-            box-shadow: 0 12px 48px rgba(0,0,0,0.45); }
-        .project-gate-card h2 { text-align: center; font-size: 20px; margin-bottom: 20px; color: #e9d5ff; }
-        .project-gate-card label { display: block; font-size: 13px; color: rgba(255,255,255,0.65); margin: 12px 0 6px; }
-        .project-gate-card select, .project-gate-card input { width: 100%; padding: 10px 12px; border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #eee; font-size: 14px; }
-        .project-gate-card select option { background: #1a1a3e; color: #eee; }
-        .gate-error { min-height: 20px; font-size: 13px; color: #f87171; margin: 10px 0 4px; }
-        #gateSubmitBtn { width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 10px;
-            font-size: 15px; font-weight: 600; cursor: pointer; color: #1a1a3e;
-            background: linear-gradient(135deg, #a78bfa, #818cf8); }
-        #gateSubmitBtn:hover { filter: brightness(1.08); }
-        #appMain.app-locked { visibility: hidden; pointer-events: none; }
     </style>
 </head>
 <body>
-        <div id="appMain" class="container">
+    <div id="appMain" class="container__APP_MAIN_EXTRA__">
         <div id="queueStatusBadge" class="app-top-queue-status" title="全站生图排队实时状态">队列加载中…</div>
         <label class="tool-sound-toggle app-top-sound-toggle" title="工具任务完成后播放提示音">
             <input type="checkbox" id="taskCompleteSoundToggle" onchange="setTaskCompleteSoundEnabled(this.checked)">
             <span>🔔 完成铃声</span>
         </label>
         <header class="app-header">
-            <h1>__PAGE_BRAND__</h1>
+            <h1>🎨 A-智绘</h1>
             <p class="subtitle">填写需求，一键生成多张变体</p>
         </header>
         <nav class="nav-primary" aria-label="主要功能">
@@ -1088,8 +1065,8 @@
             <button type="button" class="tab-btn-tool" data-tab="cutout" onclick="switchTab('cutout', this)">🪄 抠图</button>
         </nav>
 
-        <!-- 项目组（有 FIXED_PROJECT 时隐藏，由实例锁定） -->
-        <div class="card shared-project-card__PROJECT_CARD_EXTRA__">
+        <!-- 项目组（生图 / 修图共用） -->
+        <div class="card shared-project-card">
             <div class="project-bar" style="margin:0;padding:0;background:none;border:none;">
                 <div class="project-bar-field">
                     <label>📁 项目组</label>
@@ -1100,10 +1077,15 @@
         </div>
         
         <div class="card tab-content active" id="generateTab">
-            <div class="project-section feature-hidden" id="projectRefsSection" aria-hidden="true">
-                <select id="designType" style="display:none;" aria-hidden="true">
-                    <option value="">请选择设计类型</option>
-                </select>
+            <div class="project-section" id="projectRefsSection" style="display:none;" aria-hidden="true">
+                <div class="project-bar" id="designTypeBar" style="display:none;margin-bottom:8px;">
+                    <div class="project-bar-field">
+                        <label for="designType">设计类型</label>
+                        <select id="designType" onchange="onDesignTypeChange()">
+                            <option value="">请选择设计类型</option>
+                        </select>
+                    </div>
+                </div>
                 <p class="project-refs-hint" id="projectRefsHint">请先选择项目组，再挑选参考图（也可在下方自行上传）</p>
                 <div class="project-refs-wrap" id="projectRefsWrap" style="display: none;">
                     <div class="project-info" id="projectInfo"></div>
@@ -1258,9 +1240,57 @@
 
                 <div class="form-row">
                     <div class="form-item full-width">
-                        <label>设计需求</label>
-                        <textarea id="designBrief" class="design-brief-textarea" placeholder="需求名称：暑期班开屏&#10;主标题：暑期班火热招生中&#10;副标题：限时优惠 前50名8折&#10;画面描述：蓝天白云，卡通儿童奔跑&#10;风格：卡通&#10;排版参考：标题居中顶部，正文底部左对齐&#10;补充备注：品牌色 #FF6B6B，LOGO 左上角"></textarea>
-                        <p class="design-brief-hint">按行填写即可，不需要的项可留空或删掉整行；也可直接写一段话描述画面。</p>
+                        <label>需求名称</label>
+                        <input type="text" id="requirementName" placeholder="用于下载文件名，如：暑期班开屏">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-item">
+                        <label>主标题</label>
+                        <input type="text" id="mainTitle" placeholder="如：暑期班火热招生中">
+                    </div>
+                    <div class="form-item">
+                        <label>副标题</label>
+                        <input type="text" id="subTitle" placeholder="如：限时优惠 前50名8折">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>画面描述</label>
+                        <input type="text" id="visualDesc" placeholder="如：蓝天白云，卡通儿童奔跑">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-item">
+                        <label>风格</label>
+                        <select id="styleSelect" onchange="toggleCustomStyle()">
+                            <option value="">默认</option>
+                            <option value="简约">简约</option>
+                            <option value="卡通">卡通</option>
+                            <option value="中国风">中国风</option>
+                            <option value="科技感">科技感</option>
+                            <option value="可爱">可爱</option>
+                            <option value="商务">商务</option>
+                            <option value="复古">复古</option>
+                            <option value="潮流">潮流</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-item" id="customStyleInput" style="display:none;">
+                        <label>自定义风格</label>
+                        <input type="text" id="customStyle" placeholder="如：赛博朋克、国潮">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>排版参考</label>
+                        <input type="text" id="layoutRef" placeholder="如：标题居中顶部，正文底部左对齐">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-item full-width">
+                        <label>补充备注</label>
+                        <input type="text" id="extraNotes" placeholder="如：品牌色 #FF6B6B，LOGO 左上角">
                     </div>
                 </div>
                 
@@ -2314,10 +2344,25 @@ var loadedProjectsByName = {};
 var projectPickLocked = false;
 
 var currentProjectCatalog = '';
-var fixedProjectName = '__FIXED_PROJECT__';
+var projectAuthToken = null;
+var unlockedProjectData = null;
+var projectGateEnabled = __PROJECT_GATE_ENABLED__;
 
 function authFetch(url, options) {
-    return fetch(url, options || {});
+    options = options || {};
+    var headers = new Headers(options.headers || {});
+    if (projectAuthToken) {
+        headers.set('Authorization', 'Bearer ' + projectAuthToken);
+    }
+    options.headers = headers;
+    return fetch(url, options).then(function(res) {
+        if (res.status === 401 && projectGateEnabled) {
+            projectAuthToken = null;
+            showProjectGate('登录已失效，请重新输入密码');
+            return Promise.reject(new Error('unauthorized'));
+        }
+        return res;
+    });
 }
 
 function sortProjectsForPick(projects) {
@@ -2382,8 +2427,66 @@ async function pickProject(name) {
     await onProjectSelectChange();
 }
 
-function applyFixedProject(data) {
-    if (!data || !data.project) return;
+function setGateProject(name) {
+    var hidden = document.getElementById('gateProjectSelect');
+    if (hidden) hidden.value = name || '';
+    highlightProjectPickGroup('gateProjectPickGroup', name);
+}
+
+function showProjectGate(message) {
+    var overlay = document.getElementById('projectGateOverlay');
+    var appMain = document.getElementById('appMain');
+    var err = document.getElementById('gateError');
+    if (overlay) overlay.classList.remove('hidden');
+    if (appMain) appMain.classList.add('app-locked');
+    if (err) err.textContent = message || '';
+    var preset = defaultProjectFromUrl();
+    if (preset) setGateProject(preset);
+}
+
+function hideProjectGate() {
+    var overlay = document.getElementById('projectGateOverlay');
+    var appMain = document.getElementById('appMain');
+    if (overlay) overlay.classList.add('hidden');
+    if (appMain) appMain.classList.remove('app-locked');
+    var err = document.getElementById('gateError');
+    if (err) err.textContent = '';
+}
+
+function submitProjectGate() {
+    var hidden = document.getElementById('gateProjectSelect');
+    var pwd = document.getElementById('gatePassword');
+    var err = document.getElementById('gateError');
+    var project = hidden ? hidden.value : '';
+    var password = pwd ? pwd.value : '';
+    if (!project) {
+        if (err) err.textContent = '请选择项目组';
+        return;
+    }
+    if (err) err.textContent = '';
+    fetch('/api/project-unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: project, password: password })
+    }).then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            if (err) err.textContent = (result.data && result.data.error) || '密码错误';
+            return;
+        }
+        projectAuthToken = result.data.token;
+        unlockedProjectData = result.data;
+        if (pwd) pwd.value = '';
+        hideProjectGate();
+        initUnlockedApp(result.data);
+    })
+    .catch(function() {
+        if (err) err.textContent = '网络错误，请重试';
+    });
+}
+
+function applyUnlockedProject(data) {
+    if (!data) return;
     projectPickLocked = true;
     loadedProjectsByName[data.project] = {
         name: data.project,
@@ -2402,37 +2505,21 @@ function applyFixedProject(data) {
     updateEditImageButtonState();
 }
 
-function initFixedProjectApp(projectName) {
-    return authFetch('/api/design-types?project=' + encodeURIComponent(projectName))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            applyFixedProject({
-                project: projectName,
-                catalog: data.catalog,
-                product_type: data.product_type
-            });
-            applyAvailableModels(data.available_models);
-            return loadDesignTypesForProject(projectName);
-        })
-        .then(function() {
-            updateProjectRefsVisibility();
-            updateEditImageButtonState();
-            refreshGenerationJobs();
-            startQueueStatusPolling();
-            onSizeCategoryChange();
-            loadSplashSizePresets();
-        })
-        .catch(function(err) {
-            console.error('初始化固定项目失败', err);
-            refreshGenerationJobs();
-            startQueueStatusPolling();
-        });
+function initUnlockedApp(data) {
+    applyUnlockedProject(data);
+    applyAvailableModels(data.available_models);
+    loadDesignTypesForProject(data.project).then(function() {
+        onProjectOrDesignTypeChange();
+        updateEditImageButtonState();
+    });
+    refreshGenerationJobs();
+    startQueueStatusPolling();
+    onSizeCategoryChange();
+    loadSplashSizePresets();
+    updateEditImageButtonState();
 }
 
 function initAppWithoutGate() {
-    if (fixedProjectName) {
-        return initFixedProjectApp(fixedProjectName);
-    }
     projectPickLocked = false;
     loadProjects().then(function() {
         onSizeCategoryChange();
@@ -2443,40 +2530,14 @@ function initAppWithoutGate() {
 }
 
 function getSelectedProjectName() {
-    if (fixedProjectName) return fixedProjectName;
     var sel = document.getElementById('projectSelect');
     return sel && sel.value ? sel.value : '';
 }
 
 function getSelectedProjectMeta() {
-    var name = getSelectedProjectName();
-    if (!name) return null;
-    var cached = loadedProjectsByName[name];
-    if (cached) {
-        return {
-            name: cached.name,
-            displayName: cached.name,
-            catalog: cached.catalog || 'static_types',
-            productType: cached.product_type || 'xdt',
-            tags: (cached.style_tags || []).join(', '),
-            desc: cached.description || ''
-        };
-    }
     var sel = document.getElementById('projectSelect');
     var opt = sel && sel.selectedOptions[0];
-    if (!opt || !opt.value) {
-        if (fixedProjectName) {
-            return {
-                name: fixedProjectName,
-                displayName: fixedProjectName,
-                catalog: currentProjectCatalog || 'static_types',
-                productType: fixedProjectName === '画啦啦' ? 'hll' : 'xdt',
-                tags: '',
-                desc: ''
-            };
-        }
-        return null;
-    }
+    if (!opt || !opt.value) return null;
     return {
         name: opt.value,
         displayName: opt.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim(),
@@ -2503,10 +2564,8 @@ function apiProjectQuery() {
 
 function applyProductBranding() {
     var meta = getSelectedProjectMeta();
-    var label = meta ? meta.displayName : (fixedProjectName || 'A-智绘');
+    var label = meta ? meta.displayName : 'A-智绘';
     document.title = 'A-智绘 · ' + label;
-    var h1 = document.querySelector('.app-header h1');
-    if (h1 && meta) h1.textContent = '🎨 A-智绘 · ' + label;
 }
 
 function updateMultiHint(count) {
@@ -2594,7 +2653,18 @@ function switchTab(tab, btnEl) {
 // 初始化
 window.onload = function() {
     initImageBackendSelect();
-    initAppWithoutGate();
+    var gateBtn = document.getElementById('gateSubmitBtn');
+    var gatePwd = document.getElementById('gatePassword');
+    if (gateBtn) gateBtn.addEventListener('click', submitProjectGate);
+    if (gatePwd) gatePwd.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') submitProjectGate();
+    });
+    if (projectGateEnabled) {
+        showProjectGate();
+    } else {
+        hideProjectGate();
+        initAppWithoutGate();
+    }
     var printDpiSel = document.getElementById('printDpiSelect');
     if (printDpiSel) printDpiSel.addEventListener('change', onPrintSizeChange);
     initTaskCompleteSoundToggle();
@@ -2621,57 +2691,25 @@ function sanitizeDownloadNamePart(text) {
 }
 
 function getRequirementName() {
-    var brief = parseDesignBrief(getDesignBriefText());
-    return sanitizeDownloadNamePart(brief.requirementName || brief.mainTitle);
+    var el = document.getElementById('requirementName');
+    return sanitizeDownloadNamePart(el && el.value);
 }
 
-function getDesignBriefText() {
-    var el = document.getElementById('designBrief');
-    return el ? el.value : '';
+function toggleCustomStyle() {
+    var sel = document.getElementById('styleSelect');
+    var customInput = document.getElementById('customStyleInput');
+    if (!sel || !customInput) return;
+    customInput.style.display = sel.value === 'custom' ? 'block' : 'none';
 }
 
-function parseDesignBrief(text) {
-    var result = {
-        requirementName: '',
-        mainTitle: '',
-        subTitle: '',
-        visualDesc: '',
-        style: '',
-        layoutRef: '',
-        extraNotes: '',
-        raw: (text || '').trim()
-    };
-    if (!result.raw) return result;
-
-    var freeLines = [];
-    var matched = false;
-    result.raw.split(/\r?\n/).forEach(function(line) {
-        var trimmed = line.trim();
-        if (!trimmed) return;
-        var m = trimmed.match(/^(.+?)[：:]\s*(.*)$/);
-        if (!m) {
-            freeLines.push(trimmed);
-            return;
-        }
-        var label = m[1].trim();
-        var value = m[2].trim();
-        if (label === '需求名称') { result.requirementName = value; matched = true; return; }
-        if (label === '主标题') { result.mainTitle = value; matched = true; return; }
-        if (label === '副标题') { result.subTitle = value; matched = true; return; }
-        if (label === '画面描述') { result.visualDesc = value; matched = true; return; }
-        if (label === '风格') { result.style = value; matched = true; return; }
-        if (label === '排版参考') { result.layoutRef = value; matched = true; return; }
-        if (label === '补充备注') { result.extraNotes = value; matched = true; return; }
-        freeLines.push(trimmed);
-    });
-
-    if (!matched) {
-        result.visualDesc = freeLines.join('\n') || result.raw;
-    } else if (freeLines.length) {
-        var extra = freeLines.join('\n');
-        result.visualDesc = result.visualDesc ? (result.visualDesc + '\n' + extra) : extra;
+function getStyleValue() {
+    var sel = document.getElementById('styleSelect');
+    if (!sel) return '';
+    if (sel.value === 'custom') {
+        var custom = document.getElementById('customStyle');
+        return custom ? custom.value.trim() : '';
     }
-    return result;
+    return sel.value;
 }
 
 function getDesignTypeLabel() {
@@ -3420,16 +3458,43 @@ function appendGenerationSize(formData) {
 }
 
 function shouldShowProjectRefs() {
-    // 生图页不再展示项目组参考图缩略图，请用下方「参考图」上传
-    return false;
+    return !!getSelectedProjectName();
+}
+
+function updateDesignTypeVisibility() {
+    var bar = document.getElementById('designTypeBar');
+    var sel = document.getElementById('designType');
+    if (!bar || !sel) return;
+    var show = shouldShowProjectRefs() && currentProjectCatalog === 'folder_types';
+    bar.style.display = show ? 'flex' : 'none';
+    sel.setAttribute('aria-hidden', show ? 'false' : 'true');
+    if (!show) {
+        sel.value = '';
+    }
 }
 
 function updateProjectRefsVisibility() {
     var show = shouldShowProjectRefs();
+    var section = document.getElementById('projectRefsSection');
     var wrap = document.getElementById('projectRefsWrap');
     var hint = document.getElementById('projectRefsHint');
+    if (section) {
+        section.style.display = show ? 'block' : 'none';
+        section.setAttribute('aria-hidden', show ? 'false' : 'true');
+    }
+    updateDesignTypeVisibility();
     if (wrap) wrap.style.display = show ? 'block' : 'none';
-    if (hint) hint.style.display = show ? 'none' : 'block';
+    if (hint) {
+        if (!show) {
+            hint.style.display = 'block';
+            hint.textContent = '请先选择项目组，再挑选参考图（也可在下方自行上传）';
+        } else if (currentProjectCatalog === 'folder_types' && !(document.getElementById('designType') || {}).value) {
+            hint.style.display = 'block';
+            hint.textContent = '请选择设计类型后挑选参考图（也可在下方自行上传）';
+        } else {
+            hint.style.display = 'none';
+        }
+    }
     if (!show) clearProjectRefs();
 }
 
@@ -3446,7 +3511,9 @@ function clearProjectRefs() {
 }
 
 function onDesignTypeChange() {
+    selectedProjectImages = [];
     applyDefaultSizeForDesignType();
+    updateProjectRefsVisibility();
     onProjectOrDesignTypeChange();
 }
 
@@ -3574,7 +3641,7 @@ async function onProjectSelectChange() {
     await loadDesignTypesForProject(project);
     loadSplashSizePresets();
     updateProjectRefsVisibility();
-    // 不再要求选择设计类型：选好项目组即可加载参考图
+    // 小灯塔直接加载；画啦啦需先选设计类型
     onProjectOrDesignTypeChange();
     updateEditImageButtonState();
 }
@@ -3696,7 +3763,7 @@ async function loadProjects() {
     }
 }
 
-// 选择项目组后加载参考图（不再依赖设计类型）
+// 选择项目组后加载参考图
 function selectProject() {
     if (!shouldShowProjectRefs()) {
         clearProjectRefs();
@@ -3722,6 +3789,15 @@ function selectProject() {
     if (meta.tags) info += '。风格标签：' + meta.tags;
     if (meta.desc) info += '。' + meta.desc;
     document.getElementById('projectInfo').textContent = info;
+    updateDesignTypeVisibility();
+    if (currentProjectCatalog === 'folder_types' && !designType) {
+        selectedProjectImages = [];
+        if (grid) {
+            grid.innerHTML = '<span class="select-hint">请选择设计类型后挑选参考图</span>';
+            grid.classList.add('active');
+        }
+        return;
+    }
     loadProjectImages(meta.name, designType, grid);
 }
 
@@ -3747,7 +3823,7 @@ async function loadProjectImages(projectName, designType, grid) {
             return;
         }
 
-        grid.innerHTML = '<span class="select-hint">点击缩略图选择（最多10张），悬停点 🔍 可预览大图：</span>';
+        grid.innerHTML = '<span class="select-hint">项目参考图（可选，最多10张），点击缩略图选择，悬停点 🔍 可预览大图：</span>';
         grid.classList.add('active');
 
         images.forEach(function(imgName) {
@@ -3784,6 +3860,10 @@ async function loadProjectImages(projectName, designType, grid) {
         });
     } catch(e) {
         console.error('加载项目图片失败', e);
+        if (grid) {
+            grid.innerHTML = '<span class="select-hint">参考图加载失败，请刷新后重试</span>';
+            grid.classList.add('active');
+        }
     }
 }
 
@@ -4026,20 +4106,14 @@ function renderUploadedPreviews() {
 }
 
 function buildDesignSummary() {
-    var brief = parseDesignBrief(getDesignBriefText());
-    var visualDesc = brief.visualDesc;
-    if (!visualDesc && !brief.mainTitle && !brief.subTitle && brief.raw &&
-        !brief.style && !brief.layoutRef && !brief.extraNotes) {
-        visualDesc = brief.raw;
-    }
     return {
         '设计类型': getDesignTypeLabel(),
-        '主标题': brief.mainTitle,
-        '副标题': brief.subTitle,
-        '画面描述': visualDesc,
-        '排版参考': brief.layoutRef,
-        '风格': brief.style,
-        '补充备注': brief.extraNotes
+        '主标题': document.getElementById('mainTitle').value.trim(),
+        '副标题': document.getElementById('subTitle').value.trim(),
+        '画面描述': document.getElementById('visualDesc').value.trim(),
+        '排版参考': document.getElementById('layoutRef').value.trim(),
+        '风格': getStyleValue(),
+        '补充备注': document.getElementById('extraNotes').value.trim()
     };
 }
 
@@ -4072,11 +4146,6 @@ function showKeywordAnalysisResult(prompt, sourceHintText, options) {
 
 function buildPromptFromForm() {
     var summary = buildDesignSummary();
-    var brief = parseDesignBrief(getDesignBriefText());
-    var hasStructured = summary['主标题'] || summary['副标题'] || summary['画面描述'] ||
-        summary['风格'] || summary['排版参考'] || summary['补充备注'];
-    if (!hasStructured && brief.raw) return brief.raw;
-
     var designType = summary['设计类型'] || '海报';
     var mainTitle = summary['主标题'] || '';
     var subTitle = summary['副标题'] || '';
@@ -4111,13 +4180,15 @@ function resolveGenerationPrompt() {
 }
 
 function bindDesignFormChangeReset() {
-    var el = document.getElementById('designBrief');
-    if (!el) return;
-    ['input', 'change'].forEach(function(evt) {
-        el.addEventListener(evt, function() {
-            if (!keywordAnalysisReady) return;
-            var fp = designSummaryFingerprint(buildDesignSummary());
-            if (fp !== keywordAnalysisSnapshot) resetKeywordAnalysis();
+    ['mainTitle', 'subTitle', 'visualDesc', 'layoutRef', 'extraNotes', 'styleSelect', 'customStyle'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        ['input', 'change'].forEach(function(evt) {
+            el.addEventListener(evt, function() {
+                if (!keywordAnalysisReady) return;
+                var fp = designSummaryFingerprint(buildDesignSummary());
+                if (fp !== keywordAnalysisSnapshot) resetKeywordAnalysis();
+            });
         });
     });
 }
@@ -5268,8 +5339,13 @@ function resetAll() {
     document.getElementById('actionsSection').style.display = 'none';
     hideGenerationSizeNotice();
     resetKeywordAnalysis();
-    var designBrief = document.getElementById('designBrief');
-    if (designBrief) designBrief.value = '';
+    ['requirementName', 'mainTitle', 'subTitle', 'visualDesc', 'layoutRef', 'extraNotes', 'customStyle'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    var styleSelect = document.getElementById('styleSelect');
+    if (styleSelect) styleSelect.value = '';
+    toggleCustomStyle();
     selectedVariant = null;
     variants = [];
 }
