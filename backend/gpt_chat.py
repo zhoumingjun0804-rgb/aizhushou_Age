@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 THREADS_FILE = BASE_DIR / "gpt_chat_threads.json"

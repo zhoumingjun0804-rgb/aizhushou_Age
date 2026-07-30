@@ -646,6 +646,8 @@ def _history_title_from_prompt(prompt: str, limit: int = 28) -> str:
 
 
 def _history_mode_label(mode: str) -> str:
+    if mode == "gpt_chat":
+        return "💬GPT对话"
     if mode == "edit":
         return "✏️局部修图"
     if mode == "text2img":
@@ -687,6 +689,45 @@ def build_history_entry(*, mode: str, prompt: str, description: str = "", source
             continue
         entry[key] = value
     return entry
+
+
+def upsert_gpt_chat_history(*, thread_id: str, project: str, prompt: str, output_images: list) -> str:
+    """每条 GPT 对话线程只保留一条 history 摘要；按 thread_id 更新。"""
+    history = load_history()
+    existing = None
+    for item in history:
+        if item.get("mode") == "gpt_chat" and item.get("thread_id") == thread_id:
+            existing = item
+            break
+    thread = None
+    try:
+        import gpt_chat as _gc
+        thread = _gc.get_thread(thread_id)
+    except Exception:
+        thread = None
+    history_id = (existing or {}).get("id") or (thread or {}).get("history_id") or uuid.uuid4().hex[:8]
+    entry = build_history_entry(
+        id=history_id,
+        mode="gpt_chat",
+        prompt=prompt or "",
+        description="",
+        source="gpt_chat",
+        project=project or "",
+        thread_id=thread_id,
+        output_images=list(output_images or []),
+        variants_count=len(output_images or []),
+    )
+    if existing:
+        history = [entry] + [i for i in history if i.get("id") != history_id]
+    else:
+        history.insert(0, entry)
+    save_history(history)
+    try:
+        import gpt_chat as _gc
+        _gc.set_history_id(thread_id, history_id)
+    except Exception:
+        pass
+    return history_id
 
 
 def _subframe_history_tool_label(tool: str) -> str:
