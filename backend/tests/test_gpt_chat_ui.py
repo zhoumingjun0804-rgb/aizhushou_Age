@@ -41,6 +41,10 @@ class GptChatUiTests(unittest.TestCase):
         self.assertNotIn('id="logoPositionSelect"', block)
         self.assertNotIn('id="requirementName"', block)
 
+    def test_history_opens_gpt_chat_thread(self):
+        self.assertIn("openGptChatThread", self.html)
+        self.assertIn("gpt_chat", self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

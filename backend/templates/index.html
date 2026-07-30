@@ -6050,6 +6050,7 @@ function closeFullscreen() {
 function _historyModeText(mode) {
     if (mode === 'edit') return '局部修图';
     if (mode === 'text2img') return '文字生图';
+    if (mode === 'gpt_chat') return 'GPT对话';
     if (mode === 'landing_extend') return '头图延展';
     return '图片改图';
 }
@@ -6351,7 +6352,7 @@ function _renderHistoryItemHtml(item, idx) {
     var description = (item.description || '').trim();
     var tags = Array.isArray(item.meta_tags) && item.meta_tags.length ? item.meta_tags.join(' · ') : '';
     if (!tags) {
-        var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : '📷图片改图');
+        var mode = item.mode === 'edit' ? '✏️局部修图' : (item.mode === 'text2img' ? '✨文字生图' : (item.mode === 'gpt_chat' ? '💬GPT对话' : '📷图片改图'));
         var variants = item.variants_count > 1 ? ' · ' + item.variants_count + '张' : '';
         tags = mode + variants;
     }
@@ -6371,10 +6372,14 @@ function _renderHistoryItemHtml(item, idx) {
         return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
     }).join('');
     var clickAttr = imageUrls.length ? ' onclick="openHistoryThumb(this.querySelector(\'.history-thumb\'))"' : '';
-    var continueBtn = imageUrls.length
-        ? '<button type="button" class="history-continue-btn" onclick="event.stopPropagation(); continueEditFromHistoryItem(\'' +
-          _escapeHtml(historyId) + '\',' + (0) + ')">✏️ 继续编辑</button>'
-        : '';
+    var continueBtn = '';
+    if (item.mode === 'gpt_chat' && item.thread_id) {
+        continueBtn = '<button type="button" class="history-continue-btn" onclick="event.stopPropagation(); openGptChatThread(\'' +
+            _escapeHtml(item.thread_id) + '\')">💬 打开对话</button>';
+    } else if (imageUrls.length) {
+        continueBtn = '<button type="button" class="history-continue-btn" onclick="event.stopPropagation(); continueEditFromHistoryItem(\'' +
+            _escapeHtml(historyId) + '\',' + (0) + ')">✏️ 继续编辑</button>';
+    }
     return '<div class="history-item"' + clickAttr + '>' +
         '<div class="history-img-wrap" style="display:flex;gap:4px;flex-wrap:wrap;position:relative;">' +
         thumbsHtml +
