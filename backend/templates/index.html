@@ -436,8 +436,9 @@
         .tab-content.active { display: block; }
 
         /* GPT 聊天 */
-        #gptTab { display: flex; flex-direction: column; min-height: 420px; }
-        #gptTab.active { display: flex; }
+        /* GPT 面板：布局属性在此；显隐仍由 .tab-content / .active 控制 */
+        #gptTab.tab-content { flex-direction: column; min-height: 420px; }
+        #gptTab.tab-content.active { display: flex; }
         .gpt-chat-messages { flex: 1; min-height: 240px; max-height: 52vh; overflow-y: auto; padding: 12px 4px; display: flex; flex-direction: column; gap: 12px; }
         .gpt-chat-composer { margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
         .gpt-chat-attach-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; min-height: 0; }

@@ -45,6 +45,26 @@ class GptChatUiTests(unittest.TestCase):
         self.assertIn("openGptChatThread", self.html)
         self.assertIn("gpt_chat", self.html)
 
+    def test_gpt_tab_hidden_without_active_class(self):
+        """非 active 时 #gptTab 不得强制 display:flex，否则会压过 .tab-content 的 hidden。"""
+        # 去掉 CSS 注释，避免注释文案误匹配
+        style = re.sub(r'/\*.*?\*/', '', self.html, flags=re.S)
+        css_blocks = re.findall(r'#gptTab[^{.\s]*(\.[^{]*)?\{[^}]+\}', style)
+        # 上面正则过严，改为直接扫规则块
+        css_blocks = re.findall(r'#gptTab[^{]*\{[^}]+\}', style)
+        bare_flex = False
+        active_flex = False
+        for block in css_blocks:
+            has_flex = re.search(r'display\s*:\s*flex', block) is not None
+            if not has_flex:
+                continue
+            if re.search(r'#gptTab[^{]*\.active', block):
+                active_flex = True
+            else:
+                bare_flex = True
+        self.assertFalse(bare_flex, msg='inactive #gptTab must not set display:flex')
+        self.assertTrue(active_flex, msg='expected #gptTab....active { display: flex }')
+
     def test_poll_job_404_refreshes_thread(self):
         m = re.search(r'async function pollGptChatJob\(jobId\) \{[\s\S]*?\n\}', self.html)
         self.assertIsNotNone(m)
