@@ -1654,7 +1654,7 @@
             <!-- 旧版开屏（已隐藏） -->
             <div class="multi-section feature-hidden" id="multiTabLegacy">
                 <h3>📐 开屏导出</h3>
-                <p class="multi-hint" id="multiHint">勾选需要导出的开屏尺寸（不必全部生成），也可添加自定义宽高。默认勾选 <strong>AI 阔图</strong>（Lovart）仅向四周延伸背景、完整保留原图内容；不勾选时用本地模糊补边。可选<strong>裁切满图</strong>。导出 JPEG。</p>
+                <p class="multi-hint" id="multiHint">勾选需要导出的开屏尺寸（不必全部生成），也可添加自定义宽高。默认勾选 <strong>AI 阔图</strong>（GPT）仅向四周延伸背景、完整保留原图内容；不勾选时用本地模糊补边。可选<strong>裁切满图</strong>。导出 JPEG。</p>
                 <div class="multi-size-actions">
                     <button type="button" onclick="selectAllMultiSizes(true)">全选</button>
                     <button type="button" onclick="selectAllMultiSizes(false)">全不选</button>
@@ -1685,7 +1685,7 @@
                     <label><input type="checkbox" id="multiUseCrop"> 裁切满图（铺满无留白，可能裁掉边缘）</label>
                 </div>
                 <div class="layout-opt-row" style="margin: 12px 0;">
-                    <label><input type="checkbox" id="multiUseAi" checked> AI 阔图（Lovart，仅扩边不改内容，每个尺寸约 1–2 分钟）</label>
+                    <label><input type="checkbox" id="multiUseAi" checked> AI 阔图（GPT，仅扩边不改内容，每个尺寸约 1–2 分钟）</label>
                 </div>
                 <button type="button" class="multi-export-btn" id="multiExportBtn" onclick="exportMultiSizes()" disabled>⚡ 生成开屏图</button>
                 <div class="loading-card" id="multiLoadingCard" style="display: none;">
@@ -1842,7 +1842,7 @@
         <div class="card tab-content feature-hidden" id="layoutTab">
             <div class="layout-section">
                 <h3>📋 规范延展</h3>
-                <p class="layout-hint" id="layoutHint">上传完整设计图，分别<strong>框选 Logo</strong>与<strong> IP 主体</strong>，按视觉规范模板延展输出（当前：一体机 732×976）。背景默认本地模糊补边；勾选 AI 阔图需 Lovart 可用。</p>
+                <p class="layout-hint" id="layoutHint">上传完整设计图，分别<strong>框选 Logo</strong>与<strong> IP 主体</strong>，按视觉规范模板延展输出（当前：一体机 732×976）。背景默认本地模糊补边；勾选 AI 阔图需当前项目组已启用对应生图能力。</p>
                 <div class="layout-templates" id="layoutTemplatesList"></div>
                 <div class="layout-upload-zone" id="layoutUploadZone" onclick="onLayoutUploadZoneClick(event)" tabindex="0">
                     <p style="color: rgba(255,255,255,0.65);">🖼️ 点击此处后 Ctrl+V 粘贴，或拖拽上传设计图</p>
@@ -1861,7 +1861,7 @@
                     </div>
                     <p class="layout-info" id="layoutInfo">请先框选 Logo 区域</p>
                     <div class="layout-opt-row">
-                        <label><input type="checkbox" id="layoutUseAi"> AI 阔图补边（需 Lovart）</label>
+                        <label><input type="checkbox" id="layoutUseAi"> AI 阔图补边（需配置生图后端）</label>
                     </div>
                     <button type="button" class="layout-export-btn" id="layoutExportBtn" onclick="exportLayoutExtend()" disabled>⚡ 生成规范延展图</button>
                     <button type="button" class="action-btn btn-outline" style="margin-top:12px;" onclick="clearLayoutImage()">移除图片</button>
@@ -3145,6 +3145,8 @@ function findVariantDownloadNameByUrl(url) {
 var modelSelectListenersBound = false;
 var IMAGE_BACKEND_SELECT_IDS = ['imageBackendSelect', 'editImageBackendSelect'];
 var IMAGE_BACKEND_ROW_IDS = ['imageBackendRow', 'editImageBackendRow'];
+/** 当前项目组是否在可用生图列表中提供 Lovart（小灯塔已停用） */
+var currentProjectHasLovart = false;
 
 function syncImageBackendSelects(value) {
     if (!value) return;
@@ -3225,7 +3227,12 @@ function fillImageBackendSelects(backends) {
 
 function applyAvailableModels(models) {
     models = models || { image_backends: [], analyze_models: [] };
-    fillImageBackendSelects(models.image_backends || []);
+    var backends = models.image_backends || [];
+    currentProjectHasLovart = backends.some(function(b) { return b && b.value === 'lovart'; });
+    fillImageBackendSelects(backends);
+    if (typeof refreshQueueStatus === 'function') {
+        try { refreshQueueStatus(); } catch (e) {}
+    }
 
     var analyzeSel = document.getElementById('analyzeModelSelect');
     var analyzeRow = document.getElementById('analyzeModelRow');
@@ -3272,7 +3279,10 @@ function initImageBackendSelect() {
 
 function getSelectedImageBackend() {
     var sel = document.getElementById('imageBackendSelect');
-    return sel ? sel.value : (localStorage.getItem('imageBackendSelect') || 'lovart');
+    if (sel && sel.value) return sel.value;
+    var saved = localStorage.getItem('imageBackendSelect');
+    if (saved) return saved;
+    return '';
 }
 
 function getSelectedEditImageBackend() {
@@ -3353,9 +3363,11 @@ function renderQueueStatusBadge(data) {
     var queued = data.queued || 0;
     var running = data.running || 0;
     var active = queued + running;
-    el.innerHTML = _queueBackendLabel('GPT', gpt)
-        + '<span class="q-sep">|</span>'
-        + _queueBackendLabel('Lovart', lovart);
+    var html = _queueBackendLabel('GPT', gpt);
+    if (currentProjectHasLovart) {
+        html += '<span class="q-sep">|</span>' + _queueBackendLabel('Lovart', lovart);
+    }
+    el.innerHTML = html;
     el.classList.toggle('active', active > 0);
     el.title = '全站生图：排队 ' + queued + ' · 生成中 ' + running
         + '（每人同时仅 1 个主生图任务）';
@@ -10928,7 +10940,7 @@ async function exportMultiSizes() {
         if (data.sourceBaseName) multiSourceBaseName = data.sourceBaseName;
         if (multiUseAi && multiUseAi.checked && data.backgroundMode !== 'ai') {
             var fallback = data.backgroundMode === 'crop' ? '裁切满图' : '模糊补边延展';
-            errEl.textContent = '未启用 Lovart 或 AI 阔图失败，已改为' + fallback + '。';
+            errEl.textContent = 'AI 阔图不可用或失败，已改为' + fallback + '。';
             errEl.style.color = 'rgba(252, 211, 77, 0.95)';
             errEl.style.display = 'block';
         }
@@ -11006,7 +11018,7 @@ function loadLayoutPresets() {
             return '<span class="layout-template-tag">' + t.name + ' ' + t.width + '×' + t.height + '</span>';
         }).join('');
         if (hint && pack.templates && pack.templates.length) {
-            hint.innerHTML = '上传完整设计图，分别<strong>框选 Logo</strong>与<strong> IP 主体</strong>，按规范模板延展（当前 ' + pack.templates.length + ' 个尺寸）。背景默认本地模糊补边；勾选 AI 阔图需 Lovart。';
+            hint.innerHTML = '上传完整设计图，分别<strong>框选 Logo</strong>与<strong> IP 主体</strong>，按规范模板延展（当前 ' + pack.templates.length + ' 个尺寸）。背景默认本地模糊补边；勾选 AI 阔图需当前项目组已启用对应生图能力。';
         }
     }).catch(function() {});
 }

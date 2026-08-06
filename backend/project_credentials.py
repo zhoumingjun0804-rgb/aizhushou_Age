@@ -20,6 +20,9 @@ GPT_IMAGE_LABELS = {
 
 OFFICIAL_OPENAI_IMAGE_BASE = "https://api.openai.com"
 
+# 小灯塔已停用 Lovart：忽略 env 中的 LOVART_*_XDT，前端不再展示该入口
+LOVART_DISABLED_PROJECTS = frozenset({"小灯塔"})
+
 
 class ProjectCredentialsError(Exception):
     pass
@@ -61,7 +64,14 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def lovart_enabled_for_project(project: str) -> bool:
+    return project not in LOVART_DISABLED_PROJECTS
+
+
 def load_lovart_credentials_for_project(project: str) -> list[tuple[str, str]]:
+    if not lovart_enabled_for_project(project):
+        return []
+
     slug = project_slug(project)
     pairs: list[tuple[str, str]] = []
 

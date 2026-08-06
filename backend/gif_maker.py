@@ -11,7 +11,11 @@ DEFAULT_DURATION_SEC = 1.6
 # App 上传常用上限；0 / None 表示不限制
 DEFAULT_MAX_BYTES = 1024 * 1024
 # 合成时上限：慢速底图插帧再多也不超过，避免动辄上百帧撑爆体积
-MAX_COMPOSE_FRAMES = 48
+MAX_COMPOSE_FRAMES = 36
+# 合成前最长边像素（一般 App 动图无需更大，显著加速并缩小体积）
+MAX_COMPOSE_EDGE = 720
+# 默认调色板色数（255 体积大、编码慢；128 观感足够）
+DEFAULT_GIF_COLORS = 128
 SCALE_PRESETS = {"weak": 0.04, "medium": 0.07, "strong": 0.11}
 FLOAT_PRESETS = {"weak": 4, "medium": 8, "strong": 14}
 SWAY_PRESETS = {"weak": 4, "medium": 8, "strong": 14}
@@ -38,6 +42,26 @@ def _clamp_button_rect(
     return int(x), int(y), width, height
 
 
+def _edge_scale(w: int, h: int, max_edge: int) -> float:
+    long = max(1, int(w), int(h))
+    limit = max(64, int(max_edge or 0))
+    if long <= limit:
+        return 1.0
+    return limit / float(long)
+
+
+def _scale_rect(rect: tuple[int, int, int, int], scale: float) -> tuple[int, int, int, int]:
+    if scale >= 0.999:
+        return rect
+    x, y, w, h = rect
+    return (
+        int(round(x * scale)),
+        int(round(y * scale)),
+        max(1, int(round(w * scale))),
+        max(1, int(round(h * scale))),
+    )
+
+
 def _apply_alpha_mask(palette_img: Image.Image, alpha: Image.Image) -> Image.Image:
     mask = Image.eval(alpha, lambda a: TRANSPARENCY_INDEX if a < ALPHA_CUTOFF else 0)
     palette_img.paste(TRANSPARENCY_INDEX, mask)
@@ -45,7 +69,7 @@ def _apply_alpha_mask(palette_img: Image.Image, alpha: Image.Image) -> Image.Ima
     return palette_img
 
 
-def _rgba_to_palette(frame: Image.Image, colors: int = 255) -> Image.Image:
+def _rgba_to_palette(frame: Image.Image, colors: int = DEFAULT_GIF_COLORS) -> Image.Image:
     """RGBA → 调色板，保留透明像素（避免 convert('RGB') 把透明变黑）。"""
     n = max(2, min(255, int(colors)))
     rgba = frame.convert("RGBA")
@@ -96,35 +120,42 @@ def _thin_timeline(
     return out_frames, out_durations
 
 
-def _scale_frames(frames: list[Image.Image], scale: float) -> list[Image.Image]:
+def _scale_frames(
+    frames: list[Image.Image],
+    scale: float,
+    *,
+    min_scale: float = 0.35,
+) -> list[Image.Image]:
     scale = float(scale)
     if scale >= 0.999 or not frames:
         return frames
-    scale = max(0.35, min(1.0, scale))
+    # 体积压缩保守不低于 min_scale；合成前限边应允许更小
+    scale = max(float(min_scale), min(1.0, scale))
     w, h = frames[0].size
     nw = max(1, int(round(w * scale)))
     nh = max(1, int(round(h * scale)))
     if (nw, nh) == (w, h):
         return frames
-    return [f.resize((nw, nh), Image.Resampling.LANCZOS) for f in frames]
+    # 体积压缩用 BILINEAR 足够，比 LANCZOS 快很多
+    return [f.resize((nw, nh), Image.Resampling.BILINEAR) for f in frames]
 
 
-def _save_transparent_gif(
+def _encode_transparent_gif_bytes(
     frames: list[Image.Image],
-    output_path: Path,
-    frame_ms: int | list[int],
+    durations: list[int],
     *,
-    colors: int = 255,
-) -> None:
+    colors: int = DEFAULT_GIF_COLORS,
+) -> bytes:
     if not frames:
         raise ValueError("no frames")
-    durations = _normalize_durations(frame_ms, len(frames))
     first_p = _rgba_to_palette(frames[0], colors=colors)
     palette_frames = [first_p]
     for frame in frames[1:]:
         palette_frames.append(_quantize_to_shared_palette(frame, first_p))
+    buf = BytesIO()
     first_p.save(
-        output_path,
+        buf,
+        format="GIF",
         save_all=True,
         append_images=palette_frames[1:],
         duration=durations,
@@ -132,6 +163,21 @@ def _save_transparent_gif(
         optimize=True,
         disposal=2,
     )
+    return buf.getvalue()
+
+
+def _save_transparent_gif(
+    frames: list[Image.Image],
+    output_path: Path,
+    frame_ms: int | list[int],
+    *,
+    colors: int = DEFAULT_GIF_COLORS,
+) -> None:
+    if not frames:
+        raise ValueError("no frames")
+    durations = _normalize_durations(frame_ms, len(frames))
+    data = _encode_transparent_gif_bytes(frames, durations, colors=colors)
+    output_path.write_bytes(data)
 
 
 def _save_gif_under_max_bytes(
@@ -140,63 +186,69 @@ def _save_gif_under_max_bytes(
     output_path: Path,
     max_bytes: int | None,
 ) -> dict:
-    """写入 GIF；若超过 max_bytes，按抽帧 → 减色 → 等比缩小依次压缩。"""
+    """写入 GIF；若超过 max_bytes，按「抽帧 → 减色 → 缩放」逐步压缩（少次编码）。"""
     durations = _normalize_durations(frame_ms, len(frames))
     enforce = bool(max_bytes and max_bytes > 0)
     limit = int(max_bytes) if enforce else 0
 
-    # 先保尺寸，再缩小；同档内先抽帧再减色
-    scales = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
-    thin_steps = (1, 2, 3, 4, 5, 6, 8)
-    color_levels = (255, 128, 96, 64)
+    # 起点：略降色 + 帧数已由合成阶段控制；再逐级加压，避免旧版 100+ 次全量编码
+    attempts: list[tuple[float, int, int]] = [
+        (1.0, 1, DEFAULT_GIF_COLORS),
+        (1.0, 2, DEFAULT_GIF_COLORS),
+        (1.0, 1, 96),
+        (0.9, 2, DEFAULT_GIF_COLORS),
+        (0.85, 2, 96),
+        (0.8, 3, 96),
+        (0.75, 3, 64),
+        (0.7, 4, 64),
+        (0.6, 4, 48),
+        (0.5, 5, 48),
+        (0.45, 6, 32),
+        (0.4, 8, 32),
+    ]
+    if not enforce:
+        attempts = attempts[:1]
 
     best: dict | None = None
+    best_bytes: bytes | None = None
     uncompressed_size: int | None = None
 
-    for scale in scales:
-        for thin in thin_steps:
-            work_f, work_d = _thin_timeline(frames, durations, thin)
-            work_f = _scale_frames(work_f, scale)
-            for colors in color_levels:
-                _save_transparent_gif(work_f, output_path, work_d, colors=colors)
-                size = output_path.stat().st_size
-                if uncompressed_size is None and scale >= 0.999 and thin == 1 and colors >= 255:
-                    uncompressed_size = size
-                info = {
-                    "fileSize": size,
-                    "underLimit": (not enforce) or size <= limit,
-                    "framesReduced": len(work_f) < len(frames),
-                    "frameThinStep": thin if len(work_f) < len(frames) else 1,
-                    "scaled": scale < 0.999,
-                    "scale": round(scale, 3),
-                    "colors": colors,
-                    "frameCount": len(work_f),
-                    "width": work_f[0].size[0],
-                    "height": work_f[0].size[1],
-                    "durations": work_d,
-                    "uncompressedSize": uncompressed_size,
-                    "maxBytes": limit if enforce else None,
-                }
-                if best is None or size < best["fileSize"]:
-                    best = info
-                    if enforce and size <= limit:
-                        # 已达标：把当前最优结果留在 output_path（刚写入）
-                        return info
-                if not enforce:
-                    return info
-            if scale < 0.999 and thin >= 4:
+    for scale, thin, colors in attempts:
+        work_f, work_d = _thin_timeline(frames, durations, thin)
+        work_f = _scale_frames(work_f, scale)
+        data = _encode_transparent_gif_bytes(work_f, work_d, colors=colors)
+        size = len(data)
+        if uncompressed_size is None and scale >= 0.999 and thin == 1 and colors >= DEFAULT_GIF_COLORS:
+            uncompressed_size = size
+        info = {
+            "fileSize": size,
+            "underLimit": (not enforce) or size <= limit,
+            "framesReduced": len(work_f) < len(frames),
+            "frameThinStep": thin if len(work_f) < len(frames) else 1,
+            "scaled": scale < 0.999,
+            "scale": round(scale, 3),
+            "colors": colors,
+            "frameCount": len(work_f),
+            "width": work_f[0].size[0],
+            "height": work_f[0].size[1],
+            "durations": work_d,
+            "uncompressedSize": uncompressed_size,
+            "maxBytes": limit if enforce else None,
+        }
+        if best is None or size < best["fileSize"]:
+            best = info
+            best_bytes = data
+            if enforce and size <= limit:
                 break
+        if not enforce:
+            best = info
+            best_bytes = data
+            break
 
-    # 仍超限：保留体积最小的一档
-    assert best is not None
-    work_f, work_d = _thin_timeline(frames, durations, int(best["frameThinStep"]))
-    work_f = _scale_frames(work_f, float(best["scale"]))
-    _save_transparent_gif(work_f, output_path, work_d, colors=int(best["colors"]))
+    assert best is not None and best_bytes is not None
+    output_path.write_bytes(best_bytes)
     best["fileSize"] = output_path.stat().st_size
     best["underLimit"] = (not enforce) or best["fileSize"] <= limit
-    best["width"], best["height"] = work_f[0].size
-    best["frameCount"] = len(work_f)
-    best["durations"] = work_d
     return best
 
 
@@ -220,7 +272,8 @@ def _load_background_timeline(path: Path) -> tuple[list[Image.Image], list[int],
                     duration = 100
                 durations.append(duration)
                 idx += 1
-                if idx >= 300:
+                if idx >= 120:
+                    # 过长底图直接截断，避免读入几百帧
                     break
                 im.seek(idx)
         except EOFError:
@@ -281,16 +334,17 @@ def _paste_button_transformed(
     dy: float = 0.0,
     angle_deg: float = 0.0,
 ) -> Image.Image:
-    bg = background.convert("RGBA")
-    btn = button.convert("RGBA")
+    bg = background
+    btn = button
     base_w = max(1, int(width))
     base_h = max(1, int(height))
     bw = max(1, int(round(base_w * scale)))
     bh = max(1, int(round(base_h * scale)))
+    # 动效逐帧缩放/旋转用 BILINEAR 即可，避免每帧 LANCZOS
     if (bw, bh) != btn.size:
-        btn = btn.resize((bw, bh), Image.Resampling.LANCZOS)
+        btn = btn.resize((bw, bh), Image.Resampling.BILINEAR)
     if angle_deg:
-        btn = btn.rotate(-angle_deg, resample=Image.Resampling.BICUBIC, expand=True)
+        btn = btn.rotate(-angle_deg, resample=Image.Resampling.BILINEAR, expand=True)
     cx = x + base_w / 2.0 + dx
     cy = y + base_h / 2.0 + dy
     paste_x = int(round(cx - btn.width / 2.0))
@@ -366,6 +420,7 @@ def make_animated_gif(
     foreground_path: Path | None = None,
     foreground_layout: dict | None = None,
     max_bytes: int | None = DEFAULT_MAX_BYTES,
+    max_edge: int = MAX_COMPOSE_EDGE,
 ) -> dict:
     if not layers:
         raise ValueError("请至少上传一个动效图层")
@@ -379,11 +434,22 @@ def make_animated_gif(
         bg_frames, bg_durations, bg_animated = [background], [100], False
     bg_w, bg_h = background.size
 
+    # 合成前统一缩边：1080/1242 等素材在 App 里做动效通常也用不到原分
+    edge_scale = _edge_scale(bg_w, bg_h, max_edge)
+    if edge_scale < 0.999:
+        bg_frames = _scale_frames(bg_frames, edge_scale, min_scale=0.05)
+        background = bg_frames[0]
+        bg_w, bg_h = background.size
+
     # 上层动效周期与底图帧率解耦：「循环时长」只控制呼吸/浮动等快慢
     effect_duration_sec = max(0.4, min(8.0, float(duration_sec or DEFAULT_DURATION_SEC)))
     effect_cycle_ms = max(1.0, effect_duration_sec * 1000.0)
 
     if bg_animated:
+        # 底图帧过多时先抽稀，避免后续插出过多合成帧
+        if len(bg_frames) > MAX_COMPOSE_FRAMES:
+            step = int(math.ceil(len(bg_frames) / float(MAX_COMPOSE_FRAMES)))
+            bg_frames, bg_durations = _thin_timeline(bg_frames, bg_durations, step)
         frame_count = len(bg_frames)
         durations_ms = bg_durations
         total_ms = sum(durations_ms) or (frame_count * 100)
@@ -392,7 +458,7 @@ def make_animated_gif(
         frame_ms: int | list[int] = durations_ms
         out_duration_sec = bg_duration_sec
     else:
-        fps = max(6, min(24, int(fps)))
+        fps = max(6, min(18, int(fps)))
         frame_count = max(8, int(round(effect_duration_sec * fps)))
         frame_count = min(frame_count, MAX_COMPOSE_FRAMES)
         frame_ms = int(1000 / fps)
@@ -409,6 +475,8 @@ def make_animated_gif(
             int(button_width),
             int(button_height),
         )
+        if edge_scale < 0.999:
+            global_rect = _scale_rect(global_rect, edge_scale)
 
     has_per_layer_layout = any(layout for _, _, layout in merged_layers)
     single_layer = len(merged_layers) == 1
@@ -417,14 +485,23 @@ def make_animated_gif(
     for path, effects, layout in merged_layers:
         with Image.open(path) as raw:
             btn_img = raw.convert("RGBA")
+        layout_scaled = None
+        if layout and edge_scale < 0.999:
+            layout_scaled = {
+                "x": int(round(float(layout.get("x", 0)) * edge_scale)),
+                "y": int(round(float(layout.get("y", 0)) * edge_scale)),
+                "w": max(1, int(round(float(layout.get("w") or layout.get("width") or 1) * edge_scale))),
+                "h": max(1, int(round(float(layout.get("h") or layout.get("height") or 1) * edge_scale))),
+            }
+        elif layout:
+            layout_scaled = layout
         fallback_rect = None
-        # 多图层各自有摆位时，勿把「当前选中层」的 offset 套到其他层上
-        use_offset_x = 0 if has_per_layer_layout else offset_x
-        use_offset_y = 0 if has_per_layer_layout else offset_y
+        use_offset_x = 0 if has_per_layer_layout else int(round(offset_x * edge_scale))
+        use_offset_y = 0 if has_per_layer_layout else int(round(offset_y * edge_scale))
         if layout is None and not has_per_layer_layout and single_layer:
             fallback_rect = global_rect
         rect = _resolve_layer_rect(
-            layout,
+            layout_scaled,
             btn_img,
             bg_w,
             bg_h,
@@ -433,6 +510,10 @@ def make_animated_gif(
             button_scale=button_scale,
             fallback_rect=fallback_rect,
         )
+        # 预缩到布局尺寸，避免每帧从大图重采样
+        bx, by, bw, bh = rect
+        if btn_img.size != (bw, bh):
+            btn_img = btn_img.resize((bw, bh), Image.Resampling.BILINEAR)
         layer_images.append((btn_img, list(effects), rect))
 
     foreground_img: Image.Image | None = None
@@ -440,22 +521,33 @@ def make_animated_gif(
     if foreground_path and foreground_path.is_file():
         with Image.open(foreground_path) as fg_raw:
             foreground_img = fg_raw.convert("RGBA")
+        fg_layout = foreground_layout
+        if fg_layout and edge_scale < 0.999:
+            fg_layout = {
+                "x": int(round(float(fg_layout.get("x", 0)) * edge_scale)),
+                "y": int(round(float(fg_layout.get("y", 0)) * edge_scale)),
+                "w": max(1, int(round(float(fg_layout.get("w") or fg_layout.get("width") or 1) * edge_scale))),
+                "h": max(1, int(round(float(fg_layout.get("h") or fg_layout.get("height") or 1) * edge_scale))),
+            }
         foreground_rect = _resolve_layer_rect(
-            foreground_layout,
+            fg_layout,
             foreground_img,
             bg_w,
             bg_h,
-            offset_x=0 if (foreground_layout or has_per_layer_layout) else offset_x,
-            offset_y=0 if (foreground_layout or has_per_layer_layout) else offset_y,
+            offset_x=0 if (foreground_layout or has_per_layer_layout) else int(round(offset_x * edge_scale)),
+            offset_y=0 if (foreground_layout or has_per_layer_layout) else int(round(offset_y * edge_scale)),
             button_scale=button_scale,
             fallback_rect=None,
         )
+        fx, fy, fw, fh = foreground_rect
+        if foreground_img.size != (fw, fh):
+            foreground_img = foreground_img.resize((fw, fh), Image.Resampling.BILINEAR)
 
     frames: list[Image.Image] = []
     out_durations: list[int] = []
     elapsed_ms = 0.0
-    # 动效至少按约 12fps 采样，但总帧数封顶，避免慢速底图插出上百帧
-    effect_sample_ms = max(40.0, effect_cycle_ms / max(8.0, effect_duration_sec * 12.0))
+    # 动效采样约 10fps，总帧封顶
+    effect_sample_ms = max(50.0, effect_cycle_ms / max(8.0, effect_duration_sec * 10.0))
     if bg_animated:
         total_ms = sum(durations_ms) or 1.0
         est_frames = 0
@@ -559,10 +651,11 @@ def make_animated_gif(
         "maxBytes": save_info.get("maxBytes"),
         "framesReduced": save_info.get("framesReduced", False),
         "frameThinStep": save_info.get("frameThinStep", 1),
-        "scaled": save_info.get("scaled", False),
-        "scale": save_info.get("scale", 1.0),
-        "colors": save_info.get("colors", 255),
+        "scaled": save_info.get("scaled", False) or edge_scale < 0.999,
+        "scale": round(float(save_info.get("scale") or 1.0) * edge_scale, 3),
+        "colors": save_info.get("colors", DEFAULT_GIF_COLORS),
         "uncompressedSize": save_info.get("uncompressedSize"),
+        "composeEdge": max(bg_w, bg_h) if edge_scale >= 0.999 else MAX_COMPOSE_EDGE,
     }
 
 

@@ -12,6 +12,7 @@ from project_credentials import (
     get_project_llm_config,
     image_backend_allowed,
     load_lovart_credentials_for_project,
+    lovart_enabled_for_project,
     require_project_llm_config,
 )
 
@@ -36,7 +37,10 @@ class ProjectCredentialsTests(unittest.TestCase):
         hll = load_lovart_credentials_for_project("画啦啦")
         xdt = load_lovart_credentials_for_project("小灯塔")
         self.assertEqual(hll, [("ak_hll", "sk_hll")])
-        self.assertEqual(xdt, [("ak_xdt", "sk_xdt")])
+        # 小灯塔已停用 Lovart，即使 env 有 Key 也不加载
+        self.assertEqual(xdt, [])
+        self.assertTrue(lovart_enabled_for_project("画啦啦"))
+        self.assertFalse(lovart_enabled_for_project("小灯塔"))
 
     @patch.dict(os.environ, {"DEEPSEEK_API_KEY": "global-only"}, clear=False)
     def test_no_global_fallback(self):
@@ -120,8 +124,9 @@ class ProjectCredentialsTests(unittest.TestCase):
     def test_available_models_xdt_gpt_image_without_polish_gpt(self):
         models = get_available_models("小灯塔")
         values = [b["value"] for b in models["image_backends"]]
-        self.assertIn("lovart", values)
+        self.assertNotIn("lovart", values)
         self.assertIn("gpt:gpt-image-2", values)
+        self.assertFalse(image_backend_allowed("小灯塔", "lovart"))
         analyze_values = [m["value"] for m in models["analyze_models"]]
         self.assertIn("", analyze_values)
         self.assertIn("gpt-5.4", analyze_values)

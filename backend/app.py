@@ -46,6 +46,7 @@ from project_credentials import (
     gpt_image_available_for_project,
     image_backend_allowed,
     load_lovart_credentials_for_project,
+    lovart_enabled_for_project,
     require_project_llm_config,
 )
 from lovart_queue import (
@@ -1401,6 +1402,8 @@ def call_lovart(
 
 def check_lovart_reachable(project: str, timeout: int = 8) -> tuple[bool, str]:
     """快速探测 Lovart API 是否可达（用于生图/智能提取前置检查）。"""
+    if not lovart_enabled_for_project(project):
+        return False, f"{project} 已停用 Lovart"
     creds = load_lovart_credentials_for_project(project)
     if not creds:
         slug = require_project_llm_config(project).slug
@@ -5204,11 +5207,14 @@ if __name__ == '__main__':
     print(f"   打开浏览器访问: http://localhost:{listen_port}")
     print(f"   项目目录: {BASE_DIR}")
     print(f"   项目组目录: {PROJECTS_DIR}")
-    print(f"   生图后端: Lovart（按项目组 Key，见 LOVART_*_HLL / LOVART_*_XDT）")
+    print(f"   生图后端: 画啦啦 Lovart（LOVART_*_HLL）/ 小灯塔 GPT（Lovart 已停用）")
     print(f"   Lovart API: {LOVART_BASE_URL}")
     for pname in ALLOWED_PROJECTS:
         creds = load_lovart_credentials_for_project(pname)
-        print(f"   · {pname}: Lovart {len(creds)} 组 Key")
+        if creds:
+            print(f"   · {pname}: Lovart {len(creds)} 组 Key")
+        else:
+            print(f"   · {pname}: Lovart 已停用/未配置")
         try:
             require_project_llm_config(pname)
             print(f"     DeepSeek: 已配置 DEEPSEEK_API_KEY_{project_slug(pname)}")

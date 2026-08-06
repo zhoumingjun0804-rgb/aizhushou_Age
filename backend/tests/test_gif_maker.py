@@ -203,8 +203,28 @@ class TestGifMaker(unittest.TestCase):
             self.assertEqual(meta["effectDurationSec"], 1.0)
             # 4 秒底图 + 1 秒动效周期，细分后应远多于原 4 帧（总帧有上限）
             self.assertGreaterEqual(meta["frameCount"], 8)
-            self.assertLessEqual(meta["frameCount"], 48)
+            self.assertLessEqual(meta["frameCount"], 36)
             self.assertAlmostEqual(meta["durationSec"], 4.0, places=1)
+            self.assertTrue(out.is_file())
+
+    def test_large_canvas_downscales_for_speed_and_size(self):
+        """大底图会先限边再合成，体积更易控。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bg = tmp / "bg.png"
+            btn = tmp / "btn.png"
+            out = tmp / "out.gif"
+            Image.new("RGBA", (1242, 2208), (40, 50, 60, 255)).save(bg)
+            Image.new("RGBA", (120, 60), (255, 80, 0, 255)).save(btn)
+            meta = make_breathing_gif(
+                bg, btn, out,
+                button_x=500, button_y=1000, button_width=120, button_height=60,
+                duration_sec=1.6,
+                max_bytes=512 * 1024,
+            )
+            self.assertTrue(meta["underLimit"])
+            self.assertLessEqual(max(meta["width"], meta["height"]), 720)
+            self.assertLessEqual(meta["fileSize"], 512 * 1024)
             self.assertTrue(out.is_file())
 
     def test_layer_only_without_background(self):
