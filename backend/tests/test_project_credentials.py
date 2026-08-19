@@ -55,7 +55,7 @@ class ProjectCredentialsTests(unittest.TestCase):
             "DEEPSEEK_API_KEY_HLL": "ds_hll",
             "OPENAI_IMAGE_PROVIDER_HLL": "azure",
             "OPENAI_API_KEY_HLL": "cf88022e744b473fba1664303b725371",
-            "OPENAI_IMAGE_BASE_URL_HLL": "https://llm-risk-coding.61info.cn/api/azure-open-ai-hll-smart-draw/openai",
+            "OPENAI_IMAGE_BASE_URL_HLL": "https://liuyi-llm-risk.61info.cn/api/gptproto",
             "DEEPSEEK_BASE_URL": "https://agenthub.vipthink.cn",
         },
         clear=True,
@@ -92,7 +92,7 @@ class ProjectCredentialsTests(unittest.TestCase):
             "DEEPSEEK_API_KEY_XDT": "ds_xdt",
             "OPENAI_API_KEY_XDT": "50698569116849458f0bf35abc066b76",
             "OPENAI_IMAGE_BASE_URL_XDT": (
-                "https://llm-risk-coding.61info.cn/api/azure-open-ai-xdt-smart-draw/openai"
+                "https://liuyi-llm-risk.61info.cn/api/gptproto"
             ),
         },
         clear=True,

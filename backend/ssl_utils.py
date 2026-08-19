@@ -4,11 +4,12 @@ import ssl
 import urllib.request
 from urllib.parse import urlparse
 
-# 公司内网网关必须直连；走 HTTP_PROXY 易出现 SSL EOF / 504
+# 公司内网网关必须直连；走 HTTP_PROXY 易出现 SSL EOF / 504 / Cloudflare 1010
 _DIRECT_HOST_SUFFIXES = (
     "61info.cn",
     "agenthub.vipthink.cn",
     "vipthink.cn",
+    "gptproto.com",
 )
 
 

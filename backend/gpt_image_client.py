@@ -60,8 +60,10 @@ def _is_agenthub(base_url: str) -> bool:
 
 def is_azure_gateway(base_url: str) -> bool:
     lower = (base_url or "").lower()
-    return "azure-open-ai" in lower or (
-        "61info.cn" in lower and "/openai" in lower
+    return (
+        "azure-open-ai" in lower
+        or "/gptproto" in lower
+        or ("61info.cn" in lower and "/openai" in lower)
     )
 
 
@@ -321,6 +323,12 @@ def _friendly_error(status: int, payload: dict | str) -> str:
     else:
         text = str(payload)
     lower = text.lower()
+    if "cloudflare" in lower or "cf-error" in lower:
+        return (
+            "GPT 请求被 Cloudflare 拦截（1010）：外网 HTTP_PROXY 打到了 gptproto.com。"
+            "钛林生图须直连 https://liuyi-llm-risk.61info.cn/api/gptproto，"
+            "不要走 Lovart 用的香港代理。"
+        )
     if "country" in lower and ("not supported" in lower or "region" in lower or "territory" in lower):
         return (
             "OpenAI 官方 API 不支持当前出口 IP 所在地区。"
@@ -334,14 +342,15 @@ def _friendly_error(status: int, payload: dict | str) -> str:
         return f"GPT 生图额度或频率受限：{text}"
     if "未对外提供服务" in text or "未对外提供服务" in str(payload):
         return (
-            "当前项目组的 GPT Key 与网关路径不匹配。"
-            "请核对 OPENAI_API_KEY_* 与 OPENAI_IMAGE_BASE_URL_* 是否为同一项目组（画啦啦/小灯塔各一套）。"
+            "钛林尚未对该 appId 开放 gptproto 服务（不是路径配错）。"
+            "请在钛林开通 gpt-image-2 后再把新 Key 写入 OPENAI_API_KEY_HLL。"
             f"（{text}）"
         )
     if status == 404:
         return (
-            "GPT 生图网关路径错误（404）。请核对 OPENAI_IMAGE_BASE_URL_HLL / _XDT "
-            "是否与项目组一致（如 azure-open-ai-hll-smart-draw / xdt-smart-draw）。"
+            "GPT 生图网关路径错误（404）。"
+            "请把 OPENAI_IMAGE_BASE_URL_HLL 设为 "
+            "https://liuyi-llm-risk.61info.cn/api/gptproto"
         )
     if status >= 500 or "timeout" in lower:
         return f"GPT 生图服务暂时不可用：{text}"
@@ -360,9 +369,17 @@ def _friendly_error(status: int, payload: dict | str) -> str:
 
 
 def _auth_headers(auth: GptAuth, content_type: str) -> dict[str, str]:
-    headers = {"Content-Type": content_type}
+    headers = {
+        "Content-Type": content_type,
+        "User-Agent": "Aizhushou-GPT/1.0",
+        "Accept": "application/json",
+    }
     if auth.api_key_header:
+        # Azure OpenAI 用 api-key；钛林 gptproto 要求 Bearer 或 x-api-key
         headers["api-key"] = auth.api_key_header
+        headers["Ocp-Apim-Subscription-Key"] = auth.api_key_header
+        headers["x-api-key"] = auth.api_key_header
+        headers["Authorization"] = f"Bearer {auth.api_key_header}"
     elif auth.bearer:
         headers["Authorization"] = f"Bearer {auth.bearer}"
     return headers
@@ -520,7 +537,7 @@ class GptImageClient:
         self.provider = (provider or "official").strip().lower()
         self.auth = resolve_gpt_image_auth(api_key, fallback_bearer_key, base_url, self.provider)
         # 官方 OpenAI 需代理；公司 Azure / AgentHub 内网直连
-        self.use_proxy = self.provider == "official"
+        self.use_proxy = self.provider == "official" and not is_azure_gateway(base_url)
         self.base_url = base_url.rstrip("/")
         if self.base_url.endswith("/v1"):
             self.base_url = self.base_url[: -len("/v1")]
@@ -759,7 +776,7 @@ def call_gpt_chat(
     auth = resolve_gpt_image_auth(api_key, fallback_bearer_key, base_url, provider)
     if not auth.bearer and not auth.api_key_header:
         return None, "未配置 GPT API Key"
-    use_proxy = provider == "official"
+    use_proxy = provider == "official" and not is_azure_gateway(base_url)
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
     if provider == "agenthub":
         url = append_auth_query(url, auth)
