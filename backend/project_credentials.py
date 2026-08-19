@@ -110,6 +110,17 @@ def _is_agenthub_url(base_url: str) -> bool:
     return "agenthub" in (base_url or "").lower()
 
 
+def azure_image_base_mismatch(slug: str, base_url: str) -> str | None:
+    """小灯塔勿指向不存在的 hll-smart-draw 路径。"""
+    lower = (base_url or "").lower()
+    if slug == "XDT" and "hll-smart-draw" in lower:
+        return (
+            "小灯塔的 OPENAI_IMAGE_BASE_URL_XDT 配成了 azure-open-ai-hll-smart-draw（网关无此路径）。"
+            "请改为 azure-open-ai-xdt-smart-draw，并使用有效的 OPENAI_API_KEY_XDT。"
+        )
+    return None
+
+
 def _resolve_gpt_image_provider(slug: str, image_base: str) -> str:
     explicit = (_env(f"OPENAI_IMAGE_PROVIDER_{slug}") or _env("OPENAI_IMAGE_PROVIDER") or "").lower()
     if explicit in ("azure", "company", "azure-openai"):

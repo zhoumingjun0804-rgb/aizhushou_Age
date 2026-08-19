@@ -39,6 +39,7 @@ from project_credentials import (
     ProjectCredentialsError,
     ProjectLlmConfig,
     analyze_model_allowed,
+    azure_image_base_mismatch,
     credentials_status,
     get_available_models,
     get_gpt_chat_settings,
@@ -352,6 +353,9 @@ def call_openai_chat(
     chat_cfg = get_gpt_chat_settings(config)
     if not chat_cfg.api_key:
         return None, f"未配置 OPENAI_API_KEY_{config.slug}"
+    mismatch = azure_image_base_mismatch(config.slug, chat_cfg.base_url)
+    if mismatch:
+        return None, mismatch
     return call_gpt_chat(
         messages,
         api_key=chat_cfg.api_key,
@@ -1659,6 +1663,9 @@ def call_gpt(
         if image_cfg.provider == "agenthub":
             return None, f"{local_project} 未配置 OPENAI_APP_KEY_{cfg.slug}（AgentHub 生图）"
         return None, f"{local_project} 未配置 OPENAI_API_KEY_{cfg.slug}（官方 OpenAI 生图）"
+    mismatch = azure_image_base_mismatch(cfg.slug, image_cfg.base_url)
+    if mismatch:
+        return None, mismatch
 
     if image_cfg.provider == "official":
         key_err = validate_official_gpt_image_key(image_cfg.api_key, cfg.slug, local_project)

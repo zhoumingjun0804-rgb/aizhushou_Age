@@ -12,10 +12,10 @@ DEFAULT_DURATION_SEC = 1.6
 DEFAULT_MAX_BYTES = 1024 * 1024
 # 合成时上限：慢速底图插帧再多也不超过，避免动辄上百帧撑爆体积
 MAX_COMPOSE_FRAMES = 36
-# 合成前最长边像素（一般 App 动图无需更大，显著加速并缩小体积）
-MAX_COMPOSE_EDGE = 720
-# 默认调色板色数（255 体积大、编码慢；128 观感足够）
-DEFAULT_GIF_COLORS = 128
+# 合成前最长边：1080 对齐常见竖图短边观感；超过才缩，避免 720 把开屏压糊
+MAX_COMPOSE_EDGE = 1080
+# 默认尽量满色；体积超限时再减色
+DEFAULT_GIF_COLORS = 255
 SCALE_PRESETS = {"weak": 0.04, "medium": 0.07, "strong": 0.11}
 FLOAT_PRESETS = {"weak": 4, "medium": 8, "strong": 14}
 SWAY_PRESETS = {"weak": 4, "medium": 8, "strong": 14}
@@ -125,6 +125,7 @@ def _scale_frames(
     scale: float,
     *,
     min_scale: float = 0.35,
+    resample: Image.Resampling = Image.Resampling.LANCZOS,
 ) -> list[Image.Image]:
     scale = float(scale)
     if scale >= 0.999 or not frames:
@@ -136,8 +137,7 @@ def _scale_frames(
     nh = max(1, int(round(h * scale)))
     if (nw, nh) == (w, h):
         return frames
-    # 体积压缩用 BILINEAR 足够，比 LANCZOS 快很多
-    return [f.resize((nw, nh), Image.Resampling.BILINEAR) for f in frames]
+    return [f.resize((nw, nh), resample) for f in frames]
 
 
 def _encode_transparent_gif_bytes(
@@ -191,19 +191,19 @@ def _save_gif_under_max_bytes(
     enforce = bool(max_bytes and max_bytes > 0)
     limit = int(max_bytes) if enforce else 0
 
-    # 起点：略降色 + 帧数已由合成阶段控制；再逐级加压，避免旧版 100+ 次全量编码
+    # 先保分辨率：抽帧/减色优先，缩小尺寸放到后面，避免默认就糊
     attempts: list[tuple[float, int, int]] = [
-        (1.0, 1, DEFAULT_GIF_COLORS),
-        (1.0, 2, DEFAULT_GIF_COLORS),
-        (1.0, 1, 96),
-        (0.9, 2, DEFAULT_GIF_COLORS),
-        (0.85, 2, 96),
+        (1.0, 1, 255),
+        (1.0, 2, 255),
+        (1.0, 1, 192),
+        (1.0, 2, 192),
+        (1.0, 2, 128),
+        (0.92, 2, 192),
+        (0.88, 3, 128),
         (0.8, 3, 96),
-        (0.75, 3, 64),
         (0.7, 4, 64),
         (0.6, 4, 48),
-        (0.5, 5, 48),
-        (0.45, 6, 32),
+        (0.5, 6, 32),
         (0.4, 8, 32),
     ]
     if not enforce:
@@ -218,7 +218,7 @@ def _save_gif_under_max_bytes(
         work_f = _scale_frames(work_f, scale)
         data = _encode_transparent_gif_bytes(work_f, work_d, colors=colors)
         size = len(data)
-        if uncompressed_size is None and scale >= 0.999 and thin == 1 and colors >= DEFAULT_GIF_COLORS:
+        if uncompressed_size is None and scale >= 0.999 and thin == 1 and colors >= 255:
             uncompressed_size = size
         info = {
             "fileSize": size,
@@ -437,7 +437,9 @@ def make_animated_gif(
     # 合成前统一缩边：1080/1242 等素材在 App 里做动效通常也用不到原分
     edge_scale = _edge_scale(bg_w, bg_h, max_edge)
     if edge_scale < 0.999:
-        bg_frames = _scale_frames(bg_frames, edge_scale, min_scale=0.05)
+        bg_frames = _scale_frames(
+            bg_frames, edge_scale, min_scale=0.05, resample=Image.Resampling.LANCZOS
+        )
         background = bg_frames[0]
         bg_w, bg_h = background.size
 
@@ -513,7 +515,7 @@ def make_animated_gif(
         # 预缩到布局尺寸，避免每帧从大图重采样
         bx, by, bw, bh = rect
         if btn_img.size != (bw, bh):
-            btn_img = btn_img.resize((bw, bh), Image.Resampling.BILINEAR)
+            btn_img = btn_img.resize((bw, bh), Image.Resampling.LANCZOS)
         layer_images.append((btn_img, list(effects), rect))
 
     foreground_img: Image.Image | None = None
@@ -541,7 +543,7 @@ def make_animated_gif(
         )
         fx, fy, fw, fh = foreground_rect
         if foreground_img.size != (fw, fh):
-            foreground_img = foreground_img.resize((fw, fh), Image.Resampling.BILINEAR)
+            foreground_img = foreground_img.resize((fw, fh), Image.Resampling.LANCZOS)
 
     frames: list[Image.Image] = []
     out_durations: list[int] = []

@@ -1,5 +1,24 @@
 [
   {
+    "id": "d34baaa3",
+    "timestamp": "2026-08-19T18:11:25",
+    "mode": "gpt_chat",
+    "prompt": "hi",
+    "title": "hi",
+    "description": "",
+    "meta_tags": [
+      "💬GPT对话"
+    ],
+    "source": "gpt_chat",
+    "schema_version": 1,
+    "project": "小灯塔",
+    "thread_id": "e74c5a1f0376",
+    "output_images": [
+      "variant_72a6f84aa9604f3c84192603bb0cc499.png"
+    ],
+    "variants_count": 1
+  },
+  {
     "id": "f057cf81",
     "timestamp": "2026-07-30T13:35:09",
     "mode": "text2img",

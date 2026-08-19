@@ -58,8 +58,8 @@ class ProjectCredentialsTests(unittest.TestCase):
             "LOVART_SECRET_KEY_HLL": "sk_hll",
             "DEEPSEEK_API_KEY_HLL": "ds_hll",
             "OPENAI_IMAGE_PROVIDER_HLL": "azure",
-            "OPENAI_API_KEY_HLL": "cf88022e744b473fba1664303b725371",
-            "OPENAI_IMAGE_BASE_URL_HLL": "https://llm-risk-coding.61info.cn/api/azure-open-ai-hll-smart-draw/openai",
+            "OPENAI_API_KEY_HLL": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+            "OPENAI_IMAGE_BASE_URL_HLL": "https://liuyi-llm-risk.61info.cn/api/gptproto",
             "DEEPSEEK_BASE_URL": "https://agenthub.vipthink.cn",
         },
         clear=True,
@@ -73,9 +73,9 @@ class ProjectCredentialsTests(unittest.TestCase):
         self.assertIn("", analyze_values)
         self.assertIn("gpt-5.4", analyze_values)
         cfg = get_project_llm_config("画啦啦")
-        self.assertEqual(get_project_gpt_api_key("HLL"), "cf88022e744b473fba1664303b725371")
+        self.assertEqual(get_project_gpt_api_key("HLL"), "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d")
         chat = get_gpt_chat_settings(cfg)
-        self.assertEqual(chat.api_key, "cf88022e744b473fba1664303b725371")
+        self.assertEqual(chat.api_key, "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d")
         self.assertEqual(chat.provider, "azure")
 
     @patch.dict(
@@ -94,9 +94,9 @@ class ProjectCredentialsTests(unittest.TestCase):
         os.environ,
         {
             "DEEPSEEK_API_KEY_XDT": "ds_xdt",
-            "OPENAI_API_KEY_XDT": "50698569116849458f0bf35abc066b76",
+            "OPENAI_API_KEY_XDT": "e9f8d7c6b5a4938271605f4e3d2c1b0a",
             "OPENAI_IMAGE_BASE_URL_XDT": (
-                "https://llm-risk-coding.61info.cn/api/azure-open-ai-xdt-smart-draw/openai"
+                "https://liuyi-llm-risk.61info.cn/api/gptproto"
             ),
         },
         clear=True,
@@ -107,7 +107,7 @@ class ProjectCredentialsTests(unittest.TestCase):
         self.assertIn("gpt:gpt-image-2", values)
         image_cfg = get_gpt_image_settings(get_project_llm_config("小灯塔"))
         self.assertEqual(image_cfg.provider, "azure")
-        self.assertEqual(get_project_gpt_api_key("XDT"), "50698569116849458f0bf35abc066b76")
+        self.assertEqual(get_project_gpt_api_key("XDT"), "e9f8d7c6b5a4938271605f4e3d2c1b0a")
 
     @patch.dict(
         os.environ,
@@ -131,3 +131,26 @@ class ProjectCredentialsTests(unittest.TestCase):
         self.assertIn("", analyze_values)
         self.assertIn("gpt-5.4", analyze_values)
         self.assertTrue(analyze_model_allowed("小灯塔", "gpt-5.4"))
+
+    def test_azure_image_base_mismatch(self):
+        from project_credentials import azure_image_base_mismatch
+
+        self.assertIn(
+            "xdt-smart-draw",
+            azure_image_base_mismatch(
+                "XDT",
+                "https://liuyi-llm-risk.61info.cn/api/azure-open-ai-hll-smart-draw/openai",
+            ),
+        )
+        self.assertIsNone(
+            azure_image_base_mismatch(
+                "XDT",
+                "https://liuyi-llm-risk.61info.cn/api/gptproto",
+            )
+        )
+        self.assertIsNone(
+            azure_image_base_mismatch(
+                "HLL",
+                "https://liuyi-llm-risk.61info.cn/api/gptproto",
+            )
+        )

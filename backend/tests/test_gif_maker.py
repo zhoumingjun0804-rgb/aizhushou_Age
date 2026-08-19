@@ -223,7 +223,8 @@ class TestGifMaker(unittest.TestCase):
                 max_bytes=512 * 1024,
             )
             self.assertTrue(meta["underLimit"])
-            self.assertLessEqual(max(meta["width"], meta["height"]), 720)
+            self.assertLessEqual(max(meta["width"], meta["height"]), 1080)
+            self.assertGreaterEqual(max(meta["width"], meta["height"]), 1000)
             self.assertLessEqual(meta["fileSize"], 512 * 1024)
             self.assertTrue(out.is_file())
 
