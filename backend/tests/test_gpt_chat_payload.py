@@ -4,6 +4,7 @@ from gpt_image_client import (
     GptAuth,
     _auth_headers,
     _friendly_error,
+    _retry_wait_seconds,
     build_chat_completion_payload,
     chat_completion_token_param,
     is_azure_gateway,
@@ -96,6 +97,32 @@ class TestAzureAuthHeaders(unittest.TestCase):
             is_azure_gateway("https://liuyi-llm-risk.61info.cn/api/gptproto")
         )
         self.assertFalse(is_azure_gateway("https://api.openai.com"))
+
+    def test_overloaded_is_not_quota_error(self):
+        msg = _friendly_error(
+            429,
+            {
+                "error": {
+                    "message": (
+                        "The model is overloaded. Please try again later.  "
+                        "tid:701d7fede7890fd8b7a54931fff47dfd_1787199691584"
+                    )
+                }
+            },
+        )
+        self.assertIn("模型当前繁忙", msg)
+        self.assertNotIn("额度或频率受限", msg)
+
+    def test_real_quota_429_still_says_limited(self):
+        msg = _friendly_error(429, {"error": {"message": "You exceeded your current quota"}})
+        self.assertIn("额度或频率受限", msg)
+
+    def test_overloaded_retry_waits_longer(self):
+        self.assertGreaterEqual(
+            _retry_wait_seconds(0, "GPT 生图模型当前繁忙，请稍后再试"),
+            5,
+        )
+        self.assertEqual(_retry_wait_seconds(0, "GPT 生图额度或频率受限"), 1)
 
 
 if __name__ == "__main__":

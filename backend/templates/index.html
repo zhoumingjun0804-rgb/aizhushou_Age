@@ -2819,7 +2819,7 @@ function renderGptChatThread(thread) {
         var text = document.createElement('div');
         if (role === 'assistant') {
             if (msg.status === 'pending') text.textContent = '生成中…';
-            else if (msg.status === 'error') text.textContent = msg.error || '生成失败';
+            else if (msg.status === 'error') text.textContent = retryableGenerationHint(msg.error || '生成失败');
             else text.textContent = msg.text || '';
         } else {
             text.textContent = msg.text || '';
@@ -2900,7 +2900,7 @@ async function pollGptChatJob(jobId) {
                 renderGptChatThread(await fetchGptChatThread(gptChatThreadId));
             } catch (ignore) {}
         }
-        alert('GPT 任务轮询失败: ' + e.message);
+        alert('GPT 任务轮询失败: ' + retryableGenerationHint(e.message));
     } finally {
         gptChatPollJobId = null;
     }
@@ -2921,6 +2921,7 @@ async function sendGptChatMessage() {
     }
     gptChatSending = true;
     setGptChatSendDisabled(true);
+    var retry = false;
     try {
         if (!gptChatThreadId) {
             var createRes = await authFetch('/api/gpt-chat/threads', {
@@ -2957,11 +2958,13 @@ async function sendGptChatMessage() {
         renderGptChatThread(data.thread);
         if (data.job_id) pollGptChatJob(data.job_id);
     } catch (e) {
-        alert('GPT 聊天发送失败: ' + e.message);
+        if (confirmRetryGeneration(e)) retry = true;
+        else alert('GPT 聊天发送失败: ' + retryableGenerationHint(e.message));
     } finally {
         gptChatSending = false;
         setGptChatSendDisabled(false);
     }
+    if (retry) return sendGptChatMessage();
 }
 
 async function openGptChatThread(threadId) {
@@ -3418,6 +3421,34 @@ function setGenerateButtonsDisabled(disabled) {
     });
 }
 
+function isRetryableGenerationError(msg) {
+    var s = String(msg || '');
+    return /模型当前繁忙|overloaded|额度或频率受限|暂时不可用|队列已满|请稍后再试/.test(s);
+}
+
+function retryableGenerationHint(msg) {
+    var text = String(msg || '生成失败');
+    if (!isRetryableGenerationError(text)) return text;
+    return text + ' 可稍后再次点击生成。';
+}
+
+function confirmRetryGeneration(err) {
+    var msg = (err && err.message) ? err.message : String(err || '生成失败');
+    if (!isRetryableGenerationError(msg)) return false;
+    return confirm(msg + '\n\n这是暂时性问题，是否再次重试？');
+}
+
+function noteRetryableGenerationFailure(errEl, err) {
+    var msg = (err && err.message) ? err.message : String(err || '生成失败');
+    if (errEl) {
+        errEl.textContent = retryableGenerationHint(msg);
+        errEl.style.display = 'block';
+    } else if (!isRetryableGenerationError(msg)) {
+        alert('生成失败: ' + msg);
+    }
+    return confirmRetryGeneration(err || msg);
+}
+
 async function pollGenerationJob(jobId, onDone) {
     var maxWait = 1800;
     var started = Date.now();
@@ -3462,6 +3493,7 @@ async function submitGenerationJob(formData, kind) {
 }
 
 async function runGenerationFlow(formData, kind) {
+    var retry = false;
     document.getElementById('loadingCard').style.display = 'block';
     updateLoadingMessage('提交任务…');
     setGenerateButtonsDisabled(true);
@@ -3495,10 +3527,20 @@ async function runGenerationFlow(formData, kind) {
         loadHistory();
         refreshGenerationJobs();
         notifyToolTaskComplete(true);
+    } catch (e) {
+        if (confirmRetryGeneration(e)) {
+            retry = true;
+        } else if (isRetryableGenerationError((e && e.message) || e)) {
+            refreshGenerationJobs();
+            return;
+        } else {
+            throw e;
+        }
     } finally {
         document.getElementById('loadingCard').style.display = 'none';
         setGenerateButtonsDisabled(false);
     }
+    if (retry) return runGenerationFlow(formData, kind);
 }
 
 async function refreshGenerationJobs() {
@@ -3535,7 +3577,7 @@ async function refreshGenerationJobs() {
                     loadHistory();
                     notifyToolTaskComplete(true);
                 } else if (err) {
-                    alert('生成失败: ' + err.message);
+                    alert('生成失败: ' + retryableGenerationHint(err.message));
                 }
                 refreshGenerationJobs();
             });
@@ -3584,7 +3626,7 @@ function resumeGenerationJob(jobId) {
             document.getElementById('actionsSection').style.display = 'flex';
             loadHistory();
         } else if (err) {
-            alert('生成失败: ' + err.message);
+            alert('生成失败: ' + retryableGenerationHint(err.message));
         }
         refreshGenerationJobs();
     });
@@ -4699,7 +4741,7 @@ function renderVariants(vars) {
     if (!valid.length) {
         var errorMsg = (vars || []).map(function(v) { return v && v.error; }).filter(Boolean)[0] || '没有成功生成任何图片';
         grid.innerHTML = '<div class="variant-error" style="grid-column:1/-1;padding:16px;border-radius:12px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fecaca;line-height:1.6;">' +
-            '生成失败：' + errorMsg +
+            '生成失败：' + retryableGenerationHint(errorMsg) +
             '</div>';
         hideGenerationSizeNotice();
         return;
@@ -6728,6 +6770,7 @@ async function generateSplashHero() {
     appendProjectContext(formData);
     appendSplashHeroRefs(formData);
 
+    var retry = false;
     try {
         var submitted = await submitGenerationJob(formData, 'with_prompt');
         var variants = [];
@@ -6747,22 +6790,15 @@ async function generateSplashHero() {
             notifyToolTaskComplete(true);
         } else {
             var msg = (variants.map(function(v) { return v && v.error; }).filter(Boolean)[0]) || '生成失败';
-            if (errEl) {
-                errEl.textContent = msg;
-                errEl.style.display = 'block';
-            }
+            retry = noteRetryableGenerationFailure(errEl, new Error(msg));
         }
     } catch (err) {
-        if (errEl) {
-            errEl.textContent = err.message || String(err);
-            errEl.style.display = 'block';
-        } else {
-            alert('生成失败: ' + (err.message || String(err)));
-        }
+        retry = noteRetryableGenerationFailure(errEl, err);
     } finally {
         if (loading) loading.style.display = 'none';
         if (btn) btn.disabled = false;
     }
+    if (retry) return generateSplashHero();
 }
 
 // ─── 直播间：GPT Image 2 生图 ─────────────────────────────────
@@ -6949,6 +6985,7 @@ async function generateLiveroom() {
     appendProjectContext(formData);
     appendLiveroomRefs(formData);
 
+    var retry = false;
     try {
         var submitted = await submitGenerationJob(formData, 'with_prompt');
         var variants = [];
@@ -6968,22 +7005,15 @@ async function generateLiveroom() {
             notifyToolTaskComplete(true);
         } else {
             var msg = (variants.map(function(v) { return v && v.error; }).filter(Boolean)[0]) || '生成失败';
-            if (errEl) {
-                errEl.textContent = msg;
-                errEl.style.display = 'block';
-            }
+            retry = noteRetryableGenerationFailure(errEl, new Error(msg));
         }
     } catch (err) {
-        if (errEl) {
-            errEl.textContent = err.message || String(err);
-            errEl.style.display = 'block';
-        } else {
-            alert('生成失败: ' + (err.message || String(err)));
-        }
+        retry = noteRetryableGenerationFailure(errEl, err);
     } finally {
         if (loading) loading.style.display = 'none';
         if (btn) btn.disabled = false;
     }
+    if (retry) return generateLiveroom();
 }
 
 function initLiveroomUploadZones() {
@@ -9545,6 +9575,7 @@ async function generateLandingModule() {
     appendLandingGenSize(formData);
     appendProjectContext(formData);
     appendLandingGenRefs(formData);
+    var retry = false;
     try {
         var submitted = await submitGenerationJob(formData, 'with_prompt');
         var variants = [];
@@ -9564,22 +9595,15 @@ async function generateLandingModule() {
             notifyToolTaskComplete(true);
         } else {
             var msg = (variants.map(function(v) { return v && v.error; }).filter(Boolean)[0]) || '生成失败';
-            if (errEl) {
-                errEl.textContent = msg;
-                errEl.style.display = 'block';
-            }
+            retry = noteRetryableGenerationFailure(errEl, new Error(msg));
         }
     } catch (err) {
-        if (errEl) {
-            errEl.textContent = err.message || String(err);
-            errEl.style.display = 'block';
-        } else {
-            alert('生成失败: ' + (err.message || String(err)));
-        }
+        retry = noteRetryableGenerationFailure(errEl, err);
     } finally {
         if (loading) loading.style.display = 'none';
         if (btn) btn.disabled = false;
     }
+    if (retry) return generateLandingModule();
 }
 
 function initLandingUploadZones() {

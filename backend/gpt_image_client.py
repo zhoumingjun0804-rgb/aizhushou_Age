@@ -312,6 +312,17 @@ def _connection_error_message(exc: Exception) -> str | None:
     return None
 
 
+def _is_model_overloaded(text: str) -> bool:
+    lower = (text or "").lower()
+    return "overloaded" in lower or "模型当前繁忙" in (text or "")
+
+
+def _retry_wait_seconds(attempt: int, err_text: str = "") -> float:
+    if _is_model_overloaded(err_text):
+        return float(min(30, 5 * (2 ** attempt)))
+    return float(2 ** attempt)
+
+
 def _friendly_error(status: int, payload: dict | str, url: str = "") -> str:
     text = ""
     if isinstance(payload, dict):
@@ -345,6 +356,8 @@ def _friendly_error(status: int, payload: dict | str, url: str = "") -> str:
                 f"（{text}）"
             )
         return f"GPT 生图 Key 无效或无权限：{text}"
+    if _is_model_overloaded(text):
+        return f"GPT 生图模型当前繁忙，请稍后再试：{text}"
     if status == 429 or "rate" in lower or "quota" in lower:
         return f"GPT 生图额度或频率受限：{text}"
     if "未对外提供服务" in text or "未对外提供服务" in str(payload):
@@ -594,7 +607,7 @@ class GptImageClient:
                 return _extract_image_ref(result if isinstance(result, dict) else {}, self.temp_dir)
             last_error = _friendly_error(status, result, url)
             if status in (429, 500, 502, 503, 504) and attempt + 1 < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(_retry_wait_seconds(attempt, last_error))
                 continue
             break
         return None, last_error
@@ -627,7 +640,7 @@ class GptImageClient:
                 return None, "GPT Responses 未返回图片"
             last_error = _friendly_error(status, result, url)
             if status in (429, 500, 502, 503, 504) and attempt + 1 < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(_retry_wait_seconds(attempt, last_error))
                 continue
             if status not in (404, 405):
                 break
@@ -673,7 +686,7 @@ class GptImageClient:
                     return _extract_image_ref(result if isinstance(result, dict) else {}, self.temp_dir)
                 last_error = _friendly_error(status, result, url)
                 if status in (429, 500, 502, 503, 504) and attempt + 1 < retries:
-                    time.sleep(2 ** attempt)
+                    time.sleep(_retry_wait_seconds(attempt, last_error))
                     continue
                 if status not in (404, 405):
                     break
