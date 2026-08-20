@@ -312,27 +312,72 @@ def _connection_error_message(exc: Exception) -> str | None:
     return None
 
 
+def _payload_error_text(payload: dict | str) -> str:
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, dict):
+            for key in ("message", "detail", "msg"):
+                val = err.get(key)
+                if val:
+                    return str(val)
+        elif isinstance(err, str) and err.strip():
+            return err
+        for key in ("message", "msg", "detail"):
+            val = payload.get(key)
+            if val:
+                return str(val)
+    return str(payload) if payload else ""
+
+
+def _payload_http_status(status: int, payload) -> int:
+    status_i = int(status or 0)
+    if not isinstance(payload, dict):
+        return status_i
+    nested = payload.get("http_status")
+    if nested is None:
+        nested = payload.get("code")
+    try:
+        nested_i = int(nested)
+    except (TypeError, ValueError):
+        return status_i
+    if nested_i in (429, 502, 503, 504, 524):
+        return nested_i
+    return status_i
+
+
+def _is_retryable_gpt_status(status: int) -> bool:
+    return status in (429, 500, 502, 503, 504, 524)
+
+
+def _gpt_should_retry(status: int, payload, attempt: int, retries: int) -> bool:
+    return _is_retryable_gpt_status(_payload_http_status(status, payload)) and attempt + 1 < retries
+
+
 def _is_model_overloaded(text: str) -> bool:
     lower = (text or "").lower()
     return "overloaded" in lower or "模型当前繁忙" in (text or "")
 
 
+def _is_transient_gpt_error(text: str) -> bool:
+    lower = (text or "").lower()
+    return (
+        _is_model_overloaded(text)
+        or "timeout" in lower
+        or "暂时不可用" in (text or "")
+        or "网关超时" in (text or "")
+        or "请稍后再试" in (text or "")
+    )
+
+
 def _retry_wait_seconds(attempt: int, err_text: str = "") -> float:
-    if _is_model_overloaded(err_text):
-        return float(min(30, 5 * (2 ** attempt)))
+    if _is_transient_gpt_error(err_text):
+        return float(min(40, 8 * (2 ** attempt)))
     return float(2 ** attempt)
 
 
 def _friendly_error(status: int, payload: dict | str, url: str = "") -> str:
-    text = ""
-    if isinstance(payload, dict):
-        err = payload.get("error")
-        if isinstance(err, dict):
-            text = str(err.get("message") or err.get("detail") or payload)
-        else:
-            text = str(payload.get("detail") or payload.get("message") or payload)
-    else:
-        text = str(payload)
+    status = _payload_http_status(status, payload)
+    text = _payload_error_text(payload)
     lower = text.lower()
     if "cloudflare" in lower or "cf-error" in lower:
         return (
@@ -357,7 +402,7 @@ def _friendly_error(status: int, payload: dict | str, url: str = "") -> str:
             )
         return f"GPT 生图 Key 无效或无权限：{text}"
     if _is_model_overloaded(text):
-        return f"GPT 生图模型当前繁忙，请稍后再试：{text}"
+        return "GPT 生图模型当前繁忙，请稍后重试。"
     if status == 429 or "rate" in lower or "quota" in lower:
         return f"GPT 生图额度或频率受限：{text}"
     if "未对外提供服务" in text or "未对外提供服务" in str(payload):
@@ -375,8 +420,10 @@ def _friendly_error(status: int, payload: dict | str, url: str = "") -> str:
             "请把 OPENAI_IMAGE_BASE_URL_XDT / _HLL 设为 "
             "https://liuyi-llm-risk.61info.cn/api/gptproto"
         )
-    if status >= 500 or "timeout" in lower:
-        return f"GPT 生图服务暂时不可用：{text}"
+    if status in (504, 524) or "timeout" in lower or "timed out" in lower:
+        return "GPT 生图网关超时，请稍后重试。"
+    if status >= 500:
+        return "GPT 生图服务暂时不可用，请稍后重试。"
     if "inactive api key" in lower or "agent not found" in lower:
         return (
             "GPT 生图 appKey 无效或未激活。请在 AgentHub 确认应用为 ACTIVE，"
@@ -606,7 +653,7 @@ class GptImageClient:
             if status < 400:
                 return _extract_image_ref(result if isinstance(result, dict) else {}, self.temp_dir)
             last_error = _friendly_error(status, result, url)
-            if status in (429, 500, 502, 503, 504) and attempt + 1 < retries:
+            if _gpt_should_retry(status, result, attempt, retries):
                 time.sleep(_retry_wait_seconds(attempt, last_error))
                 continue
             break
@@ -639,7 +686,7 @@ class GptImageClient:
                     return parsed
                 return None, "GPT Responses 未返回图片"
             last_error = _friendly_error(status, result, url)
-            if status in (429, 500, 502, 503, 504) and attempt + 1 < retries:
+            if _gpt_should_retry(status, result, attempt, retries):
                 time.sleep(_retry_wait_seconds(attempt, last_error))
                 continue
             if status not in (404, 405):
@@ -685,7 +732,7 @@ class GptImageClient:
                 if status < 400:
                     return _extract_image_ref(result if isinstance(result, dict) else {}, self.temp_dir)
                 last_error = _friendly_error(status, result, url)
-                if status in (429, 500, 502, 503, 504) and attempt + 1 < retries:
+                if _gpt_should_retry(status, result, attempt, retries):
                     time.sleep(_retry_wait_seconds(attempt, last_error))
                     continue
                 if status not in (404, 405):
@@ -701,7 +748,7 @@ class GptImageClient:
         height: int = 1024,
         image_paths=None,
         mask_path: Path | None = None,
-        retries: int = 3,
+        retries: int = 5,
         prefer_responses: bool = False,
         output_quality: str | None = None,
     ) -> tuple[Optional[str], Optional[str]]:

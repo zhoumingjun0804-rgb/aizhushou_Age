@@ -30,8 +30,17 @@ class GptChatUiTests(unittest.TestCase):
             "renderGptChatThread",
             "openGptChatThread",
             "pollGptChatJob",
+            "retryLastGptChatTurn",
         ):
             self.assertIn("function " + name, self.html)
+
+    def test_gpt_chat_error_offers_retry(self):
+        self.assertIn("再次重试", self.html)
+        start = self.html.index("async function pollGptChatJob")
+        nxt = self.html.find("\nasync function ", start + 1)
+        block = self.html[start:nxt]
+        self.assertIn("confirmRetryGeneration", block)
+        self.assertIn("retryLastGptChatTurn", block)
 
     def test_gpt_tab_has_no_logo_or_structured_fields(self):
         m = re.search(r'id="gptTab"[\s\S]*?(?=<div class="card tab-content"|$)', self.html)

@@ -124,6 +124,22 @@ class TestAzureAuthHeaders(unittest.TestCase):
         )
         self.assertEqual(_retry_wait_seconds(0, "GPT 生图额度或频率受限"), 1)
 
+    def test_gateway_timeout_payload_is_clean_and_retryable(self):
+        msg = _friendly_error(
+            500,
+            {"msg": "Request Timeout", "code": 500, "data": None, "http_status": 504},
+        )
+        self.assertIn("网关超时", msg)
+        self.assertNotIn("{'msg'", msg)
+        self.assertGreaterEqual(_retry_wait_seconds(0, msg), 8)
+
+    def test_payload_prefers_gateway_http_status(self):
+        from gpt_image_client import _payload_http_status
+        self.assertEqual(
+            _payload_http_status(500, {"msg": "Request Timeout", "http_status": 504}),
+            504,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

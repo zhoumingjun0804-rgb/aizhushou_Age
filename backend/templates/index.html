@@ -455,6 +455,8 @@
         #gptChatSendBtn { padding: 12px 20px; border: none; border-radius: 8px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
         #gptChatSendBtn:hover { opacity: 0.92; }
         #gptChatSendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .gpt-chat-retry-btn { margin-top: 8px; padding: 6px 12px; border: 1px solid rgba(248,113,113,0.45); border-radius: 8px; background: rgba(248,113,113,0.12); color: #fecaca; font-size: 13px; cursor: pointer; }
+        .gpt-chat-retry-btn:hover { background: rgba(248,113,113,0.22); }
         .gpt-chat-empty { margin: auto; color: rgba(255,255,255,0.42); font-size: 13px; text-align: center; }
         .gpt-chat-bubble { max-width: min(88%, 720px); padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
         .gpt-chat-bubble.user { align-self: flex-end; background: rgba(102,126,234,0.22); border: 1px solid rgba(129,140,248,0.28); color: rgba(255,255,255,0.92); }
@@ -2805,7 +2807,11 @@ function renderGptChatThread(thread) {
         box.appendChild(empty);
         return;
     }
-    messages.forEach(function(msg) {
+    var lastErrorIdx = -1;
+    messages.forEach(function(msg, i) {
+        if (msg.role === 'assistant' && msg.status === 'error') lastErrorIdx = i;
+    });
+    messages.forEach(function(msg, i) {
         var role = msg.role === 'assistant' ? 'assistant' : 'user';
         var bubble = document.createElement('div');
         bubble.className = 'gpt-chat-bubble ' + role;
@@ -2843,6 +2849,14 @@ function renderGptChatThread(thread) {
             });
             bubble.appendChild(grid);
         }
+        if (role === 'assistant' && msg.status === 'error' && i === lastErrorIdx) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'gpt-chat-retry-btn';
+            btn.textContent = '再次重试';
+            btn.onclick = function() { retryLastGptChatTurn(); };
+            bubble.appendChild(btn);
+        }
         box.appendChild(bubble);
     });
     box.scrollTop = box.scrollHeight;
@@ -2864,11 +2878,39 @@ async function fetchGptChatThread(threadId) {
     return data.thread;
 }
 
+function lastGptChatUserText(thread) {
+    var messages = (thread && thread.messages) || [];
+    for (var i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user' && (messages[i].text || '').trim()) {
+            return messages[i].text.trim();
+        }
+    }
+    return '';
+}
+
+async function retryLastGptChatTurn() {
+    if (!gptChatThreadId || gptChatSending || gptChatPollJobId) return;
+    try {
+        var thread = await fetchGptChatThread(gptChatThreadId);
+        var text = lastGptChatUserText(thread);
+        if (!text) {
+            alert('没有可重试的上一条消息');
+            return;
+        }
+        var input = document.getElementById('gptChatInput');
+        if (input) input.value = text;
+        return sendGptChatMessage();
+    } catch (e) {
+        alert('重试失败: ' + ((e && e.message) || e));
+    }
+}
+
 async function pollGptChatJob(jobId) {
     if (!jobId) return;
     gptChatPollJobId = jobId;
     var maxWait = 1800;
     var started = Date.now();
+    var retry = false;
     try {
         while (Date.now() - started < maxWait * 1000) {
             var res = await authFetch('/api/generation/jobs/' + encodeURIComponent(jobId));
@@ -2884,11 +2926,16 @@ async function pollGptChatJob(jobId) {
             } else if (data.status === 'running') {
                 var p = data.progress || {};
                 updateGptChatPendingText('生成中 ' + (p.current || 0) + '/' + (p.total || '?') + '…');
-            } else if (data.status === 'done' || data.status === 'failed') {
+            } else if (data.status === 'done') {
                 if (gptChatThreadId) renderGptChatThread(await fetchGptChatThread(gptChatThreadId));
-                if (data.status === 'done' && typeof loadHistory === 'function') loadHistory();
+                if (typeof loadHistory === 'function') loadHistory();
                 if (typeof refreshGenerationJobs === 'function') refreshGenerationJobs();
-                if (data.status === 'done') notifyToolTaskComplete(true);
+                notifyToolTaskComplete(true);
+                return;
+            } else if (data.status === 'failed') {
+                if (gptChatThreadId) renderGptChatThread(await fetchGptChatThread(gptChatThreadId));
+                if (typeof refreshGenerationJobs === 'function') refreshGenerationJobs();
+                retry = confirmRetryGeneration(data.error || '生成失败');
                 return;
             }
             await new Promise(function(resolve) { setTimeout(resolve, 2500); });
@@ -2904,6 +2951,7 @@ async function pollGptChatJob(jobId) {
     } finally {
         gptChatPollJobId = null;
     }
+    if (retry) return retryLastGptChatTurn();
 }
 
 async function sendGptChatMessage() {
@@ -3423,7 +3471,7 @@ function setGenerateButtonsDisabled(disabled) {
 
 function isRetryableGenerationError(msg) {
     var s = String(msg || '');
-    return /模型当前繁忙|overloaded|额度或频率受限|暂时不可用|队列已满|请稍后再试/.test(s);
+    return /模型当前繁忙|overloaded|额度或频率受限|暂时不可用|队列已满|请稍后|网关超时|Request Timeout/.test(s);
 }
 
 function retryableGenerationHint(msg) {
