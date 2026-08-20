@@ -38,6 +38,17 @@ GPT_IMAGE2_GRID = 16
 GPT_IMAGE2_OUTPUT_QUALITIES = ("low", "medium", "high", "auto")
 
 GPT_MAX_REFERENCE_IMAGES = 4
+GPT_GATEWAY_POST_TIMEOUT = 50
+GPT_POLL_INTERVAL_SECONDS = 2
+GPT_RUNNING_STATUSES = {
+    "queued",
+    "in_progress",
+    "not_running",
+    "notrunning",
+    "running",
+}
+GPT_SUCCESS_STATUSES = {"completed", "succeeded", "success"}
+GPT_FAILED_STATUSES = {"failed", "cancelled", "canceled", "incomplete", "error"}
 
 
 class GptImageError(Exception):
@@ -455,6 +466,54 @@ def _auth_headers(auth: GptAuth, content_type: str) -> dict[str, str]:
     return headers
 
 
+def _headers_map(headers) -> dict[str, str]:
+    if not headers:
+        return {}
+    return {str(k).lower(): str(v) for k, v in headers.items()}
+
+
+def _request_json_ex(
+    method: str,
+    url: str,
+    auth: GptAuth,
+    payload: dict | None,
+    timeout: int,
+    *,
+    use_proxy: bool = True,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[int, dict | str, dict[str, str]]:
+    url = _append_query(url, {"api_key": auth.app_key_query} if auth.app_key_query else {})
+    headers = _auth_headers(auth, "application/json")
+    if extra_headers:
+        headers.update(extra_headers)
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with open_http_request(req, timeout=timeout, context=_ssl_ctx, use_proxy=use_proxy) as resp:
+            body = resp.read().decode("utf-8")
+            mapped = _headers_map(resp.headers)
+            try:
+                return resp.getcode(), json.loads(body), mapped
+            except json.JSONDecodeError:
+                return resp.getcode(), body, mapped
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="replace")
+        mapped = _headers_map(err.headers)
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            parsed = body
+        return err.code, parsed, mapped
+    except Exception as e:
+        hint = _connection_error_message(e)
+        lower = str(e).lower()
+        if "timed out" in lower or "timeout" in lower:
+            return 504, {"msg": "Request Timeout", "http_status": 504}, {}
+        if hint:
+            raise GptImageError(hint) from e
+        raise GptImageError(f"连接 GPT 生图网关失败: {e}") from e
+
+
 def _request_json(
     method: str,
     url: str,
@@ -464,29 +523,10 @@ def _request_json(
     *,
     use_proxy: bool = True,
 ) -> tuple[int, dict | str]:
-    url = _append_query(url, {"api_key": auth.app_key_query} if auth.app_key_query else {})
-    headers = _auth_headers(auth, "application/json")
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with open_http_request(req, timeout=timeout, context=_ssl_ctx, use_proxy=use_proxy) as resp:
-            body = resp.read().decode("utf-8")
-            try:
-                return resp.getcode(), json.loads(body)
-            except json.JSONDecodeError:
-                return resp.getcode(), body
-    except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(body)
-        except json.JSONDecodeError:
-            parsed = body
-        return err.code, parsed
-    except Exception as e:
-        hint = _connection_error_message(e)
-        if hint:
-            raise GptImageError(hint) from e
-        raise GptImageError(f"连接 GPT 生图网关失败: {e}") from e
+    status, payload_out, _ = _request_json_ex(
+        method, url, auth, payload, timeout, use_proxy=use_proxy
+    )
+    return status, payload_out
 
 
 def _encode_multipart_form(
@@ -510,6 +550,48 @@ def _encode_multipart_form(
     return b"".join(chunks), boundary
 
 
+def _request_multipart_ex(
+    url: str,
+    auth: GptAuth,
+    fields: list[tuple[str, str]],
+    files: list[tuple[str, str, bytes, str]],
+    timeout: int,
+    *,
+    use_proxy: bool = True,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[int, dict | str, dict[str, str]]:
+    url = _append_query(url, {"api_key": auth.app_key_query} if auth.app_key_query else {})
+    body, boundary = _encode_multipart_form(fields, files)
+    headers = _auth_headers(auth, f"multipart/form-data; boundary={boundary}")
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with open_http_request(req, timeout=timeout, context=_ssl_ctx, use_proxy=use_proxy) as resp:
+            raw = resp.read().decode("utf-8")
+            mapped = _headers_map(resp.headers)
+            try:
+                return resp.getcode(), json.loads(raw), mapped
+            except json.JSONDecodeError:
+                return resp.getcode(), raw, mapped
+    except urllib.error.HTTPError as err:
+        raw = err.read().decode("utf-8", errors="replace")
+        mapped = _headers_map(err.headers)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = raw
+        return err.code, parsed, mapped
+    except Exception as e:
+        hint = _connection_error_message(e)
+        lower = str(e).lower()
+        if "timed out" in lower or "timeout" in lower:
+            return 504, {"msg": "Request Timeout", "http_status": 504}, {}
+        if hint:
+            raise GptImageError(hint) from e
+        raise GptImageError(f"连接 GPT 生图网关失败: {e}") from e
+
+
 def _request_multipart(
     url: str,
     auth: GptAuth,
@@ -519,29 +601,10 @@ def _request_multipart(
     *,
     use_proxy: bool = True,
 ) -> tuple[int, dict | str]:
-    url = _append_query(url, {"api_key": auth.app_key_query} if auth.app_key_query else {})
-    body, boundary = _encode_multipart_form(fields, files)
-    headers = _auth_headers(auth, f"multipart/form-data; boundary={boundary}")
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with open_http_request(req, timeout=timeout, context=_ssl_ctx, use_proxy=use_proxy) as resp:
-            raw = resp.read().decode("utf-8")
-            try:
-                return resp.getcode(), json.loads(raw)
-            except json.JSONDecodeError:
-                return resp.getcode(), raw
-    except urllib.error.HTTPError as err:
-        raw = err.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = raw
-        return err.code, parsed
-    except Exception as e:
-        hint = _connection_error_message(e)
-        if hint:
-            raise GptImageError(hint) from e
-        raise GptImageError(f"连接 GPT 生图网关失败: {e}") from e
+    status, payload, _ = _request_multipart_ex(
+        url, auth, fields, files, timeout, use_proxy=use_proxy
+    )
+    return status, payload
 
 
 def _extract_image_from_responses(
@@ -560,6 +623,61 @@ def _extract_image_from_responses(
                 out = temp_dir / f"gpt_{int(time.time() * 1000)}.png"
                 out.write_bytes(base64.b64decode(b64))
                 return f"file://{out.resolve()}", None
+    return None
+
+
+def _async_job_kind(status: str | None) -> str | None:
+    key = (status or "").strip().lower()
+    if not key:
+        return None
+    if key in GPT_RUNNING_STATUSES:
+        return "running"
+    if key in GPT_SUCCESS_STATUSES:
+        return "success"
+    if key in GPT_FAILED_STATUSES:
+        return "failed"
+    return None
+
+
+def _operation_location_from_headers(headers: dict | None) -> str:
+    if not headers:
+        return ""
+    lowered = {str(k).lower(): str(v) for k, v in headers.items()}
+    return (lowered.get("operation-location") or lowered.get("operation_location") or "").strip()
+
+
+def _should_fallback_to_sync(err: str | None) -> bool:
+    lower = (err or "").lower()
+    if not lower:
+        return True
+    if "网关超时" in (err or "") or "模型当前繁忙" in (err or "") or "overloaded" in lower:
+        return False
+    return (
+        "404" in lower
+        or "unsupported" in lower
+        or "not configured" in lower
+        or "background" in lower
+    )
+
+
+def _extract_image_any(
+    result: dict | str,
+    temp_dir: Path,
+) -> tuple[Optional[str], Optional[str]] | None:
+    parsed = _extract_image_from_responses(result, temp_dir)
+    if parsed:
+        return parsed
+    if not isinstance(result, dict):
+        return None
+    if result.get("data"):
+        url, err = _extract_image_ref(result, temp_dir)
+        if url:
+            return url, None
+        if err:
+            return None, err
+    inner = result.get("result")
+    if isinstance(inner, dict):
+        return _extract_image_any(inner, temp_dir)
     return None
 
 
@@ -615,6 +733,78 @@ class GptImageClient:
         self.timeout = max(min_timeout, int(timeout))
         self.temp_dir = temp_dir or Path("outputs")
 
+    def _post_timeout(self) -> int:
+        if self.provider == "azure":
+            return min(self.timeout, GPT_GATEWAY_POST_TIMEOUT)
+        return self.timeout
+
+    def _azure_async_headers(self) -> dict[str, str] | None:
+        if self.provider != "azure":
+            return None
+        return {"Prefer": "respond-async"}
+
+    def _poll_url(self, url: str, deadline: float) -> tuple[Optional[str], Optional[str]]:
+        last_error = "GPT 生图轮询超时。公司网关单次约 60 秒，已改为短请求轮询。"
+        while time.time() < deadline:
+            status, result, headers = _request_json_ex(
+                "GET", url, self.auth, None, 20, use_proxy=self.use_proxy
+            )
+            if status >= 400:
+                last_error = _friendly_error(status, result, url)
+                if _is_retryable_gpt_status(_payload_http_status(status, result)):
+                    time.sleep(GPT_POLL_INTERVAL_SECONDS)
+                    continue
+                return None, last_error
+            if isinstance(result, dict):
+                parsed = _extract_image_any(result, self.temp_dir)
+                if parsed and parsed[0]:
+                    return parsed
+                kind = _async_job_kind(str(result.get("status") or ""))
+                if kind == "success":
+                    return None, (parsed[1] if parsed else "GPT 生图未返回图片")
+                if kind == "failed":
+                    return None, _friendly_error(status, result, url)
+                loc = _operation_location_from_headers(headers)
+                if loc:
+                    url = loc
+                print(f"[GPT] poll status={result.get('status')} id={result.get('id') or ''}")
+            time.sleep(GPT_POLL_INTERVAL_SECONDS)
+        return None, last_error
+
+    def _follow_async_submit(
+        self,
+        status: int,
+        result: dict | str,
+        headers: dict[str, str],
+        submit_url: str,
+    ) -> tuple[Optional[str], Optional[str]] | None:
+        loc = _operation_location_from_headers(headers)
+        resp_id = ""
+        job_status = ""
+        if isinstance(result, dict):
+            parsed = _extract_image_any(result, self.temp_dir)
+            if parsed and parsed[0]:
+                return parsed
+            resp_id = str(result.get("id") or result.get("response_id") or "").strip()
+            job_status = str(result.get("status") or "")
+        kind = _async_job_kind(job_status)
+        if kind == "success":
+            return None, "GPT 生图未返回图片"
+        if kind == "failed":
+            return None, _friendly_error(status, result, submit_url)
+        if status == 202 or loc or kind == "running":
+            poll_url = loc
+            if not poll_url and resp_id:
+                if "/responses" in submit_url:
+                    poll_url = f"{self.base_url}/v1/responses/{resp_id}"
+                else:
+                    poll_url = f"{self.base_url}/v1/images/operations/{resp_id}"
+            if not poll_url:
+                return None
+            print(f"[GPT] async accepted id={resp_id or loc}")
+            return self._poll_url(poll_url, time.time() + self.timeout)
+        return None
+
     def _gpt_quality_fields(self, model: str, output_quality: str | None = None) -> list[tuple[str, str]]:
         quality = resolve_gpt_image_output_quality(model, override=output_quality)
         if quality:
@@ -646,11 +836,17 @@ class GptImageClient:
             files.append(("mask", mask_path.name, mask_path.read_bytes(), "image/png"))
 
         last_error = "GPT 参考图生图失败"
+        post_timeout = self._post_timeout()
+        async_headers = self._azure_async_headers()
         for attempt in range(max(1, retries)):
-            status, result = _request_multipart(
-                url, self.auth, fields, files, self.timeout, use_proxy=self.use_proxy
+            status, result, headers = _request_multipart_ex(
+                url, self.auth, fields, files, post_timeout,
+                use_proxy=self.use_proxy, extra_headers=async_headers,
             )
             if status < 400:
+                followed = self._follow_async_submit(status, result, headers, url)
+                if followed is not None:
+                    return followed
                 return _extract_image_ref(result if isinstance(result, dict) else {}, self.temp_dir)
             last_error = _friendly_error(status, result, url)
             if _gpt_should_retry(status, result, attempt, retries):
@@ -665,22 +861,37 @@ class GptImageClient:
         model: str,
         image_paths: list[Path],
         retries: int,
+        *,
+        background: bool = False,
+        size: str | None = None,
+        output_quality: str | None = None,
     ) -> tuple[Optional[str], Optional[str]]:
         url = f"{self.base_url}/v1/responses"
         tool: dict = {"type": "image_generation"}
         if image_paths:
             tool["action"] = "auto"
+        if size:
+            tool["size"] = size
+        quality = resolve_gpt_image_output_quality(model, override=output_quality)
+        if quality:
+            tool["quality"] = quality
         body = {
             "model": model,
             "input": _build_responses_input(prompt, image_paths) if image_paths else prompt,
             "tools": [tool],
         }
+        if background:
+            body["background"] = True
+        post_timeout = self._post_timeout() if background or self.provider == "azure" else self.timeout
         last_error = "GPT 生图失败"
         for attempt in range(max(1, retries)):
-            status, result = _request_json(
-                "POST", url, self.auth, body, self.timeout, use_proxy=self.use_proxy
+            status, result, headers = _request_json_ex(
+                "POST", url, self.auth, body, post_timeout, use_proxy=self.use_proxy
             )
             if status < 400:
+                followed = self._follow_async_submit(status, result, headers, url)
+                if followed is not None:
+                    return followed
                 parsed = _extract_image_from_responses(result, self.temp_dir)
                 if parsed:
                     return parsed
@@ -718,6 +929,8 @@ class GptImageClient:
             endpoints.append(f"{self.base_url}/v1/responses")
 
         last_error = "GPT 生图失败"
+        post_timeout = self._post_timeout()
+        async_headers = self._azure_async_headers()
         for url in endpoints:
             if url.endswith("/responses"):
                 result = self._generate_with_responses(prompt, model, [], retries)
@@ -726,10 +939,14 @@ class GptImageClient:
                 last_error = result[1] or last_error
                 continue
             for attempt in range(max(1, retries)):
-                status, result = _request_json(
-                    "POST", url, self.auth, payload, self.timeout, use_proxy=self.use_proxy
+                status, result, headers = _request_json_ex(
+                    "POST", url, self.auth, payload, post_timeout,
+                    use_proxy=self.use_proxy, extra_headers=async_headers,
                 )
                 if status < 400:
+                    followed = self._follow_async_submit(status, result, headers, url)
+                    if followed is not None:
+                        return followed
                     return _extract_image_ref(result if isinstance(result, dict) else {}, self.temp_dir)
                 last_error = _friendly_error(status, result, url)
                 if _gpt_should_retry(status, result, attempt, retries):
@@ -763,6 +980,16 @@ class GptImageClient:
             f"[GPT] request size={size} model={model} quality={quality or '-'} "
             f"refs={len(refs)} mask={bool(mask_path)}"
         )
+        if self.provider == "azure" and not mask_path:
+            async_result = self._generate_with_responses(
+                prompt, model, refs, retries,
+                background=True, size=size, output_quality=output_quality,
+            )
+            if async_result[0]:
+                return async_result
+            if not _should_fallback_to_sync(async_result[1]):
+                return async_result
+            print(f"[GPT] async path unavailable, fallback sync: {async_result[1]}")
         if refs:
             if prefer_responses and not mask_path:
                 result = self._generate_with_responses(prompt, model, refs, retries)
