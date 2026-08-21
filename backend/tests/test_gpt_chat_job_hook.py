@@ -40,8 +40,9 @@ class GptChatJobHookTests(unittest.TestCase):
         hist = app.load_history()
         self.assertEqual(len(hist), 1)
         self.assertEqual(hist[0]["mode"], "gpt_chat")
+        self.assertEqual(hist[0]["output_images"], ["out.png"])
 
-    def test_notify_error_sets_error_no_regular_requirement(self):
+    def test_notify_error_sets_error_and_saves_history(self):
         thread = gpt_chat.create_thread(project="小灯塔")
         asst = gpt_chat.append_assistant_pending(thread["id"], job_id="joby")
         payload = {
@@ -55,6 +56,32 @@ class GptChatJobHookTests(unittest.TestCase):
         msg = next(m for m in t["messages"] if m["id"] == asst["id"])
         self.assertEqual(msg["status"], "error")
         self.assertEqual(msg["error"], "超时")
+        hist = app.load_history()
+        self.assertEqual(len(hist), 1)
+        self.assertEqual(hist[0]["error"], "超时")
+        self.assertEqual(hist[0]["status"], "error")
+        self.assertEqual(hist[0]["prompt"], "画猫")
+
+    def test_notify_done_then_error_keeps_one_history_row(self):
+        thread = gpt_chat.create_thread(project="小灯塔")
+        asst1 = gpt_chat.append_assistant_pending(thread["id"], job_id="job1")
+        payload = {
+            "gpt_chat_thread_id": thread["id"],
+            "gpt_chat_assistant_id": asst1["id"],
+            "project": "小灯塔",
+            "prompt": "画猫",
+        }
+        app._notify_gpt_chat_job(payload, status="done", output_images=["out.png"], error="")
+        asst2 = gpt_chat.append_assistant_pending(thread["id"], job_id="job2")
+        payload["gpt_chat_assistant_id"] = asst2["id"]
+        payload["prompt"] = "改成蓝色"
+        app._notify_gpt_chat_job(payload, status="error", output_images=[], error="Request Timeout")
+        hist = app.load_history()
+        self.assertEqual(len(hist), 1)
+        self.assertEqual(hist[0]["prompt"], "画猫")
+        self.assertEqual(hist[0]["error"], "Request Timeout")
+        self.assertEqual(hist[0]["output_images"], ["out.png"])
+        self.assertEqual(len(hist[0].get("messages") or []), 2)
 
 
 if __name__ == "__main__":

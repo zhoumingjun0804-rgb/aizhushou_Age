@@ -59,8 +59,11 @@ class GptChatApiTests(unittest.TestCase):
         self.output_dir = Path(self.tmp.name) / "outputs"
         self.upload_dir.mkdir()
         self.output_dir.mkdir()
+        self.history = Path(self.tmp.name) / "history.json"
+        self.history.write_text("[]", encoding="utf-8")
         self.patchers = [
             mock.patch.object(gpt_chat, "THREADS_FILE", self.threads),
+            mock.patch.object(app, "HISTORY_FILE", self.history),
             mock.patch.object(app, "UPLOAD_DIR", self.upload_dir),
             mock.patch.object(app, "OUTPUT_DIR", self.output_dir),
             mock.patch.object(app, "is_gate_enabled", return_value=False),
@@ -150,6 +153,40 @@ class GptChatApiTests(unittest.TestCase):
         self.assertEqual([m["role"] for m in stored["messages"]], ["user", "assistant"])
         self.assertEqual(stored["messages"][1]["id"], submitted["gpt_chat_assistant_id"])
         self.assertEqual(stored["messages"][1]["job_id"], "job123")
+
+    def test_user_ref_image_urls_point_to_uploads(self):
+        fake_queue = FakeQueue()
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+            b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05"
+            b"\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        with (
+            mock.patch.object(app, "_reload_runtime_env", return_value=None),
+            mock.patch.object(app, "gpt_image_available_for_project", return_value=True),
+            mock.patch.object(app, "raise_if_duplicate_high", return_value=None),
+            mock.patch.object(app, "gpt_queue", fake_queue),
+        ):
+            thread = gpt_chat.create_thread(project="小灯塔")
+            payload, status = self.post_multipart(
+                f"/api/gpt-chat/threads/{thread['id']}/messages",
+                {
+                    "project": "小灯塔",
+                    "client_id": "client-a",
+                    "text": "按参考图来",
+                    "ref_image_0": ("ref.png", png),
+                },
+            )
+
+        self.assertEqual(status, 201)
+        stored = gpt_chat.get_thread(thread["id"])
+        urls = stored["messages"][0]["image_urls"]
+        self.assertEqual(len(urls), 1)
+        self.assertTrue(urls[0].startswith("/uploads/ref_"))
+        saved = self.upload_dir / urls[0].rsplit("/", 1)[-1]
+        self.assertTrue(saved.is_file())
+        self.assertTrue(fake_queue.payloads[0]["image_paths"])
 
     def test_assistant_exists_before_submit_allows_fast_completion(self):
         seen = {"pending": False}
@@ -263,6 +300,61 @@ class GptChatApiTests(unittest.TestCase):
         self.assertEqual(assistant["status"], "error")
         self.assertIn("任务不存在或已过期", assistant["error"])
         self.assertFalse(gpt_chat.thread_has_pending(thread["id"]))
+
+    def test_submit_writes_pending_history(self):
+        fake_queue = FakeQueue()
+        with (
+            mock.patch.object(app, "_reload_runtime_env", return_value=None),
+            mock.patch.object(app, "gpt_image_available_for_project", return_value=True),
+            mock.patch.object(app, "raise_if_duplicate_high", return_value=None),
+            mock.patch.object(app, "gpt_queue", fake_queue),
+        ):
+            thread = gpt_chat.create_thread(project="小灯塔")
+            payload, status = self.post_multipart(
+                f"/api/gpt-chat/threads/{thread['id']}/messages",
+                {
+                    "project": "小灯塔",
+                    "client_id": "client-a",
+                    "text": "画一只猫",
+                },
+            )
+        self.assertEqual(status, 201)
+        hist = app.load_history()
+        self.assertEqual(len(hist), 1)
+        self.assertEqual(hist[0]["thread_id"], thread["id"])
+        self.assertEqual(hist[0]["status"], "pending")
+        self.assertEqual(hist[0]["prompt"], "画一只猫")
+
+    def test_get_missing_thread_restores_from_history(self):
+        app.save_history(
+            [
+                {
+                    "id": "h1",
+                    "mode": "gpt_chat",
+                    "thread_id": "deadbeef1234",
+                    "project": "小灯塔",
+                    "prompt": "画猫",
+                    "messages": [
+                        {"id": "u1", "role": "user", "text": "画猫", "image_urls": []},
+                        {
+                            "id": "a1",
+                            "role": "assistant",
+                            "status": "error",
+                            "error": "超时",
+                            "image_urls": [],
+                        },
+                    ],
+                }
+            ]
+        )
+        self.assertIsNone(gpt_chat.get_thread("deadbeef1234"))
+        handler = self.make_handler("/api/gpt-chat/threads/deadbeef1234?project=小灯塔")
+        handler.do_GET()
+        payload, status = handler.sent
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["thread"]["id"], "deadbeef1234")
+        self.assertEqual(payload["thread"]["messages"][0]["text"], "画猫")
+        self.assertTrue(gpt_chat.get_thread("deadbeef1234"))
 
 
 if __name__ == "__main__":

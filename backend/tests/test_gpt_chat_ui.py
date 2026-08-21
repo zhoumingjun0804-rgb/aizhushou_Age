@@ -54,6 +54,22 @@ class GptChatUiTests(unittest.TestCase):
         self.assertIn("openGptChatThread", self.html)
         self.assertIn("gpt_chat", self.html)
 
+    def test_history_visible_items_include_gpt_chat_thread(self):
+        start = self.html.index("function _historyVisibleItems")
+        nxt = self.html.find("\nfunction ", start + 1)
+        block = self.html[start:nxt]
+        self.assertIn("gpt_chat", block)
+        self.assertIn("thread_id", block)
+
+    def test_open_gpt_chat_resumes_pending_job(self):
+        start = self.html.index("async function openGptChatThread")
+        nxt = self.html.find("\nasync function ", start + 1)
+        block = self.html[start:nxt]
+        self.assertIn("pollGptChatJob", block)
+        fetch_at = block.index("fetchGptChatThread")
+        assign_at = block.index("gptChatThreadId =")
+        self.assertGreater(assign_at, fetch_at)
+
     def test_gpt_tab_hidden_without_active_class(self):
         """非 active 时 #gptTab 不得强制 display:flex，否则会压过 .tab-content 的 hidden。"""
         # 去掉 CSS 注释，避免注释文案误匹配
@@ -80,6 +96,18 @@ class GptChatUiTests(unittest.TestCase):
         block = m.group(0)
         self.assertIn("res.status === 404", block)
         self.assertIn("fetchGptChatThread(gptChatThreadId)", block)
+
+    def test_gpt_chat_allows_four_reference_images(self):
+        self.assertIn("最多4张", self.html)
+        self.assertIn("gptChatAttachFiles.length >= 4", self.html)
+        self.assertIn("gptChatAttachFiles.slice(0, 4)", self.html)
+
+    def test_gpt_chat_ref_images_use_uploads_url(self):
+        start = self.html.index("function gptChatOutputUrl")
+        nxt = self.html.find("\nfunction ", start + 1)
+        block = self.html[start:nxt]
+        self.assertIn("/uploads/", block)
+        self.assertIn("ref_", block)
 
 
 if __name__ == "__main__":

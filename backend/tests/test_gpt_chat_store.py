@@ -90,6 +90,20 @@ class GptChatStoreTests(unittest.TestCase):
         stored = gpt_chat.get_thread(thread["id"])
         self.assertEqual(len(stored["messages"]), 1)
 
+    def test_upsert_thread_restores_missing_id(self):
+        restored = gpt_chat.upsert_thread(
+            {
+                "id": "abc123abc123",
+                "project": "小灯塔",
+                "title": "画猫",
+                "messages": [{"id": "u1", "role": "user", "text": "画猫"}],
+            }
+        )
+        self.assertEqual(restored["id"], "abc123abc123")
+        loaded = gpt_chat.get_thread("abc123abc123")
+        self.assertEqual(loaded["title"], "画猫")
+        self.assertEqual(len(loaded["messages"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

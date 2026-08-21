@@ -7,9 +7,11 @@ from PIL import Image
 from app import (
     GENERATION_REF_PROMPT_SUFFIX,
     _normalize_reference_upload,
+    _save_gpt_chat_ref_images_from_fields,
     _save_ref_images_from_fields,
     build_generation_payload,
 )
+from gpt_image_client import GPT_MAX_REFERENCE_IMAGES
 
 
 class TestRefImageUpload(unittest.TestCase):
@@ -82,6 +84,19 @@ class TestRefImageUpload(unittest.TestCase):
         self.assertEqual(payload["prompt"], "直播间文案")
         self.assertNotIn(GENERATION_REF_PROMPT_SUFFIX, payload["prompt"])
         self.assertTrue(payload["image_paths"])
+
+    def test_gpt_chat_saves_four_reference_images(self):
+        self.assertEqual(GPT_MAX_REFERENCE_IMAGES, 4)
+        fields = {}
+        for i in range(5):
+            png = io.BytesIO()
+            Image.new("RGB", (4, 4), color="red").save(png, format="PNG")
+            fields[f"ref_image_{i}"] = {
+                "filename": f"ref{i}.png",
+                "data": png.getvalue(),
+            }
+        paths = _save_gpt_chat_ref_images_from_fields(fields)
+        self.assertEqual(len(paths), 4)
 
 
 if __name__ == "__main__":

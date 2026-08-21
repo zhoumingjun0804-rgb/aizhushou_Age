@@ -31,7 +31,10 @@ def _read_all() -> dict:
 
 def _write_all(data: dict) -> None:
     THREADS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    THREADS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    tmp = THREADS_FILE.with_name(THREADS_FILE.name + ".tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(THREADS_FILE)
 
 
 def create_thread(*, project: str, title: str = "", size: str = "1:1", quality: str = "medium") -> dict:
@@ -59,6 +62,30 @@ def get_thread(thread_id: str) -> Optional[dict]:
         data = _read_all()
         t = data["threads"].get(str(thread_id or "").strip())
         return dict(t) if isinstance(t, dict) else None
+
+
+def upsert_thread(thread: dict) -> dict:
+    tid = str((thread or {}).get("id") or "").strip()
+    if not tid:
+        raise ValueError("missing thread id")
+    stored = dict(thread)
+    stored["id"] = tid
+    stored.setdefault("messages", [])
+    stored.setdefault("title", "对话")
+    stored["updated_at"] = _now()
+    if not stored.get("created_at"):
+        stored["created_at"] = stored["updated_at"]
+    with _lock:
+        data = _read_all()
+        data["threads"][tid] = stored
+        _write_all(data)
+    return dict(stored)
+
+
+def list_threads() -> list:
+    with _lock:
+        data = _read_all()
+        return [dict(t) for t in data["threads"].values() if isinstance(t, dict)]
 
 
 def _mutate(thread_id: str, fn) -> Optional[dict]:

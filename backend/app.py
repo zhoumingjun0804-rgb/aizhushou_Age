@@ -71,6 +71,7 @@ from comfyui_client import ComfyUIClient, ComfyUIClientError
 from gpt_image_client import (
     GptImageClient,
     GptImageError,
+    GPT_MAX_REFERENCE_IMAGES,
     build_chat_completion_payload,
     call_gpt_chat,
     resolve_gpt_image_model,
@@ -667,8 +668,12 @@ def _main_title_from_summary(summary) -> str:
     return str(summary.get("主标题") or "").strip()
 
 
-def _history_meta_tags(mode: str, variants_count: int = 0) -> list:
+def _history_meta_tags(mode: str, variants_count: int = 0, *, status: str = "") -> list:
     tags = [_history_mode_label(mode)]
+    if str(status or "") == "error":
+        tags.append("失败")
+    elif str(status or "") == "pending":
+        tags.append("生成中")
     try:
         count = int(variants_count or 0)
     except (TypeError, ValueError):
@@ -686,7 +691,9 @@ def build_history_entry(*, mode: str, prompt: str, description: str = "", source
         "prompt": prompt,
         "title": _history_title_from_prompt(prompt),
         "description": (description or "").strip(),
-        "meta_tags": _history_meta_tags(mode, kwargs.get("variants_count", 0)),
+        "meta_tags": _history_meta_tags(
+            mode, kwargs.get("variants_count", 0), status=str(kwargs.get("status") or "")
+        ),
         "source": source,
         "schema_version": kwargs.pop("schema_version", None) or 1,
     }
@@ -697,36 +704,164 @@ def build_history_entry(*, mode: str, prompt: str, description: str = "", source
     return entry
 
 
-def upsert_gpt_chat_history(*, thread_id: str, project: str, prompt: str, output_images: list) -> str:
-    """每条 GPT 对话线程只保留一条 history 摘要；按 thread_id 更新。"""
-    history = load_history()
-    existing = None
-    for item in history:
-        if item.get("mode") == "gpt_chat" and item.get("thread_id") == thread_id:
-            existing = item
-            break
+def _gpt_chat_image_name(raw) -> str:
+    text = str(raw or "").strip()
+    if not text or text.startswith("/uploads/"):
+        return ""
+    return pathlib.Path(text.split("?")[0]).name
+
+
+def _gpt_chat_history_snapshot(
+    thread,
+    *,
+    prompt: str = "",
+    output_images=None,
+    error: str = "",
+    status: str = "done",
+    existing=None,
+) -> dict:
+    messages = list((thread or {}).get("messages") or [])
+    user_texts = []
+    images = []
+    last_err = ""
+    last_st = str(status or "done").strip() or "done"
+    for m in messages:
+        role = m.get("role")
+        if role == "user":
+            text = str(m.get("text") or "").strip()
+            if text:
+                user_texts.append(text)
+            continue
+        if role != "assistant":
+            continue
+        st = str(m.get("status") or "")
+        if st == "done":
+            last_st = "done"
+            last_err = ""
+            for url in m.get("image_urls") or []:
+                name = _gpt_chat_image_name(url)
+                if name and name not in images:
+                    images.append(name)
+        elif st == "error":
+            last_st = "error"
+            last_err = str(m.get("error") or "").strip()
+        elif st == "pending":
+            last_st = "pending"
+            last_err = ""
+    if not messages:
+        last_st = str(status or "done").strip() or "done"
+        last_err = (error or "").strip()
+    first_prompt = (
+        (user_texts[0] if user_texts else "")
+        or str((existing or {}).get("prompt") or "").strip()
+        or (prompt or "")
+    )
+    extras = list((existing or {}).get("output_images") or []) + list(output_images or [])
+    for img in extras:
+        name = _gpt_chat_image_name(img)
+        if name and name not in images:
+            images.append(name)
+    return {
+        "prompt": first_prompt,
+        "messages": messages,
+        "output_images": images,
+        "error": last_err,
+        "status": last_st,
+    }
+
+
+def _coalesce_gpt_chat_history_items(items):
+    """同一 GPT 对话线程只保留一条历史，旧轮次的图和首句提示合并进来。"""
+    result = []
+    index_by_thread = {}
+    for item in items:
+        entry = dict(item)
+        tid = ""
+        if entry.get("mode") == "gpt_chat":
+            tid = str(entry.get("thread_id") or "").strip()
+        if not tid:
+            result.append(entry)
+            continue
+        idx = index_by_thread.get(tid)
+        if idx is None:
+            index_by_thread[tid] = len(result)
+            result.append(entry)
+            continue
+        keep = result[idx]
+        keep_imgs = list(keep.get("output_images") or [])
+        if not keep_imgs and keep.get("output_image"):
+            keep_imgs = [keep["output_image"]]
+        older_imgs = list(entry.get("output_images") or [])
+        if not older_imgs and entry.get("output_image"):
+            older_imgs = [entry["output_image"]]
+        for img in older_imgs:
+            if img and img not in keep_imgs:
+                keep_imgs.append(img)
+        if keep_imgs:
+            keep["output_images"] = keep_imgs
+            keep["output_image"] = keep_imgs[0]
+        older_prompt = str(entry.get("prompt") or "").strip()
+        if older_prompt:
+            keep["prompt"] = older_prompt
+            keep["title"] = _history_title_from_prompt(older_prompt)
+        if not keep.get("messages") and entry.get("messages"):
+            keep["messages"] = entry["messages"]
+    return result
+
+
+def upsert_gpt_chat_history(
+    *,
+    thread_id: str,
+    project: str,
+    prompt: str,
+    output_images: Optional[list] = None,
+    error: str = "",
+    status: str = "done",
+) -> str:
+    """同一 GPT 对话线程只保留一条历史；每轮成功/失败都写入该条，不清空旧内容。"""
     thread = None
     try:
         import gpt_chat as _gc
         thread = _gc.get_thread(thread_id)
     except Exception:
         thread = None
+    history = load_history()
+    existing = None
+    for item in history:
+        if item.get("mode") == "gpt_chat" and item.get("thread_id") == thread_id:
+            existing = item
+            break
+    snap = _gpt_chat_history_snapshot(
+        thread,
+        prompt=prompt,
+        output_images=output_images,
+        error=error,
+        status=status,
+        existing=existing,
+    )
     history_id = (existing or {}).get("id") or (thread or {}).get("history_id") or uuid.uuid4().hex[:8]
     entry = build_history_entry(
         id=history_id,
         mode="gpt_chat",
-        prompt=prompt or "",
-        description="",
+        prompt=snap["prompt"],
+        description=snap["error"],
         source="gpt_chat",
         project=project or "",
         thread_id=thread_id,
-        output_images=list(output_images or []),
-        variants_count=len(output_images or []),
+        output_images=snap["output_images"],
+        variants_count=len(snap["output_images"]),
+        status=snap["status"],
+        error=snap["error"],
+        messages=snap["messages"],
+        meta_tags=_history_meta_tags(
+            "gpt_chat", len(snap["output_images"]), status=snap["status"]
+        ),
     )
-    if existing:
-        history = [entry] + [i for i in history if i.get("id") != history_id]
-    else:
-        history.insert(0, entry)
+    history = [entry] + [
+        i
+        for i in history
+        if not (i.get("mode") == "gpt_chat" and i.get("thread_id") == thread_id)
+    ]
     save_history(history)
     try:
         import gpt_chat as _gc
@@ -734,6 +869,52 @@ def upsert_gpt_chat_history(*, thread_id: str, project: str, prompt: str, output
     except Exception:
         pass
     return history_id
+
+
+def restore_gpt_chat_thread_from_history(thread_id: str):
+    """线程文件丢失时，用历史记录里的对话快照恢复。"""
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    import gpt_chat
+    existing = gpt_chat.get_thread(tid)
+    if existing:
+        return existing
+    chosen = None
+    for item in load_history():
+        if item.get("mode") != "gpt_chat" or str(item.get("thread_id") or "").strip() != tid:
+            continue
+        if chosen is None or len(item.get("messages") or []) > len(chosen.get("messages") or []):
+            chosen = item
+    if not chosen:
+        return None
+    messages = list(chosen.get("messages") or [])
+    if not messages:
+        prompt = str(chosen.get("prompt") or "").strip()
+        if not prompt:
+            return None
+        messages = [
+            {
+                "id": uuid.uuid4().hex[:10],
+                "role": "user",
+                "text": prompt,
+                "image_urls": [],
+                "created_at": str(chosen.get("timestamp") or time.strftime("%Y-%m-%dT%H:%M:%S")),
+            }
+        ]
+    title = str(chosen.get("title") or chosen.get("prompt") or "对话").strip()[:28] or "对话"
+    return gpt_chat.upsert_thread(
+        {
+            "id": tid,
+            "project": str(chosen.get("project") or ""),
+            "title": title,
+            "created_at": str(chosen.get("timestamp") or ""),
+            "size": "1:1",
+            "quality": "medium",
+            "messages": messages,
+            "history_id": chosen.get("id"),
+        }
+    )
 
 
 def _notify_gpt_chat_job(payload: dict, *, status: str, output_images=None, error: str = "") -> None:
@@ -745,12 +926,14 @@ def _notify_gpt_chat_job(payload: dict, *, status: str, output_images=None, erro
     gpt_chat.complete_assistant_message(
         tid, mid, status=status, image_urls=list(output_images or []), error=error or ""
     )
-    if status == "done" and output_images:
+    if status in ("done", "error"):
         upsert_gpt_chat_history(
             thread_id=tid,
             project=str(payload.get("project") or ""),
             prompt=str(payload.get("prompt") or ""),
-            output_images=list(output_images),
+            output_images=list(output_images or []),
+            error=error or "",
+            status=status,
         )
 
 
@@ -840,7 +1023,9 @@ def filter_history_items(items):
         entry["description"] = str(entry.get("description") or "").strip()
         meta_tags = entry.get("meta_tags")
         if not isinstance(meta_tags, list) or not meta_tags:
-            entry["meta_tags"] = _history_meta_tags(mode, entry.get("variants_count", 0))
+            entry["meta_tags"] = _history_meta_tags(
+                mode, entry.get("variants_count", 0), status=str(entry.get("status") or "")
+            )
         entry["schema_version"] = entry.get("schema_version") or 1
         images = list(entry.get("output_images") or [])
         if not images and entry.get("output_image"):
@@ -853,7 +1038,52 @@ def filter_history_items(items):
             entry.pop("output_images", None)
             entry.pop("output_image", None)
         filtered.append(entry)
-    return filtered
+    return _attach_live_gpt_chat_threads(_coalesce_gpt_chat_history_items(filtered))
+
+
+def _attach_live_gpt_chat_threads(items):
+    """把尚未写入 history.json 的进行中对话补进列表，便于从记录返回。"""
+    result = list(items)
+    seen = {
+        str(item.get("thread_id") or "").strip()
+        for item in result
+        if item.get("mode") == "gpt_chat"
+    }
+    try:
+        import gpt_chat as _gc
+        threads = _gc.list_threads()
+    except Exception:
+        return result
+    extra = []
+    for thread in threads:
+        tid = str(thread.get("id") or "").strip()
+        if not tid or tid in seen:
+            continue
+        if not (thread.get("messages") or []):
+            continue
+        snap = _gpt_chat_history_snapshot(thread)
+        extra.append(
+            build_history_entry(
+                id=thread.get("history_id") or tid,
+                mode="gpt_chat",
+                prompt=snap["prompt"] or str(thread.get("title") or ""),
+                description=snap["error"],
+                source="gpt_chat",
+                project=str(thread.get("project") or ""),
+                thread_id=tid,
+                output_images=snap["output_images"],
+                variants_count=len(snap["output_images"]),
+                status=snap["status"],
+                error=snap["error"],
+                messages=snap["messages"],
+                timestamp=str(thread.get("updated_at") or thread.get("created_at") or ""),
+                meta_tags=_history_meta_tags(
+                    "gpt_chat", len(snap["output_images"]), status=snap["status"]
+                ),
+            )
+        )
+        seen.add(tid)
+    return extra + result
 
 
 # ─── 项目组管理 ──────────────────────────────────────────────────
@@ -1876,7 +2106,7 @@ def _save_gpt_chat_ref_images_from_fields(fields: dict) -> list:
         m = re.match(r"^ref_image_(\d+)$", str(key))
         if m:
             ref_items.append((int(m.group(1)), value))
-    for _, ref_data in sorted(ref_items)[:3]:
+    for _, ref_data in sorted(ref_items)[:GPT_MAX_REFERENCE_IMAGES]:
         file_ext = pathlib.Path(ref_data.get("filename", ".png")).suffix or ".png"
         ref_filename = f"ref_{uuid.uuid4().hex}{file_ext}"
         ref_path = UPLOAD_DIR / ref_filename
@@ -3270,6 +3500,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_file(STATIC_DIR, path.split('/')[-1])
         elif path.startswith('/outputs/'):
             self._serve_file(OUTPUT_DIR, path.split('/')[-1])
+        elif path.startswith('/uploads/'):
+            self._serve_file(UPLOAD_DIR, path.split('/')[-1])
         elif path.startswith('/projects/') and '/images/' in path:
             parts = path.split('/')
             if len(parts) >= 5:
@@ -3744,6 +3976,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         thread = gpt_chat.get_thread(thread_id)
         if not thread:
+            thread = restore_gpt_chat_thread_from_history(thread_id)
+        if not thread:
             self._send_json({"error": "线程不存在"}, status=404)
             return
         if thread.get("project") != auth_project:
@@ -3814,13 +4048,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 key for key, value in fields.items()
                 if isinstance(value, dict) and re.match(r"^ref_image_\d+$", str(key))
             ]
-            if len(ref_keys) > 3:
-                self._send_json({"error": "GPT 聊天最多上传 3 张参考图"}, status=400)
+            if len(ref_keys) > GPT_MAX_REFERENCE_IMAGES:
+                self._send_json(
+                    {"error": f"GPT 聊天最多上传 {GPT_MAX_REFERENCE_IMAGES} 张参考图"},
+                    status=400,
+                )
                 return
 
             user_ref_paths = _save_gpt_chat_ref_images_from_fields(fields)
             image_paths = [str(p) for p in user_ref_paths]
-            image_urls = [pathlib.Path(p).name for p in user_ref_paths]
+            image_urls = [f"/uploads/{pathlib.Path(p).name}" for p in user_ref_paths]
             if not image_paths:
                 last_image = gpt_chat.last_success_image(thread_id)
                 if last_image:
@@ -3855,6 +4092,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 job_id = gpt_queue.submit_generation(payload, execute_generation_job)
 
             gpt_chat.set_assistant_job_id(thread_id, assistant_id, job_id)
+            upsert_gpt_chat_history(
+                thread_id=thread_id,
+                project=auth_project,
+                prompt=prompt,
+                output_images=[],
+                status="pending",
+            )
             view = gpt_queue.get_job(job_id)
             thread = gpt_chat.get_thread(thread_id)
             self._send_json(
@@ -3869,8 +4113,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
         except DuplicateHighJobError as e:
             if assistant_id:
-                gpt_chat.complete_assistant_message(
-                    thread_id, assistant_id, status="error", image_urls=[], error=str(e)
+                _notify_gpt_chat_job(
+                    {
+                        "gpt_chat_thread_id": thread_id,
+                        "gpt_chat_assistant_id": assistant_id,
+                        "project": str(locals().get("auth_project") or ""),
+                        "prompt": str(locals().get("prompt") or ""),
+                    },
+                    status="error",
+                    error=str(e),
                 )
             self._send_json(
                 {
@@ -3881,14 +4132,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
         except QueueFullError as e:
             if assistant_id:
-                gpt_chat.complete_assistant_message(
-                    thread_id, assistant_id, status="error", image_urls=[], error=str(e)
+                _notify_gpt_chat_job(
+                    {
+                        "gpt_chat_thread_id": thread_id,
+                        "gpt_chat_assistant_id": assistant_id,
+                        "project": str(locals().get("auth_project") or ""),
+                        "prompt": str(locals().get("prompt") or ""),
+                    },
+                    status="error",
+                    error=str(e),
                 )
             self._send_json({"error": str(e)}, status=503)
         except Exception as e:
             if assistant_id:
-                gpt_chat.complete_assistant_message(
-                    thread_id, assistant_id, status="error", image_urls=[], error=str(e)
+                _notify_gpt_chat_job(
+                    {
+                        "gpt_chat_thread_id": thread_id,
+                        "gpt_chat_assistant_id": assistant_id,
+                        "project": str(locals().get("auth_project") or ""),
+                        "prompt": str(locals().get("prompt") or ""),
+                    },
+                    status="error",
+                    error=str(e),
                 )
             import traceback
             traceback.print_exc()

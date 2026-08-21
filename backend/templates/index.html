@@ -1412,7 +1412,7 @@
                     <div class="gpt-chat-tool">
                         <span class="gpt-chat-tool-label">参考图</span>
                         <input type="file" id="gptChatFileInput" accept="image/*" multiple hidden>
-                        <button type="button" id="gptChatAttachBtn" title="上传参考图（可选，最多3张）">📎 上传</button>
+                        <button type="button" id="gptChatAttachBtn" title="上传参考图（可选，最多4张）">📎 上传</button>
                     </div>
                     <div class="gpt-chat-tool">
                         <label class="gpt-chat-tool-label" for="gptChatRatioSelect">比例</label>
@@ -2734,6 +2734,7 @@ var gptChatPollJobId = null;
 function gptChatOutputUrl(name) {
     if (!name) return '';
     if (/^(https?:|blob:|data:|\/)/.test(name)) return name;
+    if (/^ref_/i.test(String(name).split('?')[0])) return '/uploads/' + name;
     return '/outputs/' + name;
 }
 
@@ -2768,7 +2769,7 @@ function renderGptChatAttachPreview() {
 
 function addGptChatFiles(files) {
     Array.prototype.forEach.call(files || [], function(file) {
-        if (gptChatAttachFiles.length >= 3) return;
+        if (gptChatAttachFiles.length >= 4) return;
         if (file && file.type && file.type.indexOf('image/') === 0) {
             gptChatAttachFiles.push(file);
         }
@@ -2991,7 +2992,7 @@ async function sendGptChatMessage() {
         formData.append('text', text);
         formData.append('ratio', ratioSel ? (ratioSel.value || '1:1') : '1:1');
         formData.append('gpt_output_quality', qualitySel ? (qualitySel.value || 'medium') : 'medium');
-        gptChatAttachFiles.slice(0, 3).forEach(function(file, idx) {
+        gptChatAttachFiles.slice(0, 4).forEach(function(file, idx) {
             formData.append('ref_image_' + idx, file, file.name || ('ref_' + idx + '.png'));
         });
 
@@ -3019,13 +3020,19 @@ async function openGptChatThread(threadId) {
     if (!threadId) return;
     switchTab('gpt');
     try {
-        gptChatThreadId = threadId;
         var thread = await fetchGptChatThread(threadId);
+        gptChatThreadId = (thread && thread.id) || threadId;
         var ratioSel = document.getElementById('gptChatRatioSelect');
         var qualitySel = document.getElementById('gptChatQualitySelect');
         if (ratioSel && thread.size) ratioSel.value = thread.size;
         if (qualitySel && thread.quality) qualitySel.value = thread.quality;
         renderGptChatThread(thread);
+        var pending = ((thread && thread.messages) || []).find(function(msg) {
+            return msg.role === 'assistant' && msg.status === 'pending' && msg.job_id;
+        });
+        if (pending && pending.job_id && gptChatPollJobId !== pending.job_id) {
+            pollGptChatJob(pending.job_id);
+        }
     } catch (e) {
         alert('打开 GPT 对话失败: ' + e.message);
     }
@@ -6428,7 +6435,8 @@ function _formatHistoryDateLabel(dateKey) {
 function _historyVisibleItems(items) {
     return (items || []).filter(function(item) {
         var imgs = item.output_images || (item.output_image ? [item.output_image] : []);
-        return imgs.length > 0;
+        if (imgs.length > 0) return true;
+        return item.mode === 'gpt_chat' && !!item.thread_id;
     });
 }
 
@@ -6494,7 +6502,9 @@ function _renderHistoryItemHtml(item, idx) {
             'data-history-id="' + _escapeHtml(historyId) + '" ' +
             'data-images="' + encodeURIComponent(JSON.stringify(imageUrls)) + '" data-index="' + i + '" ' +
             'onclick="event.stopPropagation(); openHistoryThumb(this)" style="cursor:pointer;">';
-    }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,0.35);">无图</div>';
+    }).join('') : '<div style="width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:11px;color:' +
+        (item.status === 'pending' ? 'rgba(196,181,253,0.95)' : ((item.status === 'error' || item.error) ? 'rgba(255,140,140,0.85)' : 'rgba(255,255,255,0.35)')) +
+        ';">' + (item.status === 'pending' ? '生成中' : ((item.status === 'error' || item.error) ? '失败' : '无图')) + '</div>';
     var downloadsHtml = imageUrls.map(function(imgSrc, i) {
         var name = images[i] || ('image_' + i + '.png');
         return '<a class="history-download" href="' + imgSrc + '" download="' + name + '" onclick="event.stopPropagation()">⬇</a>';
